@@ -44,7 +44,7 @@ enum InvitationStatus {
 enum SubscriptionStatus {
   trial
   active
- suspended
+  suspended
   cancelled
   expired
 }
@@ -57,7 +57,6 @@ enum FuelType {
   hybrid
   cng
   lpg
-
 }
 
 enum TransmissionType {
@@ -65,7 +64,6 @@ enum TransmissionType {
   automatic
   cvt
   automated
-
 }
 
 enum BodyType {
@@ -75,7 +73,7 @@ enum BodyType {
   pickup
   van
   coupe
-  
+
   motorcycle
   truck
 }
@@ -102,7 +100,6 @@ enum VehicleTransferEventType {
 }
 
 model User {
-
   id String @id @default(uuid()) @db.Uuid
 
   firstName String @map("first_name") @db.VarChar(100)
@@ -147,6 +144,24 @@ model User {
 
   loginHistory LoginHistory[]
 
+  systemRoleAssignments SystemRoleAssignment[]
+
+  ownerships VehicleOwnership[]
+
+  transfersFrom VehicleTransfer[] @relation("TransferFromUser")
+
+  transfersTo VehicleTransfer[] @relation("TransferToUser")
+
+  vehicleAccesses VehicleAccess[] @relation("VehicleAccessUser")
+
+  grantedVehicleAccesses VehicleAccess[] @relation("VehicleAccessGrantedBy")
+
+  createdShares VehicleShare[]
+
+  recordedMileages VehicleMileage[]
+
+  performedTransferEvents VehicleTransferEvent[]
+
   workshopMemberships WorkshopMember[]
 
   workshopInvitations WorkshopInvitation[]
@@ -154,8 +169,51 @@ model User {
   @@map("users")
 }
 
-model UserCredential {
+model UserMfa {
+  id String @id @default(uuid()) @db.Uuid
 
+  userId String @unique @map("user_id") @db.Uuid
+
+  secret String
+
+  enabled Boolean @default(false)
+
+  method String @default("totp")
+
+  verifiedAt DateTime? @map("verified_at")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_mfas")
+}
+
+model LoginHistory {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  ipAddress String? @map("ip_address")
+
+  userAgent String? @map("user_agent")
+
+  success Boolean @default(true)
+
+  failureReason String? @map("failure_reason")
+
+  loggedInAt DateTime @default(now()) @map("logged_in_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([loggedInAt])
+  @@map("login_history")
+}
+
+model UserCredential {
   id String @id @default(uuid()) @db.Uuid
 
   userId String @unique @map("user_id") @db.Uuid
@@ -178,7 +236,6 @@ model UserCredential {
 }
 
 model UserSession {
-
   id String @id @default(uuid()) @db.Uuid
 
   userId String @map("user_id") @db.Uuid
@@ -202,12 +259,10 @@ model UserSession {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-
   @@map("user_sessions")
 }
 
 model EmailVerification {
-
   id String @id @default(uuid()) @db.Uuid
 
   userId String @map("user_id") @db.Uuid
@@ -226,7 +281,6 @@ model EmailVerification {
 }
 
 model PasswordReset {
-
   id String @id @default(uuid()) @db.Uuid
 
   userId String @map("user_id") @db.Uuid
@@ -245,7 +299,6 @@ model PasswordReset {
 }
 
 model ApiKey {
-
   id String @id @default(uuid()) @db.Uuid
 
   userId String @map("user_id") @db.Uuid
@@ -268,7 +321,6 @@ model ApiKey {
 }
 
 model OauthAccount {
-
   id String @id @default(uuid()) @db.Uuid
 
   userId String @map("user_id") @db.Uuid
@@ -286,12 +338,10 @@ model OauthAccount {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerUserId])
-
   @@map("oauth_accounts")
 }
 
 model Workshop {
-
   id String @id @default(uuid()) @db.Uuid
 
   name String @db.VarChar(150)
@@ -331,12 +381,10 @@ model Workshop {
   subscriptions Subscription[]
 
   @@index([name])
-
   @@map("workshops")
 }
 
 model WorkshopBranch {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
@@ -371,8 +419,7 @@ model WorkshopBranch {
 
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
   members WorkshopMember[]
 
@@ -381,12 +428,10 @@ model WorkshopBranch {
   exceptions BusinessHourException[]
 
   @@index([workshopId])
-
   @@map("workshop_branches")
 }
 
 model WorkshopRole {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
@@ -399,10 +444,11 @@ model WorkshopRole {
 
   isSystem Boolean @default(false) @map("is_system")
 
+  priority Int @default(0)
+
   createdAt DateTime @default(now()) @map("created_at")
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
   permissions WorkshopRolePermission[]
 
@@ -411,12 +457,10 @@ model WorkshopRole {
   invitations WorkshopInvitation[]
 
   @@unique([workshopId, code])
-
   @@map("workshop_roles")
 }
 
 model WorkshopMember {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
@@ -439,29 +483,23 @@ model WorkshopMember {
 
   status MemberStatus
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
 
-  user User
-      @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-  role WorkshopRole
-      @relation(fields: [roleId], references: [id])
+  role WorkshopRole @relation(fields: [roleId], references: [id])
 
-  defaultBranch WorkshopBranch?
-      @relation(fields: [defaultBranchId], references: [id])
+  defaultBranch WorkshopBranch? @relation(fields: [defaultBranchId], references: [id])
+
+  recordedMileages VehicleMileage[]
 
   @@unique([workshopId, userId])
-
   @@index([userId])
-
   @@index([roleId])
-
   @@map("workshop_members")
 }
 
 model WorkshopInvitation {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
@@ -482,22 +520,17 @@ model WorkshopInvitation {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
 
-  role WorkshopRole
-      @relation(fields: [roleId], references: [id])
+  role WorkshopRole @relation(fields: [roleId], references: [id])
 
-  invitedBy User
-      @relation(fields: [invitedById], references: [id])
+  invitedBy User @relation(fields: [invitedById], references: [id])
 
   @@index([email])
-
   @@map("workshop_invitations")
 }
 
 model Permission {
-
   id String @id @default(uuid()) @db.Uuid
 
   module String @db.VarChar(50)
@@ -518,56 +551,99 @@ model Permission {
 
   vehicleSharePermissions VehicleSharePermission[]
 
-  @@unique([module, resource, action])
+  systemRolePermissions SystemRolePermission[]
 
+  planPermissions PlanPermission[]
+
+  @@unique([module, resource, action])
   @@map("permissions")
 }
 
 model WorkshopRolePermission {
-
   id String @id @default(uuid()) @db.Uuid
 
   roleId String @map("role_id") @db.Uuid
 
   permissionId String @map("permission_id") @db.Uuid
 
-  role WorkshopRole
-      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role WorkshopRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
-  permission Permission
-      @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, permissionId])
-
   @@index([permissionId])
-
   @@map("workshop_role_permissions")
 }
 
-model BusinessHour {
+enum SystemRoleType {
+  super_admin
+  admin
+  support
+  user
+}
 
+model SystemRole {
+  id          String         @id @default(uuid()) @db.Uuid
+  type        SystemRoleType @unique
+  name        String         @db.VarChar(100)
+  description String?
+  priority    Int            @default(0)
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  assignments SystemRoleAssignment[]
+  permissions SystemRolePermission[]
+
+  @@map("system_roles")
+}
+
+model SystemRoleAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role SystemRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("system_role_assignments")
+}
+
+model SystemRolePermission {
+  id           String @id @default(uuid()) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       SystemRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("system_role_permissions")
+}
+
+model BusinessHour {
   id String @id @default(uuid()) @db.Uuid
 
   branchId String @map("branch_id") @db.Uuid
 
   weekday Int
 
-  opensAt DateTime @db.Time(0) @map("opens_at")
+  opensAt DateTime @map("opens_at") @db.Time(0)
 
-  closesAt DateTime @db.Time(0) @map("closes_at")
+  closesAt DateTime @map("closes_at") @db.Time(0)
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  branch WorkshopBranch
-      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, weekday])
-
   @@map("business_hours")
 }
 
 model BusinessHourException {
-
   id String @id @default(uuid()) @db.Uuid
 
   branchId String @map("branch_id") @db.Uuid
@@ -576,24 +652,21 @@ model BusinessHourException {
 
   isClosed Boolean @default(false) @map("is_closed")
 
-  opensAt DateTime? @db.Time(0) @map("opens_at")
+  opensAt DateTime? @map("opens_at") @db.Time(0)
 
-  closesAt DateTime? @db.Time(0) @map("closes_at")
+  closesAt DateTime? @map("closes_at") @db.Time(0)
 
   reason String?
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  branch WorkshopBranch
-      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, date])
-
   @@map("business_hour_exceptions")
 }
 
 model Specialty {
-
   id String @id @default(uuid()) @db.Uuid
 
   code String @unique @db.VarChar(50)
@@ -608,26 +681,21 @@ model Specialty {
 }
 
 model WorkshopSpecialty {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
 
   specialtyId String @map("specialty_id") @db.Uuid
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
-  specialty Specialty
-      @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+  specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
 
   @@unique([workshopId, specialtyId])
-
   @@map("workshop_specialties")
 }
 
 model Plan {
-
   id String @id @default(uuid()) @db.Uuid
 
   code String @unique @db.VarChar(50)
@@ -642,48 +710,57 @@ model Plan {
 
   maxVehicles Int?
 
-  monthlyPrice Decimal @db.Decimal(10,2)
+  monthlyPrice Decimal @db.Decimal(10, 2)
 
-  yearlyPrice Decimal @db.Decimal(10,2)
+  yearlyPrice Decimal @db.Decimal(10, 2)
 
   isActive Boolean @default(true)
 
   subscriptions Subscription[]
 
+  planPermissions PlanPermission[]
+
   @@map("plans")
 }
 
 model Subscription {
-
   id String @id @default(uuid()) @db.Uuid
 
   workshopId String @map("workshop_id") @db.Uuid
 
   planId String @map("plan_id") @db.Uuid
 
-  startsAt DateTime @db.Date @map("starts_at")
+  startsAt DateTime @map("starts_at") @db.Date
 
-  endsAt DateTime? @db.Date @map("ends_at")
+  endsAt DateTime? @map("ends_at") @db.Date
 
   status SubscriptionStatus
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  workshop Workshop
-      @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
 
-  plan Plan
-      @relation(fields: [planId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
 
   @@index([status])
-
   @@index([workshopId])
-
   @@map("subscriptions")
 }
 
-model VehicleBrand {
+model PlanPermission {
+  id           String @id @default(uuid()) @db.Uuid
+  planId       String @map("plan_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
 
+  plan       Plan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, permissionId])
+  @@index([permissionId])
+  @@map("plan_permissions")
+}
+
+model VehicleBrand {
   id String @id @default(uuid()) @db.Uuid
 
   name String @unique @db.VarChar(100)
@@ -702,7 +779,6 @@ model VehicleBrand {
 }
 
 model VehicleModel {
-
   id String @id @default(uuid()) @db.Uuid
 
   brandId String @map("brand_id") @db.Uuid
@@ -715,18 +791,15 @@ model VehicleModel {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  brand VehicleBrand
-    @relation(fields: [brandId], references: [id])
+  brand VehicleBrand @relation(fields: [brandId], references: [id])
 
   versions VehicleVersion[]
 
   @@unique([brandId, slug])
-
   @@map("vehicle_models")
 }
 
 model VehicleVersion {
-
   id String @id @default(uuid()) @db.Uuid
 
   modelId String @map("model_id") @db.Uuid
@@ -753,17 +826,56 @@ model VehicleVersion {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  model VehicleModel
-    @relation(fields: [modelId], references: [id])
+  model VehicleModel @relation(fields: [modelId], references: [id])
 
   vehicles Vehicle[]
 
   @@map("vehicle_versions")
 }
 
+model VehiclePhoto {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  url String
+
+  caption String?
+
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@map("vehicle_photos")
+}
+
+model VehicleDocument {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  name String @db.VarChar(200)
+
+  documentType String @map("document_type") @db.VarChar(50)
+
+  url String
+
+  expiresAt DateTime? @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@map("vehicle_documents")
+}
 
 model Vehicle {
-
   id String @id @default(uuid()) @db.Uuid
 
   versionId String? @map("version_id") @db.Uuid
@@ -788,8 +900,7 @@ model Vehicle {
 
   deletedAt DateTime? @map("deleted_at")
 
-  version VehicleVersion?
-      @relation(fields: [versionId], references: [id])
+  version VehicleVersion? @relation(fields: [versionId], references: [id])
 
   ownerships VehicleOwnership[]
 
@@ -806,12 +917,10 @@ model Vehicle {
   mileages VehicleMileage[]
 
   @@index([licensePlate])
-
   @@map("vehicles")
 }
 
 model VehicleMileage {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
@@ -830,19 +939,14 @@ model VehicleMileage {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle
-    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  recordedByUser User?
-    @relation(fields: [recordedByUserId], references: [id])
+  recordedByUser User? @relation(fields: [recordedByUserId], references: [id])
 
-  recordedByMember WorkshopMember?
-    @relation(fields: [recordedByMemberId], references: [id])
+  recordedByMember WorkshopMember? @relation(fields: [recordedByMemberId], references: [id])
 
   @@index([vehicleId, recordedAt])
-
   @@index([vehicleId, mileage])
-
   @@map("vehicle_mileages")
 }
 
@@ -853,7 +957,6 @@ enum OwnershipType {
 }
 
 model VehicleOwnership {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
@@ -872,25 +975,15 @@ model VehicleOwnership {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle
-    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  user User
-    @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
 
-  acquiredByTransfer VehicleTransfer?
-    @relation(
-      "TransferCreatesOwnership",
-      fields: [acquiredByTransferId],
-      references: [id]
-    )
+  acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id])
 
   @@index([vehicleId])
-
   @@index([userId])
-
   @@index([startsAt])
-
   @@map("vehicle_ownerships")
 }
 
@@ -904,7 +997,6 @@ enum TransferStatus {
 }
 
 model VehicleTransfer {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
@@ -929,33 +1021,20 @@ model VehicleTransfer {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle
-    @relation(fields: [vehicleId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
 
-  fromUser User
-    @relation("TransferFromUser", fields: [fromUserId], references: [id])
+  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id])
 
-  toUser User
-    @relation("TransferToUser", fields: [toUserId], references: [id])
+  toUser User @relation("TransferToUser", fields: [toUserId], references: [id])
 
-  ownerships VehicleOwnership[]
-    @relation("TransferCreatesOwnership")
+  ownerships VehicleOwnership[] @relation("TransferCreatesOwnership")
 
   @@index([vehicleId])
-
   @@index([status])
-
   @@map("vehicle_transfers")
 }
 
-enum VehicleAccessRole {
-  viewer
-  contributor
-  manager
-}
-
 model VehicleAccess {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
@@ -970,43 +1049,34 @@ model VehicleAccess {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle
-    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  user User
-    @relation("VehicleAccessUser", fields: [userId], references: [id])
+  user User @relation("VehicleAccessUser", fields: [userId], references: [id])
 
-  grantedBy User
-    @relation("VehicleAccessGrantedBy", fields: [grantedByUserId], references: [id])
+  grantedBy User @relation("VehicleAccessGrantedBy", fields: [grantedByUserId], references: [id])
 
   permissions VehicleAccessPermission[]
 
   @@unique([vehicleId, userId])
-
   @@map("vehicle_accesses")
 }
 
 model VehicleAccessPermission {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleAccessId String @map("vehicle_access_id") @db.Uuid
 
   permissionId String @map("permission_id") @db.Uuid
 
-  vehicleAccess VehicleAccess
-    @relation(fields: [vehicleAccessId], references: [id], onDelete: Cascade)
+  vehicleAccess VehicleAccess @relation(fields: [vehicleAccessId], references: [id], onDelete: Cascade)
 
-  permission Permission
-    @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([vehicleAccessId, permissionId])
-
   @@map("vehicle_access_permissions")
 }
 
 model VehicleShare {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
@@ -1027,19 +1097,15 @@ model VehicleShare {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle
-    @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  createdBy User
-    @relation(fields: [createdByUserId], references: [id])
+  createdBy User @relation(fields: [createdByUserId], references: [id])
 
   @@index([token])
-
   @@map("vehicle_shares")
 }
 
 model VehicleTransferEvent {
-
   id String @id @default(uuid()) @db.Uuid
 
   transferId String @map("transfer_id") @db.Uuid
@@ -1052,34 +1118,26 @@ model VehicleTransferEvent {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  transfer VehicleTransfer
-    @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  transfer VehicleTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 
-  performedBy User?
-    @relation(fields: [performedByUserId], references: [id])
+  performedBy User? @relation(fields: [performedByUserId], references: [id])
 
   @@index([transferId])
-
   @@index([type])
-
   @@map("vehicle_transfer_events")
 }
 
 model VehicleSharePermission {
-
   id String @id @default(uuid()) @db.Uuid
 
   vehicleShareId String @map("vehicle_share_id") @db.Uuid
 
   permissionId String @map("permission_id") @db.Uuid
 
-  vehicleShare VehicleShare
-      @relation(fields:[vehicleShareId], references:[id], onDelete: Cascade)
+  vehicleShare VehicleShare @relation(fields: [vehicleShareId], references: [id], onDelete: Cascade)
 
-  permission Permission
-      @relation(fields:[permissionId], references:[id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@unique([vehicleShareId, permissionId])
-
   @@map("vehicle_share_permissions")
 }
