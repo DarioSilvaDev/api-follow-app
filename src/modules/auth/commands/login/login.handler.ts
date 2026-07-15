@@ -1,0 +1,65 @@
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as bcrypt from 'bcrypt';
+import { v4 as uuid } from 'uuid';
+import { PrismaService } from '../../../../common/database/prisma.service';
+import { AUTH_REPOSITORY } from '../../tokens';
+import type { AuthRepository } from '../../repositories/auth.repository';
+import { UserResponseDto } from '../../../users/dto/user-response.dto';
+import { AuthResponseDto } from '../../dto/auth-response.dto';
+import { UserLoggedInEvent } from '../../events/user-logged-in.event';
+import { LoginCommand } from './login.command';
+
+@Injectable()
+export class LoginHandler {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(AUTH_REPOSITORY)
+    private readonly authRepository: AuthRepository,
+    private readonly jwtService: JwtService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  async execute(command: LoginCommand) {
+    const { email, password } = command.dto;
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { credential: true },
+    });
+
+    if (!user || !user.credential) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const valid = await bcrypt.compare(password, user.credential.passwordHash);
+    if (!valid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const payload = { sub: user.id, email: user.email };
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = uuid();
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await this.authRepository.createSession({
+      userId: user.id,
+      refreshToken,
+      expiresAt,
+    });
+
+    this.eventEmitter.emit(
+      'auth.user.logged_in',
+      new UserLoggedInEvent(user.id),
+    );
+
+    return AuthResponseDto.from(
+      UserResponseDto.from(user),
+      accessToken,
+      refreshToken,
+    );
+  }
+}

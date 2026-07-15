@@ -1,0 +1,1 @@
+export const WORKSHOP_REPOSITORY = Symbol('WORKSHOP_REPOSITORY');

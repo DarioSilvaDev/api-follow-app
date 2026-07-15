@@ -166,6 +166,10 @@ model User {
 
   workshopInvitations WorkshopInvitation[]
 
+  appointments Appointment[]
+  workOrders WorkOrder[]
+  estimates Estimate[]
+
   @@map("users")
 }
 
@@ -377,8 +381,12 @@ model Workshop {
   invitations WorkshopInvitation[]
 
   specialties WorkshopSpecialty[]
-
   subscriptions Subscription[]
+
+  appointments Appointment[]
+  workOrders WorkOrder[]
+  serviceRecords ServiceRecord[]
+  estimates Estimate[]
 
   @@index([name])
   @@map("workshops")
@@ -426,6 +434,10 @@ model WorkshopBranch {
   businessHours BusinessHour[]
 
   exceptions BusinessHourException[]
+
+  appointments Appointment[]
+  workOrders WorkOrder[]
+  estimates Estimate[]
 
   @@index([workshopId])
   @@map("workshop_branches")
@@ -492,6 +504,10 @@ model WorkshopMember {
   defaultBranch WorkshopBranch? @relation(fields: [defaultBranchId], references: [id])
 
   recordedMileages VehicleMileage[]
+
+  assignedAppointments Appointment[]
+  assignedWorkOrders WorkOrder[]
+  performedServiceRecords ServiceRecord[]
 
   @@unique([workshopId, userId])
   @@index([userId])
@@ -911,10 +927,14 @@ model Vehicle {
   shares VehicleShare[]
 
   photos VehiclePhoto[]
-
   documents VehicleDocument[]
 
   mileages VehicleMileage[]
+
+  appointments Appointment[]
+  workOrders WorkOrder[]
+  serviceRecords ServiceRecord[]
+  estimates Estimate[]
 
   @@index([licensePlate])
   @@map("vehicles")
@@ -1140,4 +1160,237 @@ model VehicleSharePermission {
 
   @@unique([vehicleShareId, permissionId])
   @@map("vehicle_share_permissions")
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum WorkOrderStatus {
+  draft
+  open
+  in_progress
+  completed
+  cancelled
+}
+
+enum WorkOrderPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum EstimateStatus {
+  draft
+  sent
+  accepted
+  rejected
+  expired
+  converted
+}
+
+enum ServiceItemType {
+  labor
+  part
+  fee
+  discount
+}
+
+model Appointment {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+  workshopId String @map("workshop_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  assignedToMemberId String? @map("assigned_to_member_id") @db.Uuid
+
+  scheduledFor DateTime @map("scheduled_for") @db.Timestamptz
+  mileageAtAppointment Int? @map("mileage_at_appointment")
+  reason String @db.VarChar(200)
+  description String?
+
+  status AppointmentStatus @default(scheduled)
+
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz
+  cancellationReason String? @map("cancellation_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+  branch WorkshopBranch @relation(fields: [branchId], references: [id])
+  customer User @relation(fields: [customerId], references: [id])
+  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id])
+
+  workOrders WorkOrder[]
+
+  @@index([vehicleId])
+  @@index([workshopId])
+  @@index([branchId])
+  @@index([customerId])
+  @@index([scheduledFor])
+  @@index([status])
+  @@map("appointments")
+}
+
+model WorkOrder {
+  id String @id @default(uuid()) @db.Uuid
+
+  number String @unique @db.VarChar(30)
+  vehicleId String @map("vehicle_id") @db.Uuid
+  workshopId String @map("workshop_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  appointmentId String? @map("appointment_id") @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+  assignedToMemberId String? @map("assigned_to_member_id") @db.Uuid
+
+  mileageIn Int? @map("mileage_in")
+  mileageOut Int? @map("mileage_out")
+
+  status WorkOrderStatus @default(draft)
+  priority WorkOrderPriority @default(normal)
+
+  customerNotes String? @map("customer_notes")
+  internalNotes String? @map("internal_notes")
+
+  openedAt DateTime @default(now()) @map("opened_at") @db.Timestamptz
+  closedAt DateTime? @map("closed_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+  branch WorkshopBranch @relation(fields: [branchId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  customer User @relation(fields: [customerId], references: [id])
+  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id])
+
+  items WorkOrderItem[]
+  estimates Estimate[]
+  serviceRecords ServiceRecord[]
+
+  @@index([number])
+  @@index([vehicleId])
+  @@index([workshopId])
+  @@index([branchId])
+  @@index([status])
+  @@index([priority])
+  @@map("work_orders")
+}
+
+model WorkOrderItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  workOrderId String @map("work_order_id") @db.Uuid
+  type ServiceItemType
+  description String @db.VarChar(500)
+  quantity Decimal @db.Decimal(10, 2)
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  total Decimal @db.Decimal(12, 2)
+  isTaxable Boolean @default(true) @map("is_taxable")
+  sortOrder Int @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@index([workOrderId])
+  @@map("work_order_items")
+}
+
+model ServiceRecord {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+  workOrderId String? @map("work_order_id") @db.Uuid
+  workshopId String @map("workshop_id") @db.Uuid
+  performedByMemberId String? @map("performed_by_member_id") @db.Uuid
+
+  mileageAtService Int @map("mileage_at_service")
+  description String @db.VarChar(500)
+  serviceDate DateTime @map("service_date") @db.Date
+  totalCost Decimal? @map("total_cost") @db.Decimal(12, 2)
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+  performedBy WorkshopMember? @relation(fields: [performedByMemberId], references: [id])
+
+  @@index([vehicleId])
+  @@index([workOrderId])
+  @@index([workshopId])
+  @@index([serviceDate])
+  @@map("service_records")
+}
+
+model Estimate {
+  id String @id @default(uuid()) @db.Uuid
+
+  number String @unique @db.VarChar(30)
+  vehicleId String @map("vehicle_id") @db.Uuid
+  workshopId String @map("workshop_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  workOrderId String? @map("work_order_id") @db.Uuid
+  customerId String @map("customer_id") @db.Uuid
+
+  status EstimateStatus @default(draft)
+  subtotal Decimal @db.Decimal(12, 2)
+  taxRate Decimal? @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount Decimal? @map("tax_amount") @db.Decimal(12, 2)
+  total Decimal @db.Decimal(12, 2)
+  validUntil DateTime? @map("valid_until") @db.Date
+  notes String?
+
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz
+  rejectedAt DateTime? @map("rejected_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+  branch WorkshopBranch @relation(fields: [branchId], references: [id])
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id])
+  customer User @relation(fields: [customerId], references: [id])
+
+  items EstimateItem[]
+
+  @@index([number])
+  @@index([vehicleId])
+  @@index([workshopId])
+  @@index([status])
+  @@map("estimates")
+}
+
+model EstimateItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  estimateId String @map("estimate_id") @db.Uuid
+  type ServiceItemType
+  description String @db.VarChar(500)
+  quantity Decimal @db.Decimal(10, 2)
+  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
+  total Decimal @db.Decimal(12, 2)
+  isTaxable Boolean @default(true) @map("is_taxable")
+  sortOrder Int @default(0) @map("sort_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+
+  @@index([estimateId])
+  @@map("estimate_items")
 }

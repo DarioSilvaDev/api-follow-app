@@ -1,342 +1,1143 @@
-CREATE TYPE "user_status" AS ENUM (
-  'pending',
-  'active',
-  'suspended',
-  'deleted'
-);
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-CREATE TYPE "oauth_provider" AS ENUM (
-  'google',
-  'apple',
-  'github',
-  'microsoft',
-  'facebook'
-);
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-CREATE TYPE "member_status" AS ENUM (
-  'pending',
-  'active',
-  'inactive',
-  'suspended'
-);
+generator client {
+  provider = "prisma-client-js"
+}
 
-CREATE TYPE "invitation_status" AS ENUM (
-  'pending',
-  'accepted',
-  'expired',
-  'cancelled'
-);
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
 
-CREATE TYPE "subscription_status" AS ENUM (
-  'trial',
-  'active',
-  'suspended',
-  'cancelled',
-  'expired'
-);
+enum UserStatus {
+  pending
+  active
+  suspended
+}
 
-CREATE TABLE "users" (
-  "id" uuid PRIMARY KEY,
-  "first_name" varchar(100) NOT NULL,
-  "last_name" varchar(100) NOT NULL,
-  "email" varchar(255) NOT NULL,
-  "phone" varchar(30),
-  "avatar_url" varchar,
-  "language" varchar(10) DEFAULT 'es',
-  "timezone" varchar(60) DEFAULT 'America/Argentina/Buenos_Aires',
-  "status" user_status DEFAULT 'pending',
-  "email_verified_at" timestamp,
-  "last_login_at" timestamp,
-  "created_at" timestamp,
-  "updated_at" timestamp,
-  "deleted_at" timestamp
-);
+enum OauthProvider {
+  google
+  apple
+  github
+  microsoft
+  facebook
+}
 
-CREATE TABLE "user_credentials" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "password_hash" varchar NOT NULL,
-  "password_changed_at" timestamp,
-  "failed_attempts" int DEFAULT 0,
-  "locked_until" timestamp,
-  "created_at" timestamp,
-  "updated_at" timestamp
-);
+enum MemberStatus {
+  pending
+  active
+  inactive
+  suspended
+}
 
-CREATE TABLE "user_sessions" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "refresh_token" varchar NOT NULL,
-  "ip_address" varchar(50),
-  "user_agent" varchar,
-  "device_name" varchar(120),
-  "last_activity_at" timestamp,
-  "expires_at" timestamp,
-  "revoked_at" timestamp,
-  "created_at" timestamp
-);
+enum InvitationStatus {
+  pending
+  accepted
+  expired
+  cancelled
+}
 
-CREATE TABLE "email_verifications" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "token" varchar NOT NULL,
-  "expires_at" timestamp,
-  "verified_at" timestamp,
-  "created_at" timestamp
-);
+enum SubscriptionStatus {
+  trial
+  active
+  suspended
+  cancelled
+  expired
+}
 
-CREATE TABLE "password_resets" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "token" varchar NOT NULL,
-  "expires_at" timestamp,
-  "used_at" timestamp,
-  "created_at" timestamp
-);
+enum FuelType {
+  gasoline
+  diesel
+  flex
+  electric
+  hybrid
+  cng
+  lpg
+}
 
-CREATE TABLE "api_keys" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "name" varchar(120),
-  "key_hash" varchar NOT NULL,
-  "last_used_at" timestamp,
-  "expires_at" timestamp,
-  "revoked_at" timestamp,
-  "created_at" timestamp
-);
+enum TransmissionType {
+  manual
+  automatic
+  cvt
+  automated
+}
 
-CREATE TABLE "oauth_accounts" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "provider" oauth_provider,
-  "provider_user_id" varchar,
-  "email" varchar,
-  "created_at" timestamp,
-  "updated_at" timestamp
-);
+enum BodyType {
+  sedan
+  hatchback
+  suv
+  pickup
+  van
+  coupe
 
-CREATE TABLE "user_mfa" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid NOT NULL,
-  "secret" varchar,
-  "recovery_codes" json,
-  "enabled_at" timestamp,
-  "disabled_at" timestamp
-);
+  motorcycle
+  truck
+}
 
-CREATE TABLE "login_history" (
-  "id" uuid PRIMARY KEY,
-  "user_id" uuid,
-  "email" varchar,
-  "ip_address" varchar,
-  "user_agent" varchar,
-  "success" boolean,
-  "created_at" timestamp
-);
+enum MileageSource {
+  owner
+  workshop
+  inspection
+  dealership
+  imported
+  system
+}
 
-CREATE TABLE "workshops" (
-  "id" uuid PRIMARY KEY,
-  "name" varchar(150) NOT NULL,
-  "legal_name" varchar(200),
-  "tax_id" varchar(30) UNIQUE,
-  "email" varchar(255),
-  "phone" varchar(30),
-  "website" varchar(255),
-  "logo_url" varchar,
-  "description" text,
-  "is_active" boolean DEFAULT true,
-  "created_at" timestamp,
-  "updated_at" timestamp,
-  "deleted_at" timestamp
-);
+enum VehicleTransferEventType {
+  requested
+  reminder_sent
+  accepted
+  rejected
+  cancelled
+  expired
+  ownership_closed
+  ownership_created
+  completed
+}
 
-CREATE TABLE "workshop_branches" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid NOT NULL,
-  "name" varchar(120),
-  "phone" varchar(30),
-  "email" varchar(255),
-  "address" varchar,
-  "city" varchar(120),
-  "state" varchar(120),
-  "postal_code" varchar(20),
-  "latitude" decimal,
-  "longitude" decimal,
-  "is_headquarters" boolean,
-  "is_active" boolean,
-  "created_at" timestamp,
-  "updated_at" timestamp
-);
+model User {
+  id String @id @default(uuid()) @db.Uuid
 
-CREATE TABLE "workshop_roles" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid NOT NULL,
-  "code" varchar(50),
-  "name" varchar(100),
-  "description" text,
-  "is_system" boolean,
-  "created_at" timestamp
-);
+  firstName String @map("first_name") @db.VarChar(100)
 
-CREATE TABLE "workshop_members" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid NOT NULL,
-  "user_id" uuid NOT NULL,
-  "role_id" uuid NOT NULL,
-  "default_branch_id" uuid,
-  "joined_at" timestamp,
-  "left_at" timestamp,
-  "status" member_status,
-  "created_at" timestamp,
-  "updated_at" timestamp
-);
+  lastName String @map("last_name") @db.VarChar(100)
 
-CREATE TABLE "workshop_invitations" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid,
-  "email" varchar,
-  "role_id" uuid,
-  "invited_by" uuid,
-  "token" varchar,
-  "expires_at" timestamp,
-  "accepted_at" timestamp,
-  "status" invitation_status,
-  "created_at" timestamp
-);
+  email String @unique @db.VarChar(255)
 
-CREATE TABLE "business_hours" (
-  "id" uuid PRIMARY KEY,
-  "branch_id" uuid,
-  "weekday" int,
-  "opens_at" time,
-  "closes_at" time,
-  "created_at" timestamp
-);
+  phone String? @db.VarChar(30)
 
-CREATE TABLE "business_hour_exceptions" (
-  "id" uuid PRIMARY KEY,
-  "branch_id" uuid,
-  "date" date,
-  "is_closed" boolean,
-  "opens_at" time,
-  "closes_at" time,
-  "reason" varchar,
-  "created_at" timestamp
-);
+  avatarUrl String? @map("avatar_url")
 
-CREATE TABLE "specialties" (
-  "id" uuid PRIMARY KEY,
-  "code" varchar UNIQUE,
-  "name" varchar,
-  "description" text
-);
+  language String @default("es") @db.VarChar(10)
 
-CREATE TABLE "workshop_specialties" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid,
-  "specialty_id" uuid,
-  "created_at" timestamp
-);
+  timezone String @default("America/Argentina/Buenos_Aires") @db.VarChar(60)
 
-CREATE TABLE "workshop_role_permissions" (
-  "id" uuid PRIMARY KEY,
-  "role_id" uuid,
-  "permission_id" uuid
-);
+  status UserStatus @default(pending)
 
-CREATE TABLE "subscriptions" (
-  "id" uuid PRIMARY KEY,
-  "workshop_id" uuid,
-  "plan_id" uuid,
-  "starts_at" date,
-  "ends_at" date,
-  "status" subscription_status,
-  "created_at" timestamp
-);
+  emailVerifiedAt DateTime? @map("email_verified_at")
 
-CREATE TABLE "plans" (
-  "id" uuid PRIMARY KEY,
-  "code" varchar UNIQUE,
-  "name" varchar,
-  "description" text,
-  "max_members" int,
-  "max_branches" int,
-  "max_vehicles" int,
-  "monthly_price" decimal,
-  "yearly_price" decimal,
-  "is_active" boolean
-);
+  lastLoginAt DateTime? @map("last_login_at")
 
-CREATE UNIQUE INDEX ON "users" ("email");
+  createdAt DateTime? @default(now()) @map("created_at")
 
-CREATE UNIQUE INDEX ON "user_credentials" ("user_id");
+  updatedAt DateTime? @updatedAt @map("updated_at")
 
-CREATE UNIQUE INDEX ON "user_sessions" ("refresh_token");
+  deletedAt DateTime? @map("deleted_at")
 
-CREATE INDEX ON "user_sessions" ("user_id");
+  credential UserCredential?
 
-CREATE UNIQUE INDEX ON "email_verifications" ("token");
+  sessions UserSession[]
 
-CREATE UNIQUE INDEX ON "password_resets" ("token");
+  emailVerifications EmailVerification[]
 
-CREATE UNIQUE INDEX ON "api_keys" ("key_hash");
+  passwordResets PasswordReset[]
 
-CREATE UNIQUE INDEX ON "oauth_accounts" ("provider", "provider_user_id");
+  apiKeys ApiKey[]
 
-CREATE UNIQUE INDEX ON "user_mfa" ("user_id");
+  oauthAccounts OauthAccount[]
 
-COMMENT ON TABLE "users" IS 'Representa una persona dentro del sistema.
-Un usuario puede pertenecer a múltiples talleres.
-';
+  mfa UserMfa?
 
-COMMENT ON TABLE "user_credentials" IS 'Se separan las credenciales del usuario para permitir
-futuros proveedores de autenticación.
-';
+  loginHistory LoginHistory[]
 
-ALTER TABLE "user_credentials" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  systemRoleAssignments SystemRoleAssignment[]
 
-ALTER TABLE "user_sessions" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  ownerships VehicleOwnership[]
 
-ALTER TABLE "email_verifications" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  transfersFrom VehicleTransfer[] @relation("TransferFromUser")
 
-ALTER TABLE "password_resets" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  transfersTo VehicleTransfer[] @relation("TransferToUser")
 
-ALTER TABLE "api_keys" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  vehicleAccesses VehicleAccess[] @relation("VehicleAccessUser")
 
-ALTER TABLE "oauth_accounts" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  grantedVehicleAccesses VehicleAccess[] @relation("VehicleAccessGrantedBy")
 
-ALTER TABLE "user_mfa" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  createdShares VehicleShare[]
 
-ALTER TABLE "login_history" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  recordedMileages VehicleMileage[]
 
-ALTER TABLE "workshop_branches" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  performedTransferEvents VehicleTransferEvent[]
 
-ALTER TABLE "workshop_roles" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  workshopMemberships WorkshopMember[]
 
-ALTER TABLE "workshop_members" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  workshopInvitations WorkshopInvitation[]
 
-ALTER TABLE "workshop_members" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  @@map("users")
+}
 
-ALTER TABLE "workshop_members" ADD FOREIGN KEY ("role_id") REFERENCES "workshop_roles" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+model UserMfa {
+  id String @id @default(uuid()) @db.Uuid
 
-ALTER TABLE "workshop_members" ADD FOREIGN KEY ("default_branch_id") REFERENCES "workshop_branches" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  userId String @unique @map("user_id") @db.Uuid
 
-ALTER TABLE "workshop_invitations" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  secret String
 
-ALTER TABLE "workshop_invitations" ADD FOREIGN KEY ("role_id") REFERENCES "workshop_roles" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  enabled Boolean @default(false)
 
-ALTER TABLE "workshop_invitations" ADD FOREIGN KEY ("invited_by") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  method String @default("totp")
 
-ALTER TABLE "business_hours" ADD FOREIGN KEY ("branch_id") REFERENCES "workshop_branches" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  verifiedAt DateTime? @map("verified_at")
 
-ALTER TABLE "business_hour_exceptions" ADD FOREIGN KEY ("branch_id") REFERENCES "workshop_branches" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  createdAt DateTime? @default(now()) @map("created_at")
 
-ALTER TABLE "workshop_specialties" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  updatedAt DateTime? @updatedAt @map("updated_at")
 
-ALTER TABLE "workshop_specialties" ADD FOREIGN KEY ("specialty_id") REFERENCES "specialties" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-ALTER TABLE "workshop_role_permissions" ADD FOREIGN KEY ("role_id") REFERENCES "workshop_roles" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  @@map("user_mfas")
+}
 
-ALTER TABLE "subscriptions" ADD FOREIGN KEY ("workshop_id") REFERENCES "workshops" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+model LoginHistory {
+  id String @id @default(uuid()) @db.Uuid
 
-ALTER TABLE "subscriptions" ADD FOREIGN KEY ("plan_id") REFERENCES "plans" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+  userId String @map("user_id") @db.Uuid
+
+  ipAddress String? @map("ip_address")
+
+  userAgent String? @map("user_agent")
+
+  success Boolean @default(true)
+
+  failureReason String? @map("failure_reason")
+
+  loggedInAt DateTime @default(now()) @map("logged_in_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([loggedInAt])
+  @@map("login_history")
+}
+
+model UserCredential {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @unique @map("user_id") @db.Uuid
+
+  passwordHash String @map("password_hash")
+
+  passwordChangedAt DateTime? @map("password_changed_at")
+
+  failedAttempts Int @default(0) @map("failed_attempts")
+
+  lockedUntil DateTime? @map("locked_until")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_credentials")
+}
+
+model UserSession {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  refreshToken String @unique @map("refresh_token")
+
+  ipAddress String? @map("ip_address")
+
+  userAgent String? @map("user_agent")
+
+  deviceName String? @map("device_name")
+
+  lastActivityAt DateTime? @map("last_activity_at")
+
+  expiresAt DateTime @map("expires_at")
+
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model EmailVerification {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  token String @unique
+
+  expiresAt DateTime @map("expires_at")
+
+  verifiedAt DateTime? @map("verified_at")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
+}
+
+model PasswordReset {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  token String @unique
+
+  expiresAt DateTime @map("expires_at")
+
+  usedAt DateTime? @map("used_at")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_resets")
+}
+
+model ApiKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  name String?
+
+  keyHash String @unique @map("key_hash")
+
+  lastUsedAt DateTime? @map("last_used_at")
+
+  expiresAt DateTime?
+
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model OauthAccount {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  provider OauthProvider
+
+  providerUserId String @map("provider_user_id")
+
+  email String?
+
+  createdAt DateTime? @default(now()) @map("created_at")
+
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@map("oauth_accounts")
+}
+
+model Workshop {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(150)
+
+  legalName String? @map("legal_name") @db.VarChar(200)
+
+  taxId String? @unique @map("tax_id") @db.VarChar(30)
+
+  email String? @db.VarChar(255)
+
+  phone String? @db.VarChar(30)
+
+  website String?
+
+  logoUrl String? @map("logo_url")
+
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deletedAt DateTime? @map("deleted_at")
+
+  branches WorkshopBranch[]
+
+  members WorkshopMember[]
+
+  roles WorkshopRole[]
+
+  invitations WorkshopInvitation[]
+
+  specialties WorkshopSpecialty[]
+
+  subscriptions Subscription[]
+
+  @@index([name])
+  @@map("workshops")
+}
+
+model WorkshopBranch {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  name String @db.VarChar(120)
+
+  phone String? @db.VarChar(30)
+
+  email String? @db.VarChar(255)
+
+  street String?
+
+  streetNumber String? @map("street_number")
+
+  city String?
+
+  state String?
+
+  country String?
+
+  postalCode String? @map("postal_code")
+
+  latitude Decimal?
+
+  longitude Decimal?
+
+  isHeadquarters Boolean @default(false) @map("is_headquarters")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  members WorkshopMember[]
+
+  businessHours BusinessHour[]
+
+  exceptions BusinessHourException[]
+
+  @@index([workshopId])
+  @@map("workshop_branches")
+}
+
+model WorkshopRole {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  code String @db.VarChar(50)
+
+  name String @db.VarChar(100)
+
+  description String?
+
+  isSystem Boolean @default(false) @map("is_system")
+
+  priority Int @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  permissions WorkshopRolePermission[]
+
+  members WorkshopMember[]
+
+  invitations WorkshopInvitation[]
+
+  @@unique([workshopId, code])
+  @@map("workshop_roles")
+}
+
+model WorkshopMember {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  defaultBranchId String? @map("default_branch_id") @db.Uuid
+
+  joinedAt DateTime @map("joined_at")
+
+  leftAt DateTime? @map("left_at")
+
+  invitedAt DateTime? @map("invited_at")
+
+  acceptedAt DateTime? @map("accepted_at")
+
+  lastAccessAt DateTime? @map("last_access_at")
+
+  status MemberStatus
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+
+  user User @relation(fields: [userId], references: [id])
+
+  role WorkshopRole @relation(fields: [roleId], references: [id])
+
+  defaultBranch WorkshopBranch? @relation(fields: [defaultBranchId], references: [id])
+
+  recordedMileages VehicleMileage[]
+
+  @@unique([workshopId, userId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("workshop_members")
+}
+
+model WorkshopInvitation {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  invitedById String @map("invited_by") @db.Uuid
+
+  email String
+
+  token String @unique
+
+  expiresAt DateTime @map("expires_at")
+
+  acceptedAt DateTime? @map("accepted_at")
+
+  status InvitationStatus
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+
+  role WorkshopRole @relation(fields: [roleId], references: [id])
+
+  invitedBy User @relation(fields: [invitedById], references: [id])
+
+  @@index([email])
+  @@map("workshop_invitations")
+}
+
+model Permission {
+  id String @id @default(uuid()) @db.Uuid
+
+  module String @db.VarChar(50)
+
+  resource String @db.VarChar(50)
+
+  action String @db.VarChar(50)
+
+  code String @unique @db.VarChar(150)
+
+  description String?
+
+  createdAt DateTime @default(now())
+
+  workshopRolePermissions WorkshopRolePermission[]
+
+  vehicleAccessPermissions VehicleAccessPermission[]
+
+  vehicleSharePermissions VehicleSharePermission[]
+
+  systemRolePermissions SystemRolePermission[]
+
+  planPermissions PlanPermission[]
+
+  @@unique([module, resource, action])
+  @@map("permissions")
+}
+
+model WorkshopRolePermission {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  permissionId String @map("permission_id") @db.Uuid
+
+  role WorkshopRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("workshop_role_permissions")
+}
+
+enum SystemRoleType {
+  super_admin
+  admin
+  support
+  user
+}
+
+model SystemRole {
+  id          String         @id @default(uuid()) @db.Uuid
+  type        SystemRoleType @unique
+  name        String         @db.VarChar(100)
+  description String?
+  priority    Int            @default(0)
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  assignments SystemRoleAssignment[]
+  permissions SystemRolePermission[]
+
+  @@map("system_roles")
+}
+
+model SystemRoleAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role SystemRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("system_role_assignments")
+}
+
+model SystemRolePermission {
+  id           String @id @default(uuid()) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       SystemRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("system_role_permissions")
+}
+
+model BusinessHour {
+  id String @id @default(uuid()) @db.Uuid
+
+  branchId String @map("branch_id") @db.Uuid
+
+  weekday Int
+
+  opensAt DateTime @map("opens_at") @db.Time(0)
+
+  closesAt DateTime @map("closes_at") @db.Time(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, weekday])
+  @@map("business_hours")
+}
+
+model BusinessHourException {
+  id String @id @default(uuid()) @db.Uuid
+
+  branchId String @map("branch_id") @db.Uuid
+
+  date DateTime @db.Date
+
+  isClosed Boolean @default(false) @map("is_closed")
+
+  opensAt DateTime? @map("opens_at") @db.Time(0)
+
+  closesAt DateTime? @map("closes_at") @db.Time(0)
+
+  reason String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, date])
+  @@map("business_hour_exceptions")
+}
+
+model Specialty {
+  id String @id @default(uuid()) @db.Uuid
+
+  code String @unique @db.VarChar(50)
+
+  name String @db.VarChar(100)
+
+  description String?
+
+  workshops WorkshopSpecialty[]
+
+  @@map("specialties")
+}
+
+model WorkshopSpecialty {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  specialtyId String @map("specialty_id") @db.Uuid
+
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+
+  specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@unique([workshopId, specialtyId])
+  @@map("workshop_specialties")
+}
+
+model Plan {
+  id String @id @default(uuid()) @db.Uuid
+
+  code String @unique @db.VarChar(50)
+
+  name String @db.VarChar(100)
+
+  description String?
+
+  maxMembers Int
+
+  maxBranches Int
+
+  maxVehicles Int?
+
+  monthlyPrice Decimal @db.Decimal(10, 2)
+
+  yearlyPrice Decimal @db.Decimal(10, 2)
+
+  isActive Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  planPermissions PlanPermission[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id String @id @default(uuid()) @db.Uuid
+
+  workshopId String @map("workshop_id") @db.Uuid
+
+  planId String @map("plan_id") @db.Uuid
+
+  startsAt DateTime @map("starts_at") @db.Date
+
+  endsAt DateTime? @map("ends_at") @db.Date
+
+  status SubscriptionStatus
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workshop Workshop @relation(fields: [workshopId], references: [id])
+
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([workshopId])
+  @@map("subscriptions")
+}
+
+model PlanPermission {
+  id           String @id @default(uuid()) @db.Uuid
+  planId       String @map("plan_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  plan       Plan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, permissionId])
+  @@index([permissionId])
+  @@map("plan_permissions")
+}
+
+model VehicleBrand {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @unique @db.VarChar(100)
+
+  slug String @unique @db.VarChar(100)
+
+  logoUrl String? @map("logo_url")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  models VehicleModel[]
+
+  @@map("vehicle_brands")
+}
+
+model VehicleModel {
+  id String @id @default(uuid()) @db.Uuid
+
+  brandId String @map("brand_id") @db.Uuid
+
+  name String @db.VarChar(100)
+
+  slug String @db.VarChar(100)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  brand VehicleBrand @relation(fields: [brandId], references: [id])
+
+  versions VehicleVersion[]
+
+  @@unique([brandId, slug])
+  @@map("vehicle_models")
+}
+
+model VehicleVersion {
+  id String @id @default(uuid()) @db.Uuid
+
+  modelId String @map("model_id") @db.Uuid
+
+  name String @db.VarChar(100)
+
+  productionFrom Int? @map("production_from")
+
+  productionTo Int? @map("production_to")
+
+  engineCode String? @map("engine_code")
+
+  engineDisplacement Int? @map("engine_displacement")
+
+  horsepower Int?
+
+  fuelType FuelType
+
+  transmission TransmissionType
+
+  bodyType BodyType
+
+  doors Int?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  model VehicleModel @relation(fields: [modelId], references: [id])
+
+  vehicles Vehicle[]
+
+  @@map("vehicle_versions")
+}
+
+model VehiclePhoto {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  url String
+
+  caption String?
+
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@map("vehicle_photos")
+}
+
+model VehicleDocument {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  name String @db.VarChar(200)
+
+  documentType String @map("document_type") @db.VarChar(50)
+
+  url String
+
+  expiresAt DateTime? @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@map("vehicle_documents")
+}
+
+model Vehicle {
+  id String @id @default(uuid()) @db.Uuid
+
+  versionId String? @map("version_id") @db.Uuid
+
+  licensePlate String @unique @map("license_plate") @db.VarChar(20)
+
+  vin String? @unique @db.VarChar(100)
+
+  engineNumber String? @unique @map("engine_number")
+
+  manufactureYear Int? @map("manufacture_year")
+
+  modelYear Int? @map("model_year")
+
+  color String? @db.VarChar(50)
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deletedAt DateTime? @map("deleted_at")
+
+  version VehicleVersion? @relation(fields: [versionId], references: [id])
+
+  ownerships VehicleOwnership[]
+
+  transfers VehicleTransfer[]
+
+  accesses VehicleAccess[]
+
+  shares VehicleShare[]
+
+  photos VehiclePhoto[]
+
+  documents VehicleDocument[]
+
+  mileages VehicleMileage[]
+
+  @@index([licensePlate])
+  @@map("vehicles")
+}
+
+model VehicleMileage {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  recordedByUserId String? @map("recorded_by_user_id") @db.Uuid
+
+  recordedByMemberId String? @map("recorded_by_member_id") @db.Uuid
+
+  mileage Int
+
+  source MileageSource
+
+  notes String?
+
+  recordedAt DateTime @map("recorded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  recordedByUser User? @relation(fields: [recordedByUserId], references: [id])
+
+  recordedByMember WorkshopMember? @relation(fields: [recordedByMemberId], references: [id])
+
+  @@index([vehicleId, recordedAt])
+  @@index([vehicleId, mileage])
+  @@map("vehicle_mileages")
+}
+
+enum OwnershipType {
+  owner
+  co_owner
+  company
+}
+
+model VehicleOwnership {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  type OwnershipType @default(owner)
+
+  startsAt DateTime @map("starts_at")
+
+  endsAt DateTime? @map("ends_at")
+
+  acquiredByTransferId String? @map("acquired_by_transfer_id") @db.Uuid
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id])
+
+  acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id])
+
+  @@index([vehicleId])
+  @@index([userId])
+  @@index([startsAt])
+  @@map("vehicle_ownerships")
+}
+
+enum TransferStatus {
+  pending
+  accepted
+  rejected
+  cancelled
+  completed
+  expired
+}
+
+model VehicleTransfer {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  fromUserId String @map("from_user_id") @db.Uuid
+
+  toUserId String @map("to_user_id") @db.Uuid
+
+  status TransferStatus @default(pending)
+
+  requestedAt DateTime @map("requested_at")
+
+  respondedAt DateTime? @map("responded_at")
+
+  completedAt DateTime? @map("completed_at")
+
+  expiresAt DateTime?
+
+  notes String?
+
+  events VehicleTransferEvent[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id])
+
+  toUser User @relation("TransferToUser", fields: [toUserId], references: [id])
+
+  ownerships VehicleOwnership[] @relation("TransferCreatesOwnership")
+
+  @@index([vehicleId])
+  @@index([status])
+  @@map("vehicle_transfers")
+}
+
+model VehicleAccess {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  grantedByUserId String @map("granted_by_user_id") @db.Uuid
+
+  expiresAt DateTime?
+
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  user User @relation("VehicleAccessUser", fields: [userId], references: [id])
+
+  grantedBy User @relation("VehicleAccessGrantedBy", fields: [grantedByUserId], references: [id])
+
+  permissions VehicleAccessPermission[]
+
+  @@unique([vehicleId, userId])
+  @@map("vehicle_accesses")
+}
+
+model VehicleAccessPermission {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleAccessId String @map("vehicle_access_id") @db.Uuid
+
+  permissionId String @map("permission_id") @db.Uuid
+
+  vehicleAccess VehicleAccess @relation(fields: [vehicleAccessId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleAccessId, permissionId])
+  @@map("vehicle_access_permissions")
+}
+
+model VehicleShare {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  token String @unique
+
+  permission VehicleSharePermission[]
+
+  expiresAt DateTime
+
+  maxViews Int?
+
+  currentViews Int @default(0)
+
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  createdBy User @relation(fields: [createdByUserId], references: [id])
+
+  @@index([token])
+  @@map("vehicle_shares")
+}
+
+model VehicleTransferEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  transferId String @map("transfer_id") @db.Uuid
+
+  type VehicleTransferEventType
+
+  performedByUserId String? @map("performed_by_user_id") @db.Uuid
+
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  transfer VehicleTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  performedBy User? @relation(fields: [performedByUserId], references: [id])
+
+  @@index([transferId])
+  @@index([type])
+  @@map("vehicle_transfer_events")
+}
+
+model VehicleSharePermission {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleShareId String @map("vehicle_share_id") @db.Uuid
+
+  permissionId String @map("permission_id") @db.Uuid
+
+  vehicleShare VehicleShare @relation(fields: [vehicleShareId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleShareId, permissionId])
+  @@map("vehicle_share_permissions")
+}
