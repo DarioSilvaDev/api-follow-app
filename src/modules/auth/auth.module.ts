@@ -15,6 +15,7 @@ import { ResetPasswordHandler } from './commands/reset-password/reset-password.h
 import { GetSessionHandler } from './queries/get-session/get-session.handler';
 import { SendPasswordResetEmailListener } from './listeners/send-password-reset-email.listener';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   ],
   controllers: [AuthController],
   providers: [
+    createModuleLoggerProvider('Auth'),
     RegisterHandler,
     LoginHandler,
     RefreshTokenHandler,
@@ -38,5 +40,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtStrategy,
     { provide: AUTH_REPOSITORY, useClass: PrismaAuthRepository },
   ],
+  exports: [createModuleLoggerProvider('Auth')],
 })
 export class AuthModule {}

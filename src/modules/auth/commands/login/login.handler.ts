@@ -10,10 +10,14 @@ import { UserResponseDto } from '../../../users/dto/user-response.dto';
 import { AuthResponseDto } from '../../dto/auth-response.dto';
 import { UserLoggedInEvent } from '../../events/user-logged-in.event';
 import { LoginCommand } from './login.command';
+import { PinoLogger } from 'nestjs-pino';
+import { createModuleLoggerToken } from '../../../../common/logger/create-module-logger';
 
 @Injectable()
 export class LoginHandler {
   constructor(
+    @Inject(createModuleLoggerToken('Auth'))
+    private readonly logger: PinoLogger,
     private readonly prisma: PrismaService,
     @Inject(AUTH_REPOSITORY)
     private readonly authRepository: AuthRepository,
@@ -23,7 +27,7 @@ export class LoginHandler {
 
   async execute(command: LoginCommand) {
     const { email, password } = command.dto;
-
+    this.logger.info({ email, message: 'Realizando login' });
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { credential: true },
