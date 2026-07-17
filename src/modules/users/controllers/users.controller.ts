@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
@@ -20,8 +21,10 @@ import { DeleteUserHandler } from '../commands/delete-user/delete-user.handler';
 import { GetUserHandler } from '../queries/get-user/get-user.handler';
 import { ListUsersHandler } from '../queries/list-users/list-users.handler';
 import { SearchUsersHandler } from '../queries/search-users/search-users.handler';
+import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 
 @Controller('users')
+@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(
     private readonly createUserHandler: CreateUserHandler,

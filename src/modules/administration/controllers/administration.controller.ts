@@ -1,11 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { Permissions } from '../../../common/decorators/permissions.decorator';

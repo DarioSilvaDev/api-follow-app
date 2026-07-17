@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { VerifyEmailDto } from '../dto/verify-email.dto';
+import { ResendVerificationDto } from '../dto/resend-verification.dto';
+import { ChangePasswordDto } from '../dto/change-password.dto';
 import { RequestPasswordResetDto } from '../dto/request-password-reset.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { RegisterCommand } from '../commands/register/register.command';
@@ -12,6 +23,9 @@ import { RefreshTokenCommand } from '../commands/refresh-token/refresh-token.com
 import { RefreshTokenHandler } from '../commands/refresh-token/refresh-token.handler';
 import { LogoutCommand } from '../commands/logout/logout.command';
 import { LogoutHandler } from '../commands/logout/logout.handler';
+import { VerifyEmailHandler } from '../commands/verify-email/verify-email.handler';
+import { ResendVerificationHandler } from '../commands/resend-verification/resend-verification.handler';
+import { ChangePasswordHandler } from '../commands/change-password/change-password.handler';
 import { RequestPasswordResetCommand } from '../commands/request-password-reset/request-password-reset.command';
 import { RequestPasswordResetHandler } from '../commands/request-password-reset/request-password-reset.handler';
 import { ResetPasswordCommand } from '../commands/reset-password/reset-password.command';
@@ -26,6 +40,9 @@ export class AuthController {
     private readonly loginHandler: LoginHandler,
     private readonly refreshTokenHandler: RefreshTokenHandler,
     private readonly logoutHandler: LogoutHandler,
+    private readonly verifyEmailHandler: VerifyEmailHandler,
+    private readonly resendVerificationHandler: ResendVerificationHandler,
+    private readonly changePasswordHandler: ChangePasswordHandler,
     private readonly requestPasswordResetHandler: RequestPasswordResetHandler,
     private readonly resetPasswordHandler: ResetPasswordHandler,
     private readonly getSessionHandler: GetSessionHandler,
@@ -51,6 +68,25 @@ export class AuthController {
   @Post('logout')
   async logout(@Body() dto: RefreshTokenDto) {
     await this.logoutHandler.execute(new LogoutCommand(dto.refreshToken));
+  }
+
+  @Get('verify-email')
+  async verifyEmail(@Query() dto: VerifyEmailDto): Promise<string> {
+    return this.verifyEmailHandler.execute(dto);
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Body() dto: ResendVerificationDto): Promise<void> {
+    await this.resendVerificationHandler.execute(dto);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Req() req: any,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.changePasswordHandler.execute(req.user.id, dto);
   }
 
   @Post('forgot-password')

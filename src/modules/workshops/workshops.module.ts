@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { WorkshopsController } from './controllers/workshops.controller';
 import { PrismaWorkshopRepository } from './repositories/prisma-workshop.repository';
 import { WORKSHOP_REPOSITORY } from './tokens';
+import { AuthorizationModule } from '../../common/authorization.module';
 import { CreateWorkshopHandler } from './commands/create-workshop/create-workshop.handler';
 import { UpdateWorkshopHandler } from './commands/update-workshop/update-workshop.handler';
 import { CreateBranchHandler } from './commands/create-branch/create-branch.handler';
@@ -16,6 +17,7 @@ import { GetMembersHandler } from './queries/get-members/get-members.handler';
 import { GetInvitationsHandler } from './queries/get-invitations/get-invitations.handler';
 
 @Module({
+  imports: [AuthorizationModule],
   controllers: [WorkshopsController],
   providers: [
     CreateWorkshopHandler,

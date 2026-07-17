@@ -9,11 +9,11 @@ interface CacheEntry {
 @Injectable()
 export class PermissionCache {
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly defaultTtlMs: number;
+  private readonly defaultTtlMs = 5 * 60 * 1000; // 5 minutes
 
-  constructor(ttlMs = 5 * 60 * 1000) {
-    this.defaultTtlMs = ttlMs;
-  }
+  // constructor(ttlMs = 5 * 60 * 1000) {
+  //   this.defaultTtlMs = ttlMs;
+  // }
 
   get(key: string): ResolvedPermissions | undefined {
     const entry = this.cache.get(key);

@@ -4,6 +4,7 @@
   "description": "",
   "author": "",
   "private": true,
+  "module": "commonjs",
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
@@ -17,7 +18,13 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset",
+    "db:seed": "prisma db seed",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -27,24 +34,30 @@
     "@nestjs/mapped-types": "*",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/throttler": "^6.5.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^6.16.3",
+    "@types/nodemailer": "^8.0.1",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
     "helmet": "^8.2.0",
+    "joi": "^18.2.3",
     "nestjs-pino": "^4.6.1",
+    "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.22.0",
     "pino-http": "^11.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "uuid": "^14.0.1"
+    "uuid": "^14.0.1",
+    "zod": "^4.4.3"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node -P tsconfig.prisma.json prisma/seed.ts"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

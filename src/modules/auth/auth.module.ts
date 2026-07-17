@@ -12,8 +12,12 @@ import { RefreshTokenHandler } from './commands/refresh-token/refresh-token.hand
 import { LogoutHandler } from './commands/logout/logout.handler';
 import { RequestPasswordResetHandler } from './commands/request-password-reset/request-password-reset.handler';
 import { ResetPasswordHandler } from './commands/reset-password/reset-password.handler';
+import { VerifyEmailHandler } from './commands/verify-email/verify-email.handler';
+import { ResendVerificationHandler } from './commands/resend-verification/resend-verification.handler';
+import { ChangePasswordHandler } from './commands/change-password/change-password.handler';
 import { GetSessionHandler } from './queries/get-session/get-session.handler';
 import { SendPasswordResetEmailListener } from './listeners/send-password-reset-email.listener';
+import { SendVerificationEmailListener } from './listeners/send-verification-email.listener';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 
@@ -35,8 +39,12 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     LogoutHandler,
     RequestPasswordResetHandler,
     ResetPasswordHandler,
+    VerifyEmailHandler,
+    ResendVerificationHandler,
+    ChangePasswordHandler,
     GetSessionHandler,
     SendPasswordResetEmailListener,
+    SendVerificationEmailListener,
     JwtStrategy,
     { provide: AUTH_REPOSITORY, useClass: PrismaAuthRepository },
   ],
