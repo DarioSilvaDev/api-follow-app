@@ -22,5 +22,6 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "exclude": ["prisma/", "dist/", "node_modules/", "test/"]
 }

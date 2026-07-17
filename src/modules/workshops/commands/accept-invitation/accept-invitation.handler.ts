@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { PermissionCache } from '../../../../common/cache/permission-cache';
 import { MemberJoinedEvent } from '../../events/member-joined.event';
 import { AcceptInvitationCommand } from './accept-invitation.command';
 
@@ -9,6 +10,7 @@ export class AcceptInvitationHandler {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly permissionCache: PermissionCache,
   ) {}
 
   async execute(command: AcceptInvitationCommand) {
@@ -43,6 +45,8 @@ export class AcceptInvitationHandler {
       'workshop.member.joined',
       new MemberJoinedEvent(invitation.workshopId, command.userId),
     );
+
+    this.permissionCache.invalidateUser(command.userId);
 
     return member;
   }

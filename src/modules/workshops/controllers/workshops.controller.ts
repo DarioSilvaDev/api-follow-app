@@ -11,6 +11,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
+import { WorkshopGuard } from '../../../common/guards/workshop.guard';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { CreateWorkshopDto } from '../dto/create-workshop.dto';
 import { UpdateWorkshopDto } from '../dto/update-workshop.dto';
 import { CreateBranchDto } from '../dto/create-branch.dto';
@@ -82,12 +85,15 @@ export class WorkshopsController {
   }
 
   @Get(':id')
+  @UseGuards(WorkshopGuard)
   async findOne(@Param('id') id: string) {
     const workshop = await this.getWorkshopHandler.execute(id);
     return WorkshopResponseDto.from(workshop);
   }
 
   @Patch(':id')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('workshop.update')
   async update(@Param('id') id: string, @Body() dto: UpdateWorkshopDto) {
     return this.updateWorkshopHandler.execute(
       new UpdateWorkshopCommand(id, dto),
@@ -95,6 +101,8 @@ export class WorkshopsController {
   }
 
   @Post(':id/branches')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('workshop.branch.create')
   async createBranch(
     @Param('id') workshopId: string,
     @Body() dto: CreateBranchDto,
@@ -105,6 +113,8 @@ export class WorkshopsController {
   }
 
   @Post(':id/invitations')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('member.invite')
   async invite(
     @Param('id') workshopId: string,
     @Body() dto: InviteMemberDto,
@@ -117,18 +127,23 @@ export class WorkshopsController {
   }
 
   @Get(':id/members')
+  @UseGuards(WorkshopGuard)
   async getMembers(@Param('id') workshopId: string) {
     const members = await this.getMembersHandler.execute(workshopId);
     return members.map(MemberResponseDto.from);
   }
 
   @Get(':id/invitations')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('member.invite')
   async getInvitations(@Param('id') workshopId: string) {
     const invitations = await this.getInvitationsHandler.execute(workshopId);
     return invitations.map(InvitationResponseDto.from);
   }
 
   @Patch(':id/members/:memberId/role')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('member.role.update')
   async updateMemberRole(
     @Param('memberId') memberId: string,
     @Body() dto: UpdateMemberRoleDto,
@@ -139,11 +154,15 @@ export class WorkshopsController {
   }
 
   @Delete(':id/members/:memberId')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('member.remove')
   async removeMember(@Param('memberId') memberId: string) {
     await this.removeMemberHandler.execute(new RemoveMemberCommand(memberId));
   }
 
   @Post(':id/branches/:branchId/hours')
+  @UseGuards(WorkshopGuard, PermissionsGuard)
+  @Permissions('workshop.hours.set')
   async setBusinessHours(
     @Param('branchId') branchId: string,
     @Body() dto: SetBusinessHoursDto,

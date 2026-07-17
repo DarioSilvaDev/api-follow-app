@@ -2,7 +2,6 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuid } from 'uuid';
 import { USER_REPOSITORY } from '../../../users/tokens';
 import type { UserRepository } from '../../../users/repositories/user.repository';
 import { AUTH_REPOSITORY } from '../../tokens';
@@ -36,18 +35,18 @@ export class RegisterHandler {
 
     const user = await this.userRepository.create({ ...rest, passwordHash });
 
-    const payload = { sub: user.id, email: user.email };
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = uuid();
+    // const payload = { sub: user.id, email: user.email };
+    // const accessToken = this.jwtService.sign(payload);
+    // const refreshToken = uuid();
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    // const expiresAt = new Date();
+    // expiresAt.setDate(expiresAt.getDate() + 7);
 
-    await this.authRepository.createSession({
-      userId: user.id,
-      refreshToken,
-      expiresAt,
-    });
+    // await this.authRepository.createSession({
+    //   userId: user.id,
+    //   refreshToken,
+    //   expiresAt,
+    // });
 
     this.eventEmitter.emit(
       'auth.user.registered',
@@ -56,8 +55,8 @@ export class RegisterHandler {
 
     return AuthResponseDto.from(
       UserResponseDto.from(user),
-      accessToken,
-      refreshToken,
+      // accessToken,
+      // refreshToken,
     );
   }
 }

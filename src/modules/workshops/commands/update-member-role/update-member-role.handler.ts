@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { PermissionCache } from '../../../../common/cache/permission-cache';
 import { UpdateMemberRoleCommand } from './update-member-role.command';
 
 @Injectable()
 export class UpdateMemberRoleHandler {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionCache: PermissionCache,
+  ) {}
 
   async execute(command: UpdateMemberRoleCommand) {
     const member = await this.prisma.workshopMember.findUnique({
@@ -13,9 +17,13 @@ export class UpdateMemberRoleHandler {
     if (!member)
       throw new NotFoundException('WorkshopMember', command.memberId);
 
-    return this.prisma.workshopMember.update({
+    const updated = await this.prisma.workshopMember.update({
       where: { id: command.memberId },
       data: { roleId: command.roleId },
     });
+
+    this.permissionCache.invalidateUser(member.userId);
+
+    return updated;
   }
 }
