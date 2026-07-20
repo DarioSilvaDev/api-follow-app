@@ -6,20 +6,23 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
-import { CreateAppointmentDto } from '../dto/create-appointment.dto';
-import { UpdateAppointmentDto } from '../dto/update-appointment.dto';
-import { CreateWorkOrderDto } from '../dto/create-work-order.dto';
-import { AddWorkOrderItemDto } from '../dto/add-work-order-item.dto';
-import { CreateServiceRecordDto } from '../dto/create-service-record.dto';
-import { CreateEstimateDto } from '../dto/create-estimate.dto';
-import { AppointmentResponseDto } from '../dto/appointment-response.dto';
-import { WorkOrderResponseDto } from '../dto/work-order-response.dto';
-import { ServiceRecordResponseDto } from '../dto/service-record-response.dto';
-import { EstimateResponseDto } from '../dto/estimate-response.dto';
+import {
+  CreateAppointmentDto,
+  UpdateAppointmentDto,
+  CreateWorkOrderDto,
+  AddWorkOrderItemDto,
+  CreateServiceRecordDto,
+  CreateEstimateDto,
+  AppointmentResponseDto,
+  WorkOrderResponseDto,
+  ServiceRecordResponseDto,
+  EstimateResponseDto,
+} from '../dto/index';
 import { CreateAppointmentCommand } from '../commands/create-appointment/create-appointment.command';
 import { CreateAppointmentHandler } from '../commands/create-appointment/create-appointment.handler';
 import { UpdateAppointmentCommand } from '../commands/update-appointment/update-appointment.command';
@@ -41,7 +44,6 @@ import { ListAppointmentsHandler } from '../queries/list-appointments/list-appoi
 import { GetWorkOrderHandler } from '../queries/get-work-order/get-work-order.handler';
 import { ListWorkOrdersHandler } from '../queries/list-work-orders/list-work-orders.handler';
 import { GetVehicleServiceHistoryHandler } from '../queries/get-vehicle-service-history/get-vehicle-service-history.handler';
-import { v4 as uuid } from 'uuid';
 
 @Controller('maintenance')
 @UseGuards(JwtAuthGuard)
@@ -63,9 +65,9 @@ export class MaintenanceController {
   ) {}
 
   @Post('appointments')
-  async createAppointment(@Body() dto: CreateAppointmentDto, @Req() req: any) {
+  async createAppointment(@Body() dto: CreateAppointmentDto, @CurrentUser() user: AuthenticatedUser) {
     const appointment = await this.createAppointmentHandler.execute(
-      new CreateAppointmentCommand(dto, req.user.id),
+      new CreateAppointmentCommand(dto, user.id),
     );
     return AppointmentResponseDto.from(appointment);
   }
@@ -114,10 +116,10 @@ export class MaintenanceController {
   }
 
   @Post('work-orders')
-  async createWorkOrder(@Body() dto: CreateWorkOrderDto, @Req() req: any) {
+  async createWorkOrder(@Body() dto: CreateWorkOrderDto, @CurrentUser() user: AuthenticatedUser) {
     const number = `WO-${Date.now()}`;
     const workOrder = await this.createWorkOrderHandler.execute(
-      new CreateWorkOrderCommand(dto, req.user.id, number),
+      new CreateWorkOrderCommand(dto, user.id, number),
     );
     return WorkOrderResponseDto.from(workOrder);
   }
@@ -179,10 +181,10 @@ export class MaintenanceController {
   }
 
   @Post('estimates')
-  async createEstimate(@Body() dto: CreateEstimateDto, @Req() req: any) {
+  async createEstimate(@Body() dto: CreateEstimateDto, @CurrentUser() user: AuthenticatedUser) {
     const number = `EST-${Date.now()}`;
     const estimate = await this.createEstimateHandler.execute(
-      new CreateEstimateCommand(dto, req.user.id, number),
+      new CreateEstimateCommand(dto, user.id, number),
     );
     return EstimateResponseDto.from(estimate);
   }

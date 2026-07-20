@@ -46,7 +46,7 @@ export class AdministrationController {
   @Permissions('admin.users.list')
   async listUsers() {
     const users = await this.listUsersHandler.execute();
-    return users.map(UserAdminResponseDto.from);
+    return users.map((u) => UserAdminResponseDto.from(u));
   }
 
   @Get('roles')
@@ -54,6 +54,6 @@ export class AdministrationController {
   @Permissions('admin.roles.list')
   async listRoles() {
     const roles = await this.listSystemRolesHandler.execute();
-    return roles.map(SystemRoleResponseDto.from);
+    return roles.map((r) => SystemRoleResponseDto.from(r));
   }
 }

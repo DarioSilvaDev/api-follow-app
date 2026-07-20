@@ -7,9 +7,10 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 import { RegisterVehicleDto } from '../dto/register-vehicle.dto';
 import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
@@ -49,21 +50,24 @@ export class VehiclesController {
   ) {}
 
   @Post()
-  async create(@Body() dto: RegisterVehicleDto, @Req() req: any) {
+  async create(
+    @Body() dto: RegisterVehicleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const vehicle = await this.registerVehicleHandler.execute(
-      new RegisterVehicleCommand(dto, req.user.id),
+      new RegisterVehicleCommand(dto, user.id),
     );
     return VehicleResponseDto.from(vehicle);
   }
 
   @Get()
   async findAll(
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
     return this.listVehiclesHandler.execute({
-      userId: req.user.id,
+      userId: user.id,
       page,
       limit,
     });
@@ -89,10 +93,10 @@ export class VehiclesController {
   async transfer(
     @Param('id') id: string,
     @Body() dto: TransferVehicleDto,
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.transferVehicleHandler.execute(
-      new TransferVehicleCommand(id, dto, req.user.id),
+      new TransferVehicleCommand(id, dto, user.id),
     );
   }
 
@@ -100,10 +104,10 @@ export class VehiclesController {
   async recordMileage(
     @Param('id') id: string,
     @Body() dto: RecordMileageDto,
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.recordMileageHandler.execute(
-      new RecordMileageCommand(id, dto, req.user.id),
+      new RecordMileageCommand(id, dto, user.id),
     );
   }
 
@@ -111,10 +115,10 @@ export class VehiclesController {
   async grantAccess(
     @Param('id') id: string,
     @Body() dto: GrantAccessDto,
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.grantAccessHandler.execute(
-      new GrantAccessCommand(id, dto, req.user.id),
+      new GrantAccessCommand(id, dto, user.id),
     );
   }
 

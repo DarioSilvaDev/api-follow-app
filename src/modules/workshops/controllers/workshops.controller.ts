@@ -7,9 +7,10 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 import { WorkshopGuard } from '../../../common/guards/workshop.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -64,21 +65,21 @@ export class WorkshopsController {
   ) {}
 
   @Post()
-  async create(@Body() dto: CreateWorkshopDto, @Req() req: any) {
+  async create(@Body() dto: CreateWorkshopDto, @CurrentUser() user: AuthenticatedUser) {
     const workshop = await this.createWorkshopHandler.execute(
-      new CreateWorkshopCommand(dto, req.user.id),
+      new CreateWorkshopCommand(dto, user.id),
     );
     return WorkshopResponseDto.from(workshop);
   }
 
   @Get()
   async findAll(
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
     return this.listWorkshopsHandler.execute({
-      userId: req.user.id,
+      userId: user.id,
       page,
       limit,
     });
@@ -118,10 +119,10 @@ export class WorkshopsController {
   async invite(
     @Param('id') workshopId: string,
     @Body() dto: InviteMemberDto,
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     const invitation = await this.inviteMemberHandler.execute(
-      new InviteMemberCommand(workshopId, dto, req.user.id),
+      new InviteMemberCommand(workshopId, dto, user.id),
     );
     return InvitationResponseDto.from(invitation);
   }
@@ -173,9 +174,9 @@ export class WorkshopsController {
   }
 
   @Post('invitations/accept')
-  async acceptInvitation(@Body() dto: AcceptInvitationDto, @Req() req: any) {
+  async acceptInvitation(@Body() dto: AcceptInvitationDto, @CurrentUser() user: AuthenticatedUser) {
     const member = await this.acceptInvitationHandler.execute(
-      new AcceptInvitationCommand(dto.token, req.user.id),
+      new AcceptInvitationCommand(dto.token, user.id),
     );
     return MemberResponseDto.from(member);
   }

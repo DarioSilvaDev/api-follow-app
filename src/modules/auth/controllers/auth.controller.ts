@@ -4,9 +4,10 @@ import {
   Get,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
@@ -83,10 +84,10 @@ export class AuthController {
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   async changePassword(
-    @Req() req: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
   ): Promise<void> {
-    await this.changePasswordHandler.execute(req.user.id, dto);
+    await this.changePasswordHandler.execute(user.id, dto);
   }
 
   @Post('forgot-password')
@@ -105,7 +106,7 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  async me(@Req() req: any) {
-    return this.getSessionHandler.execute(req.user.id);
+  async me(@CurrentUser() user: AuthenticatedUser) {
+    return this.getSessionHandler.execute(user.id);
   }
 }

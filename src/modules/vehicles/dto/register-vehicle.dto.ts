@@ -1,13 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsInt,
-  Min,
-  Max,
-  IsEnum,
-  IsUUID,
-} from 'class-validator';
-import { FuelType, TransmissionType, BodyType } from '@prisma/client';
+import { IsString, IsOptional, IsInt, Min, Max, IsUUID } from 'class-validator';
 
 export class RegisterVehicleDto {
   @IsString()
