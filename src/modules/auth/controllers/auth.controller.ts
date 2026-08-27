@@ -4,13 +4,15 @@ import {
   Get,
   Post,
   Query,
+  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response, Request } from 'express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
-import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { VerifyEmailDto } from '../dto/verify-email.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ChangePasswordDto } from '../dto/change-password.dto';
@@ -32,7 +34,14 @@ import { RequestPasswordResetHandler } from '../commands/request-password-reset/
 import { ResetPasswordCommand } from '../commands/reset-password/reset-password.command';
 import { ResetPasswordHandler } from '../commands/reset-password/reset-password.handler';
 import { GetSessionHandler } from '../queries/get-session/get-session.handler';
+import { StopImpersonateHandler } from '../commands/stop-impersonate/stop-impersonate.handler';
 import { JwtAuthGuard } from '../strategies/jwt-auth.guard';
+import {
+  accessTokenCookieOptions,
+  refreshTokenCookieOptions,
+  clearAccessTokenCookieOptions,
+  clearRefreshTokenCookieOptions,
+} from '../../../config/cookies.config';
 
 @Controller('auth')
 export class AuthController {
@@ -47,6 +56,7 @@ export class AuthController {
     private readonly requestPasswordResetHandler: RequestPasswordResetHandler,
     private readonly resetPasswordHandler: ResetPasswordHandler,
     private readonly getSessionHandler: GetSessionHandler,
+    private readonly stopImpersonateHandler: StopImpersonateHandler,
   ) {}
 
   @Post('register')
@@ -55,20 +65,59 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() dto: LoginDto) {
-    return this.loginHandler.execute(new LoginCommand(dto));
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: Request,
+  ) {
+    const result = await this.loginHandler.execute(
+      new LoginCommand(dto),
+      req.ip,
+      req.headers['user-agent'],
+    );
+
+    res.cookie('access_token', result.accessToken, accessTokenCookieOptions);
+    res.cookie('refresh_token', result.refreshToken, refreshTokenCookieOptions);
+
+    return result.response;
   }
 
   @Post('refresh')
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.refreshTokenHandler.execute(
-      new RefreshTokenCommand(dto.refreshToken),
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = req.cookies?.refresh_token as string;
+    if (!token) {
+      throw new (await import('@nestjs/common')).UnauthorizedException(
+        'Refresh token not found',
+      );
+    }
+
+    const result = await this.refreshTokenHandler.execute(
+      new RefreshTokenCommand(token),
+      req.ip,
+      req.headers['user-agent'],
     );
+
+    res.cookie('access_token', result.accessToken, accessTokenCookieOptions);
+    res.cookie('refresh_token', result.refreshToken, refreshTokenCookieOptions);
+
+    return { success: true };
   }
 
   @Post('logout')
-  async logout(@Body() dto: RefreshTokenDto) {
-    await this.logoutHandler.execute(new LogoutCommand(dto.refreshToken));
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = req.cookies?.refresh_token as string;
+
+    if (token) {
+      await this.logoutHandler.execute(new LogoutCommand(token));
+    }
+
+    res.cookie('access_token', '', clearAccessTokenCookieOptions);
+    res.cookie('refresh_token', '', clearRefreshTokenCookieOptions);
+
+    return { message: 'Session closed successfully' };
   }
 
   @Get('verify-email')
@@ -107,6 +156,31 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() user: AuthenticatedUser) {
-    return this.getSessionHandler.execute(user.id);
+    return this.getSessionHandler.execute(user.id, {
+      impersonated: user.impersonated,
+      impersonatedBy: user.impersonatedBy,
+    });
+  }
+
+  @Post('stop-impersonate')
+  @UseGuards(JwtAuthGuard)
+  async stopImpersonate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!user.impersonated || !user.impersonatedBy) {
+      throw new (await import('@nestjs/common')).ForbiddenException(
+        'Current session is not an impersonation',
+      );
+    }
+
+    const result = await this.stopImpersonateHandler.execute(
+      user.impersonatedBy,
+      user.id,
+    );
+
+    res.cookie('access_token', result.adminToken, accessTokenCookieOptions);
+
+    return { success: true };
   }
 }

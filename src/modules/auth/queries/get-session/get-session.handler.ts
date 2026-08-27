@@ -1,11 +1,18 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { RoleService } from '../../services/role.service';
 
 @Injectable()
 export class GetSessionHandler {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly roleService: RoleService,
+  ) {}
 
-  async execute(userId: string) {
+  async execute(
+    userId: string,
+    impersonation?: { impersonated?: boolean; impersonatedBy?: string },
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -16,6 +23,14 @@ export class GetSessionHandler {
         avatarUrl: true,
         language: true,
         status: true,
+        workshopMemberships: {
+          where: { status: 'active', leftAt: null },
+          select: {
+            workshopId: true,
+            workshop: { select: { id: true, name: true } },
+            role: { select: { id: true, code: true, name: true } },
+          },
+        },
       },
     });
 
@@ -23,6 +38,17 @@ export class GetSessionHandler {
       throw new UnauthorizedException('User not found');
     }
 
-    return user;
+    const roles = await this.roleService.loadUserRoles(userId, true);
+
+    return {
+      ...user,
+      roles,
+      ...(impersonation?.impersonated
+        ? {
+            impersonated: true,
+            impersonatedBy: impersonation.impersonatedBy,
+          }
+        : {}),
+    };
   }
 }

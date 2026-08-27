@@ -14,6 +14,10 @@ export class UpdateWorkOrderStatusHandler {
   async execute(command: UpdateWorkOrderStatusCommand) {
     const existing = await this.repository.findWorkOrderById(command.id);
     if (!existing) throw new NotFoundException('WorkOrder', command.id);
-    return this.repository.updateWorkOrderStatus(command.id, command.status);
+    return this.repository.updateWorkOrderStatus(
+      command.id,
+      command.status,
+      command.mileageOut,
+    );
   }
 }

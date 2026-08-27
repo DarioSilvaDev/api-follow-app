@@ -3,9 +3,19 @@ import {
   VehiclePhoto,
   VehicleDocument,
   VehicleOwnership,
+  VehicleVersion,
+  VehicleModel,
+  VehicleBrand,
 } from '@prisma/client';
 
 type VehicleWithRelations = Vehicle & {
+  version?:
+    | (VehicleVersion & {
+        model: VehicleModel & {
+          brand: VehicleBrand;
+        };
+      })
+    | null;
   photos?: VehiclePhoto[];
   documents?: VehicleDocument[];
   ownerships?: VehicleOwnership[];
@@ -16,12 +26,16 @@ export class VehicleResponseDto {
   licensePlate!: string;
   vin!: string | null;
   engineNumber!: string | null;
+  versionId!: string | null;
+  brand!: string | null;
+  model!: string | null;
+  version!: string | null;
   manufactureYear!: number | null;
   modelYear!: number | null;
   color!: string | null;
   notes!: string | null;
-  createdAt!: Date | null;
-  updatedAt!: Date | null;
+  createdAt!: Date;
+  updatedAt!: Date;
   photos?: VehiclePhoto[];
   documents?: VehicleDocument[];
   ownerships?: VehicleOwnership[];
@@ -32,6 +46,10 @@ export class VehicleResponseDto {
       licensePlate: vehicle.licensePlate,
       vin: vehicle.vin,
       engineNumber: vehicle.engineNumber,
+      versionId: vehicle.versionId,
+      brand: vehicle.version?.model?.brand?.name ?? null,
+      model: vehicle.version?.model?.name ?? null,
+      version: vehicle.version?.name ?? null,
       manufactureYear: vehicle.manufactureYear,
       modelYear: vehicle.modelYear,
       color: vehicle.color,

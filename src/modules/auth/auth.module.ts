@@ -15,7 +15,9 @@ import { ResetPasswordHandler } from './commands/reset-password/reset-password.h
 import { VerifyEmailHandler } from './commands/verify-email/verify-email.handler';
 import { ResendVerificationHandler } from './commands/resend-verification/resend-verification.handler';
 import { ChangePasswordHandler } from './commands/change-password/change-password.handler';
+import { StopImpersonateHandler } from './commands/stop-impersonate/stop-impersonate.handler';
 import { GetSessionHandler } from './queries/get-session/get-session.handler';
+import { RoleService } from './services/role.service';
 import { SendPasswordResetEmailListener } from './listeners/send-password-reset-email.listener';
 import { SendVerificationEmailListener } from './listeners/send-verification-email.listener';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -42,7 +44,9 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     VerifyEmailHandler,
     ResendVerificationHandler,
     ChangePasswordHandler,
+    StopImpersonateHandler,
     GetSessionHandler,
+    RoleService,
     SendPasswordResetEmailListener,
     SendVerificationEmailListener,
     JwtStrategy,

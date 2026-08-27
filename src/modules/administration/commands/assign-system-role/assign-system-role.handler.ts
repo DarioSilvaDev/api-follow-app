@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import { PrismaService } from '../../../../common/database/prisma.service';
 import { PermissionCache } from '../../../../common/cache/permission-cache';
 import { SystemRoleAssignedEvent } from '../../events/system-role-assigned.event';
 import { AssignSystemRoleCommand } from './assign-system-role.command';
+import type { AuthenticatedUser } from '../../../../common/types/auth.types';
 
 @Injectable()
 export class AssignSystemRoleHandler {
@@ -17,17 +19,28 @@ export class AssignSystemRoleHandler {
     private readonly permissionCache: PermissionCache,
   ) {}
 
-  async execute(command: AssignSystemRoleCommand) {
+  async execute(
+    command: AssignSystemRoleCommand,
+    currentUser: AuthenticatedUser,
+  ) {
+    const role = await this.prisma.systemRole.findUnique({
+      where: { id: command.roleId },
+    });
+    if (!role) throw new NotFoundException('SystemRole', command.roleId);
+
+    if (role.type === 'super_admin') {
+      const isSuperAdmin = await this.isSuperAdmin(currentUser.id);
+      if (!isSuperAdmin) {
+        throw new ForbiddenException(
+          'Only super admins can assign the super_admin role',
+        );
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: command.userId },
     });
     if (!user) throw new NotFoundException('User', command.userId);
-
-    const role = await this.prisma.systemRole.findUnique({
-      where: { type: command.roleType },
-    });
-    if (!role)
-      throw new NotFoundException('SystemRole', command.roleType);
 
     const existing = await this.prisma.systemRoleAssignment.findUnique({
       where: {
@@ -35,9 +48,7 @@ export class AssignSystemRoleHandler {
       },
     });
     if (existing) {
-      throw new BadRequestException(
-        `User already has the ${command.roleType} role`,
-      );
+      throw new BadRequestException(`User already has the ${role.type} role`);
     }
 
     const assignment = await this.prisma.systemRoleAssignment.create({
@@ -49,11 +60,23 @@ export class AssignSystemRoleHandler {
 
     this.eventEmitter.emit(
       'admin.system_role.assigned',
-      new SystemRoleAssignedEvent(command.userId, command.roleType),
+      new SystemRoleAssignedEvent(command.userId, role.type),
     );
 
     this.permissionCache.invalidateUser(command.userId);
 
     return assignment;
+  }
+
+  private async isSuperAdmin(userId: string): Promise<boolean> {
+    const role = await this.prisma.systemRole.findUnique({
+      where: { type: 'super_admin' },
+    });
+    if (!role) return false;
+
+    const assignment = await this.prisma.systemRoleAssignment.findUnique({
+      where: { userId_roleId: { userId, roleId: role.id } },
+    });
+    return !!assignment;
   }
 }

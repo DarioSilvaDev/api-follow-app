@@ -4,6 +4,7 @@ export class UpdateWorkOrderStatusCommand extends BaseCommand {
   constructor(
     public readonly id: string,
     public readonly status: string,
+    public readonly mileageOut?: number,
   ) {
     super();
   }

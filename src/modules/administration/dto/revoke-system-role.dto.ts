@@ -1,10 +1,9 @@
-import { IsEnum, IsUUID } from 'class-validator';
-import { SystemRoleType } from '@prisma/client';
+import { IsUUID } from 'class-validator';
 
 export class RevokeSystemRoleDto {
   @IsUUID()
   userId!: string;
 
-  @IsEnum(SystemRoleType)
-  roleType!: SystemRoleType;
+  @IsUUID()
+  roleId!: string;
 }

@@ -14,6 +14,8 @@ export class GetWorkshopHandler {
           where: { isActive: true },
           orderBy: { isHeadquarters: 'desc' },
         },
+        appointments: { where: { status: 'scheduled' } },
+
         _count: { select: { members: true, branches: true } },
       },
     });

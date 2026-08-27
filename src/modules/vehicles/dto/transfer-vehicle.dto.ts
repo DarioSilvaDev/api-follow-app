@@ -1,8 +1,8 @@
-import { IsString, IsUUID, IsOptional } from 'class-validator';
+import { IsEmail, IsString, IsOptional } from 'class-validator';
 
 export class TransferVehicleDto {
-  @IsUUID()
-  toUserId!: string;
+  @IsEmail()
+  email!: string;
 
   @IsOptional()
   @IsString()

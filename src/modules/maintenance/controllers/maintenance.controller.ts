@@ -23,6 +23,8 @@ import {
   ServiceRecordResponseDto,
   EstimateResponseDto,
 } from '../dto/index';
+import { UpdateEstimateStatusDto } from '../dto/update-estimate-status.dto';
+import { UpdateWorkOrderStatusDto } from '../dto/update-work-order-status.dto';
 import { CreateAppointmentCommand } from '../commands/create-appointment/create-appointment.command';
 import { CreateAppointmentHandler } from '../commands/create-appointment/create-appointment.handler';
 import { UpdateAppointmentCommand } from '../commands/update-appointment/update-appointment.command';
@@ -44,6 +46,10 @@ import { ListAppointmentsHandler } from '../queries/list-appointments/list-appoi
 import { GetWorkOrderHandler } from '../queries/get-work-order/get-work-order.handler';
 import { ListWorkOrdersHandler } from '../queries/list-work-orders/list-work-orders.handler';
 import { GetVehicleServiceHistoryHandler } from '../queries/get-vehicle-service-history/get-vehicle-service-history.handler';
+import { UpdateEstimateStatusCommand } from '../commands/update-estimate-status/update-estimate-status.command';
+import { UpdateEstimateStatusHandler } from '../commands/update-estimate-status/update-estimate-status.handler';
+import { ConvertEstimateCommand } from '../commands/convert-estimate/convert-estimate.command';
+import { ConvertEstimateHandler } from '../commands/convert-estimate/convert-estimate.handler';
 
 @Controller('maintenance')
 @UseGuards(JwtAuthGuard)
@@ -62,10 +68,15 @@ export class MaintenanceController {
     private readonly getWorkOrderHandler: GetWorkOrderHandler,
     private readonly listWorkOrdersHandler: ListWorkOrdersHandler,
     private readonly getVehicleServiceHistoryHandler: GetVehicleServiceHistoryHandler,
+    private readonly updateEstimateStatusHandler: UpdateEstimateStatusHandler,
+    private readonly convertEstimateHandler: ConvertEstimateHandler,
   ) {}
 
   @Post('appointments')
-  async createAppointment(@Body() dto: CreateAppointmentDto, @CurrentUser() user: AuthenticatedUser) {
+  async createAppointment(
+    @Body() dto: CreateAppointmentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const appointment = await this.createAppointmentHandler.execute(
       new CreateAppointmentCommand(dto, user.id),
     );
@@ -116,7 +127,10 @@ export class MaintenanceController {
   }
 
   @Post('work-orders')
-  async createWorkOrder(@Body() dto: CreateWorkOrderDto, @CurrentUser() user: AuthenticatedUser) {
+  async createWorkOrder(
+    @Body() dto: CreateWorkOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const number = `WO-${Date.now()}`;
     const workOrder = await this.createWorkOrderHandler.execute(
       new CreateWorkOrderCommand(dto, user.id, number),
@@ -150,10 +164,10 @@ export class MaintenanceController {
   @Patch('work-orders/:id/status')
   async updateWorkOrderStatus(
     @Param('id') id: string,
-    @Body('status') status: string,
+    @Body() dto: UpdateWorkOrderStatusDto,
   ) {
     return this.updateWorkOrderStatusHandler.execute(
-      new UpdateWorkOrderStatusCommand(id, status),
+      new UpdateWorkOrderStatusCommand(id, dto.status, dto.mileageOut),
     );
   }
 
@@ -181,11 +195,34 @@ export class MaintenanceController {
   }
 
   @Post('estimates')
-  async createEstimate(@Body() dto: CreateEstimateDto, @CurrentUser() user: AuthenticatedUser) {
+  async createEstimate(
+    @Body() dto: CreateEstimateDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     const number = `EST-${Date.now()}`;
     const estimate = await this.createEstimateHandler.execute(
       new CreateEstimateCommand(dto, user.id, number),
     );
     return EstimateResponseDto.from(estimate);
+  }
+
+  @Patch('estimates/:id/status')
+  async updateEstimateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateEstimateStatusDto,
+  ) {
+    return this.updateEstimateStatusHandler.execute(
+      new UpdateEstimateStatusCommand(id, dto.status),
+    );
+  }
+
+  @Post('estimates/:id/convert')
+  async convertEstimate(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.convertEstimateHandler.execute(
+      new ConvertEstimateCommand(id, user.id),
+    );
   }
 }

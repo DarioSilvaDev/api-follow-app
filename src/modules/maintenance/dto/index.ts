@@ -8,4 +8,6 @@ export { EstimateResponseDto } from './estimate-response.dto';
 export { ServiceRecordResponseDto } from './service-record-response.dto';
 export { UpdateAppointmentDto } from './update-appointment.dto';
 export { UpdateWorkOrderDto } from './update-work-order.dto';
+export { UpdateWorkOrderStatusDto } from './update-work-order-status.dto';
+export { UpdateEstimateStatusDto } from './update-estimate-status.dto';
 export { WorkOrderResponseDto } from './work-order-response.dto';

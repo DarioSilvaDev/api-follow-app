@@ -2,7 +2,9 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuid } from 'uuid';
+import { randomBytes } from 'crypto';
+import { PinoLogger } from 'nestjs-pino';
+
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { envs } from '../../../../config/envs';
 import { AUTH_REPOSITORY } from '../../tokens';
@@ -10,9 +12,16 @@ import type { AuthRepository } from '../../repositories/auth.repository';
 import { UserResponseDto } from '../../../users/dto/user-response.dto';
 import { AuthResponseDto } from '../../dto/auth-response.dto';
 import { UserLoggedInEvent } from '../../events/user-logged-in.event';
+import { RoleService } from '../../services/role.service';
 import { LoginCommand } from './login.command';
-import { PinoLogger } from 'nestjs-pino';
 import { createModuleLoggerToken } from '../../../../common/logger/create-module-logger';
+
+interface LoginResult {
+  response: AuthResponseDto;
+  accessToken: string;
+  refreshToken: string;
+  userId: string;
+}
 
 @Injectable()
 export class LoginHandler {
@@ -24,9 +33,14 @@ export class LoginHandler {
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly roleService: RoleService,
   ) {}
 
-  async execute(command: LoginCommand) {
+  async execute(
+    command: LoginCommand,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<LoginResult> {
     const { email, password } = command.dto;
     this.logger.info({ email, message: 'Realizando login' });
 
@@ -36,6 +50,7 @@ export class LoginHandler {
     });
 
     if (!user || !user.credential) {
+      await bcrypt.compare('a', 'b');
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -88,9 +103,10 @@ export class LoginHandler {
       data: { lastLoginAt: new Date() },
     });
 
-    const payload = { sub: user.id, email: user.email };
+    const roles = await this.roleService.loadUserRoles(user.id, false);
+    const payload = { sub: user.id };
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = uuid();
+    const refreshToken = randomBytes(32).toString('base64url');
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -99,6 +115,8 @@ export class LoginHandler {
       userId: user.id,
       refreshToken,
       expiresAt,
+      ipAddress,
+      userAgent,
     });
 
     this.eventEmitter.emit(
@@ -106,10 +124,11 @@ export class LoginHandler {
       new UserLoggedInEvent(user.id),
     );
 
-    return AuthResponseDto.from(
-      UserResponseDto.from(user),
+    return {
+      response: AuthResponseDto.from({ ...UserResponseDto.from(user), roles }),
       accessToken,
       refreshToken,
-    );
+      userId: user.id,
+    };
   }
 }

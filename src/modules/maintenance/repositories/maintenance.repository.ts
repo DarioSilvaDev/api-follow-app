@@ -61,7 +61,11 @@ export interface MaintenanceRepository {
   cancelAppointment(id: string, reason?: string): Promise<Appointment>;
   findAppointmentById(id: string): Promise<Appointment | null>;
   createWorkOrder(data: CreateWorkOrderData): Promise<WorkOrder>;
-  updateWorkOrderStatus(id: string, status: string): Promise<WorkOrder>;
+  updateWorkOrderStatus(
+    id: string,
+    status: string,
+    mileageOut?: number,
+  ): Promise<WorkOrder>;
   addWorkOrderItem(
     workOrderId: string,
     data: AddWorkOrderItemDto,

@@ -11,6 +11,8 @@ export interface AuthRepository {
 
   findSessionByRefreshToken(refreshToken: string): Promise<UserSession | null>;
 
+  findRevokedSession(refreshToken: string): Promise<UserSession | null>;
+
   revokeSession(id: string): Promise<void>;
 
   revokeUserSessions(userId: string): Promise<void>;

@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { hashRefreshToken } from '../utils/token-hash.util';
 import { AuthRepository } from './auth.repository';
 
 @Injectable()
@@ -13,12 +14,36 @@ export class PrismaAuthRepository implements AuthRepository {
     ipAddress?: string;
     userAgent?: string;
   }) {
-    return this.prisma.userSession.create({ data });
+    return this.prisma.userSession.create({
+      data: {
+        ...data,
+        refreshToken: hashRefreshToken(data.refreshToken),
+      },
+    });
   }
 
   async findSessionByRefreshToken(refreshToken: string) {
+    const session = await this.prisma.userSession.findFirst({
+      where: {
+        refreshToken: hashRefreshToken(refreshToken),
+        revokedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+    });
+    if (!session) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+    return session;
+  }
+
+  async findRevokedSession(refreshToken: string) {
     return this.prisma.userSession.findFirst({
-      where: { refreshToken, revokedAt: null },
+      where: {
+        refreshToken: hashRefreshToken(refreshToken),
+        revokedAt: { not: null },
+      },
     });
   }
 

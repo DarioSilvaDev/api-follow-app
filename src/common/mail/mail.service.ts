@@ -79,4 +79,45 @@ export class MailService {
       `,
     });
   }
+
+  async sendTransferRequestEmail(
+    to: string,
+    toFirstName: string,
+    fromFirstName: string,
+    vehicleName: string,
+    licensePlate: string,
+  ): Promise<void> {
+    const appUrl = envs.CORS_ORIGIN || 'http://localhost:3000';
+    await this.send({
+      to,
+      subject: 'Solicitud de transferencia de vehículo - FollowApp',
+      html: `
+        <h2>Solicitud de Transferencia</h2>
+        <p>Hola ${toFirstName},</p>
+        <p><strong>${fromFirstName}</strong> te ha enviado una solicitud para transferirte el vehículo:</p>
+        <p><strong>${vehicleName}</strong> (Patente: ${licensePlate})</p>
+        <p>Ingresa a la aplicación para aceptar o rechazar esta solicitud.</p>
+        <p><a href="${appUrl}/vehiculos/transferencias">Ir a Transferencias</a></p>
+      `,
+    });
+  }
+
+  async sendTransferAcceptedEmail(
+    to: string,
+    toFirstName: string,
+    newOwnerName: string,
+    vehicleName: string,
+    licensePlate: string,
+  ): Promise<void> {
+    await this.send({
+      to,
+      subject: 'Transferencia completada - FollowApp',
+      html: `
+        <h2>Transferencia Completada</h2>
+        <p>Hola ${toFirstName},</p>
+        <p>La transferencia del vehículo <strong>${vehicleName}</strong> (Patente: ${licensePlate}) ha sido aceptada por <strong>${newOwnerName}</strong>.</p>
+        <p>Ya no figuras como propietario de este vehículo en la plataforma.</p>
+      `,
+    });
+  }
 }

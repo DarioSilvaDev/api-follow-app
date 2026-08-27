@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WorkshopsController } from './controllers/workshops.controller';
+import { PublicWorkshopController } from './controllers/public.controller';
 import { PrismaWorkshopRepository } from './repositories/prisma-workshop.repository';
 import { WORKSHOP_REPOSITORY } from './tokens';
 import { AuthorizationModule } from '../../common/authorization.module';
@@ -15,10 +16,20 @@ import { GetWorkshopHandler } from './queries/get-workshop/get-workshop.handler'
 import { ListWorkshopsHandler } from './queries/list-workshops/list-workshops.handler';
 import { GetMembersHandler } from './queries/get-members/get-members.handler';
 import { GetInvitationsHandler } from './queries/get-invitations/get-invitations.handler';
+import { AddSpecialtyHandler } from './commands/add-specialty/add-specialty.handler';
+import { RemoveSpecialtyHandler } from './commands/remove-specialty/remove-specialty.handler';
+import {
+  ListWorkshopSpecialtiesHandler,
+  ListPublicSpecialtiesHandler,
+} from './queries/list-specialties/list-specialties.handler';
+import { CreateRoleHandler } from './commands/create-role/create-role.handler';
+import { UpdateRoleHandler } from './commands/update-role/update-role.handler';
+import { DeleteRoleHandler } from './commands/delete-role/delete-role.handler';
+import { ListRolesHandler } from './queries/list-roles/list-roles.handler';
 
 @Module({
   imports: [AuthorizationModule],
-  controllers: [WorkshopsController],
+  controllers: [WorkshopsController, PublicWorkshopController],
   providers: [
     CreateWorkshopHandler,
     UpdateWorkshopHandler,
@@ -32,6 +43,14 @@ import { GetInvitationsHandler } from './queries/get-invitations/get-invitations
     ListWorkshopsHandler,
     GetMembersHandler,
     GetInvitationsHandler,
+    AddSpecialtyHandler,
+    RemoveSpecialtyHandler,
+    ListWorkshopSpecialtiesHandler,
+    ListPublicSpecialtiesHandler,
+    CreateRoleHandler,
+    UpdateRoleHandler,
+    DeleteRoleHandler,
+    ListRolesHandler,
     { provide: WORKSHOP_REPOSITORY, useClass: PrismaWorkshopRepository },
   ],
   exports: [WORKSHOP_REPOSITORY],

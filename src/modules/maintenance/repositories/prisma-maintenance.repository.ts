@@ -48,11 +48,12 @@ export class PrismaMaintenanceRepository implements MaintenanceRepository {
     });
   }
 
-  async updateWorkOrderStatus(id: string, status: string) {
+  async updateWorkOrderStatus(id: string, status: string, mileageOut?: number) {
     const closeData = status === 'completed' ? { closedAt: new Date() } : {};
+    const mileageData = mileageOut !== undefined ? { mileageOut } : {};
     return this.prisma.workOrder.update({
       where: { id },
-      data: { status: status as any, ...closeData },
+      data: { status: status as any, ...closeData, ...mileageData },
     });
   }
 

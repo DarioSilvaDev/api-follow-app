@@ -10,6 +10,15 @@ export class GetVehicleHandler {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id },
       include: {
+        version: {
+          include: {
+            model: {
+              include: {
+                brand: true,
+              },
+            },
+          },
+        },
         ownerships: {
           include: {
             user: {

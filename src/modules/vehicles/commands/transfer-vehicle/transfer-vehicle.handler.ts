@@ -2,10 +2,11 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../../common/database/prisma.service';
-import { VehicleTransferredEvent } from '../../events/vehicle-transferred.event';
+import { VehicleTransferRequestedEvent } from '../../events/vehicle-transfer-requested.event';
 import { TransferVehicleCommand } from './transfer-vehicle.command';
 
 @Injectable()
@@ -16,6 +17,19 @@ export class TransferVehicleHandler {
   ) {}
 
   async execute(command: TransferVehicleCommand) {
+    const targetUser = await this.prisma.user.findUnique({
+      where: { email: command.dto.email },
+    });
+    if (!targetUser) {
+      throw new BadRequestException(
+        `User with email '${command.dto.email}' not found`,
+      );
+    }
+
+    if (targetUser.id === command.fromUserId) {
+      throw new BadRequestException('Cannot transfer vehicle to yourself');
+    }
+
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: command.vehicleId },
       include: {
@@ -32,46 +46,48 @@ export class TransferVehicleHandler {
       throw new ForbiddenException('You do not own this vehicle');
     }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      await tx.vehicleOwnership.update({
-        where: { id: currentOwnership.id },
-        data: { endsAt: new Date() },
-      });
+    const existingPending = await this.prisma.vehicleTransfer.findFirst({
+      where: {
+        vehicleId: command.vehicleId,
+        status: 'pending',
+      },
+    });
+    if (existingPending) {
+      throw new BadRequestException(
+        'There is already a pending transfer for this vehicle',
+      );
+    }
 
-      const transfer = await tx.vehicleTransfer.create({
-        data: {
-          vehicleId: command.vehicleId,
-          fromUserId: command.fromUserId,
-          toUserId: command.dto.toUserId,
-          status: 'completed',
-          requestedAt: new Date(),
-          completedAt: new Date(),
-          notes: command.dto.notes,
-        },
-      });
+    const transfer = await this.prisma.vehicleTransfer.create({
+      data: {
+        vehicleId: command.vehicleId,
+        fromUserId: command.fromUserId,
+        toUserId: targetUser.id,
+        status: 'pending',
+        requestedAt: new Date(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        notes: command.dto.notes,
+      },
+    });
 
-      const ownership = await tx.vehicleOwnership.create({
-        data: {
-          vehicleId: command.vehicleId,
-          userId: command.dto.toUserId,
-          type: 'owner',
-          startsAt: new Date(),
-          acquiredByTransferId: transfer.id,
-        },
-      });
-
-      return { transfer, ownership };
+    await this.prisma.vehicleTransferEvent.create({
+      data: {
+        transferId: transfer.id,
+        type: 'requested',
+        performedByUserId: command.fromUserId,
+      },
     });
 
     this.eventEmitter.emit(
-      'vehicle.transferred',
-      new VehicleTransferredEvent(
+      'vehicle.transfer.requested',
+      new VehicleTransferRequestedEvent(
+        transfer.id,
         command.vehicleId,
         command.fromUserId,
-        command.dto.toUserId,
+        targetUser.id,
       ),
     );
 
-    return result.transfer;
+    return transfer;
   }
 }

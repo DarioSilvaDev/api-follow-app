@@ -1,4 +1,5 @@
 import { User } from '@prisma/client';
+import { RoleDto } from '../../auth/dto/role.dto';
 
 export class UserResponseDto {
   id!: string;
@@ -12,6 +13,7 @@ export class UserResponseDto {
   emailVerifiedAt!: Date | null;
   createdAt!: Date | null;
   updatedAt!: Date | null;
+  roles?: RoleDto[];
 
   static from(user: User): UserResponseDto {
     return {

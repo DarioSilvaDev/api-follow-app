@@ -10,6 +10,8 @@ import { UpdateWorkOrderStatusHandler } from './commands/update-work-order-statu
 import { AddWorkOrderItemHandler } from './commands/add-work-order-item/add-work-order-item.handler';
 import { CreateServiceRecordHandler } from './commands/create-service-record/create-service-record.handler';
 import { CreateEstimateHandler } from './commands/create-estimate/create-estimate.handler';
+import { UpdateEstimateStatusHandler } from './commands/update-estimate-status/update-estimate-status.handler';
+import { ConvertEstimateHandler } from './commands/convert-estimate/convert-estimate.handler';
 import { GetAppointmentHandler } from './queries/get-appointment/get-appointment.handler';
 import { ListAppointmentsHandler } from './queries/list-appointments/list-appointments.handler';
 import { GetWorkOrderHandler } from './queries/get-work-order/get-work-order.handler';
@@ -27,6 +29,8 @@ import { GetVehicleServiceHistoryHandler } from './queries/get-vehicle-service-h
     AddWorkOrderItemHandler,
     CreateServiceRecordHandler,
     CreateEstimateHandler,
+    UpdateEstimateStatusHandler,
+    ConvertEstimateHandler,
     GetAppointmentHandler,
     ListAppointmentsHandler,
     GetWorkOrderHandler,

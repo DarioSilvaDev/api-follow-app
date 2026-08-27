@@ -170,6 +170,9 @@ model User {
   workOrders WorkOrder[]
   estimates Estimate[]
 
+  impersonationAsAdmin  ImpersonationSession[] @relation("ImpersonationAsAdmin")
+  impersonationAsTarget ImpersonationSession[] @relation("ImpersonationAsTarget")
+
   @@map("users")
 }
 
@@ -246,6 +249,8 @@ model UserSession {
 
   refreshToken String @unique @map("refresh_token")
 
+  refreshTokenHash String @unique @map("refresh_token_hash")
+
   ipAddress String? @map("ip_address")
 
   userAgent String? @map("user_agent")
@@ -264,6 +269,23 @@ model UserSession {
 
   @@index([userId])
   @@map("user_sessions")
+}
+
+model ImpersonationSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  adminId      String   @map("admin_id") @db.Uuid
+  adminToken   String   @unique @map("admin_token")
+  targetUserId String   @map("target_user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  admin      User @relation("ImpersonationAsAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  targetUser User @relation("ImpersonationAsTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([expiresAt])
+  @@map("impersonation_sessions")
 }
 
 model EmailVerification {
@@ -495,13 +517,13 @@ model WorkshopMember {
 
   status MemberStatus
 
-  workshop Workshop @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  role WorkshopRole @relation(fields: [roleId], references: [id])
+  role WorkshopRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
-  defaultBranch WorkshopBranch? @relation(fields: [defaultBranchId], references: [id])
+  defaultBranch WorkshopBranch? @relation(fields: [defaultBranchId], references: [id], onDelete: SetNull)
 
   recordedMileages VehicleMileage[]
 
@@ -536,11 +558,11 @@ model WorkshopInvitation {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  workshop Workshop @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
-  role WorkshopRole @relation(fields: [roleId], references: [id])
+  role WorkshopRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
-  invitedBy User @relation(fields: [invitedById], references: [id])
+  invitedBy User @relation(fields: [invitedById], references: [id], onDelete: Restrict)
 
   @@index([email])
   @@map("workshop_invitations")
@@ -754,9 +776,9 @@ model Subscription {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  workshop Workshop @relation(fields: [workshopId], references: [id])
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
 
-  plan Plan @relation(fields: [planId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
 
   @@index([status])
   @@index([workshopId])
@@ -807,7 +829,7 @@ model VehicleModel {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  brand VehicleBrand @relation(fields: [brandId], references: [id])
+  brand VehicleBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   versions VehicleVersion[]
 
@@ -842,7 +864,7 @@ model VehicleVersion {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  model VehicleModel @relation(fields: [modelId], references: [id])
+  model VehicleModel @relation(fields: [modelId], references: [id], onDelete: Cascade)
 
   vehicles Vehicle[]
 
@@ -850,15 +872,15 @@ model VehicleVersion {
 }
 
 model VehiclePhoto {
-  id String @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid()) @db.Uuid
 
-  vehicleId String @map("vehicle_id") @db.Uuid
+  vehicleId String   @map("vehicle_id") @db.Uuid
 
-  url String
+  key       String   @unique
 
-  caption String?
+  caption   String?
 
-  isPrimary Boolean @default(false) @map("is_primary")
+  isPrimary Boolean  @default(false) @map("is_primary")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -869,21 +891,21 @@ model VehiclePhoto {
 }
 
 model VehicleDocument {
-  id String @id @default(uuid()) @db.Uuid
+  id           String   @id @default(uuid()) @db.Uuid
 
-  vehicleId String @map("vehicle_id") @db.Uuid
+  vehicleId    String   @map("vehicle_id") @db.Uuid
 
-  name String @db.VarChar(200)
+  key          String   @unique
 
-  documentType String @map("document_type") @db.VarChar(50)
+  name         String   @db.VarChar(200)
 
-  url String
+  documentType String   @map("document_type") @db.VarChar(50)
 
-  expiresAt DateTime? @map("expires_at")
+  expiresAt    DateTime? @map("expires_at")
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
@@ -916,7 +938,7 @@ model Vehicle {
 
   deletedAt DateTime? @map("deleted_at")
 
-  version VehicleVersion? @relation(fields: [versionId], references: [id])
+  version VehicleVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
 
   ownerships VehicleOwnership[]
 
@@ -961,9 +983,9 @@ model VehicleMileage {
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  recordedByUser User? @relation(fields: [recordedByUserId], references: [id])
+  recordedByUser User? @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
-  recordedByMember WorkshopMember? @relation(fields: [recordedByMemberId], references: [id])
+  recordedByMember WorkshopMember? @relation(fields: [recordedByMemberId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId, recordedAt])
   @@index([vehicleId, mileage])
@@ -997,9 +1019,9 @@ model VehicleOwnership {
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id])
+  acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId])
   @@index([userId])
@@ -1041,11 +1063,11 @@ model VehicleTransfer {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id])
+  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
 
-  toUser User @relation("TransferToUser", fields: [toUserId], references: [id])
+  toUser User @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: Cascade)
 
   ownerships VehicleOwnership[] @relation("TransferCreatesOwnership")
 
@@ -1071,9 +1093,9 @@ model VehicleAccess {
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  user User @relation("VehicleAccessUser", fields: [userId], references: [id])
+  user User @relation("VehicleAccessUser", fields: [userId], references: [id], onDelete: Cascade)
 
-  grantedBy User @relation("VehicleAccessGrantedBy", fields: [grantedByUserId], references: [id])
+  grantedBy User @relation("VehicleAccessGrantedBy", fields: [grantedByUserId], references: [id], onDelete: Cascade)
 
   permissions VehicleAccessPermission[]
 
@@ -1119,7 +1141,7 @@ model VehicleShare {
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
-  createdBy User @relation(fields: [createdByUserId], references: [id])
+  createdBy User @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
 
   @@index([token])
   @@map("vehicle_shares")
@@ -1140,7 +1162,7 @@ model VehicleTransferEvent {
 
   transfer VehicleTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
 
-  performedBy User? @relation(fields: [performedByUserId], references: [id])
+  performedBy User? @relation(fields: [performedByUserId], references: [id], onDelete: SetNull)
 
   @@index([transferId])
   @@index([type])
@@ -1225,11 +1247,11 @@ model Appointment {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
-  workshop Workshop @relation(fields: [workshopId], references: [id])
-  branch WorkshopBranch @relation(fields: [branchId], references: [id])
-  customer User @relation(fields: [customerId], references: [id])
-  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id], onDelete: SetNull)
 
   workOrders WorkOrder[]
 
@@ -1268,12 +1290,12 @@ model WorkOrder {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
-  workshop Workshop @relation(fields: [workshopId], references: [id])
-  branch WorkshopBranch @relation(fields: [branchId], references: [id])
-  appointment Appointment? @relation(fields: [appointmentId], references: [id])
-  customer User @relation(fields: [customerId], references: [id])
-  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id], onDelete: SetNull)
 
   items WorkOrderItem[]
   estimates Estimate[]
@@ -1324,10 +1346,10 @@ model ServiceRecord {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
-  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id])
-  workshop Workshop @relation(fields: [workshopId], references: [id])
-  performedBy WorkshopMember? @relation(fields: [performedByMemberId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  performedBy WorkshopMember? @relation(fields: [performedByMemberId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId])
   @@index([workOrderId])
@@ -1360,11 +1382,11 @@ model Estimate {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
-  workshop Workshop @relation(fields: [workshopId], references: [id])
-  branch WorkshopBranch @relation(fields: [branchId], references: [id])
-  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id])
-  customer User @relation(fields: [customerId], references: [id])
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   items EstimateItem[]
 

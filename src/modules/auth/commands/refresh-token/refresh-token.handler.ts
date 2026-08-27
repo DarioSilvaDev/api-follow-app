@@ -1,9 +1,15 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { v4 as uuid } from 'uuid';
+import { randomBytes } from 'crypto';
+
 import { AUTH_REPOSITORY } from '../../tokens';
 import type { AuthRepository } from '../../repositories/auth.repository';
 import { RefreshTokenCommand } from './refresh-token.command';
+
+interface RefreshResult {
+  accessToken: string;
+  refreshToken: string;
+}
 
 @Injectable()
 export class RefreshTokenHandler {
@@ -13,7 +19,22 @@ export class RefreshTokenHandler {
     private readonly jwtService: JwtService,
   ) {}
 
-  async execute(command: RefreshTokenCommand) {
+  async execute(
+    command: RefreshTokenCommand,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<RefreshResult> {
+    const revokedSession = await this.authRepository.findRevokedSession(
+      command.refreshToken,
+    );
+
+    if (revokedSession) {
+      await this.authRepository.revokeUserSessions(revokedSession.userId);
+      throw new UnauthorizedException(
+        'Session compromised. Please login again.',
+      );
+    }
+
     const session = await this.authRepository.findSessionByRefreshToken(
       command.refreshToken,
     );
@@ -24,7 +45,7 @@ export class RefreshTokenHandler {
 
     const payload = { sub: session.userId };
     const accessToken = this.jwtService.sign(payload);
-    const newRefreshToken = uuid();
+    const newRefreshToken = randomBytes(32).toString('base64url');
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
@@ -34,6 +55,8 @@ export class RefreshTokenHandler {
     await this.authRepository.createSession({
       userId: session.userId,
       refreshToken: newRefreshToken,
+      ipAddress,
+      userAgent,
       expiresAt,
     });
 

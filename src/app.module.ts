@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+// import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './common/database/prisma.module';
+import { StorageModule } from './common/storage/storage.module';
 import { SuperadminBootstrapService } from './common/init/superadmin-bootstrap.service';
 import { MailModule } from './common/mail/mail.module';
 import { AuthorizationModule } from './common/authorization.module';
@@ -14,13 +15,16 @@ import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { WorkshopsModule } from './modules/workshops/workshops.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { AdministrationModule } from './modules/administration/administration.module';
-import { envs } from './config/envs';
+import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
+// import { envs } from './config/envs';
 
 @Module({
   imports: [
     EventEmitterModule.forRoot(),
     PrismaModule,
     MailModule,
+    StorageModule,
     AuthorizationModule,
     AuthModule,
     UsersModule,
@@ -28,21 +32,23 @@ import { envs } from './config/envs';
     WorkshopsModule,
     MaintenanceModule,
     AdministrationModule,
-    ThrottlerModule.forRoot([
-      {
-        ttl: envs.THROTTLE_TTL * 1000,
-        limit: envs.THROTTLE_LIMIT,
-      },
-    ]),
+    VehicleCatalogModule,
+    DashboardModule,
+    // ThrottlerModule.forRoot([
+    //   {
+    //     ttl: envs.THROTTLE_TTL * 1000,
+    //     limit: envs.THROTTLE_LIMIT,
+    //   },
+    // ]),
   ],
   controllers: [AppController],
   providers: [
     AppService,
     SuperadminBootstrapService,
-    {
-      provide: 'APP_GUARD',
-      useClass: ThrottlerGuard,
-    },
+    // {
+    //   provide: 'APP_GUARD',
+    //   useClass: ThrottlerGuard,
+    // },
   ],
 })
 export class AppModule {}
