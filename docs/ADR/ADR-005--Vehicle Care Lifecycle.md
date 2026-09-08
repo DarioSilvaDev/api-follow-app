@@ -836,3 +836,83 @@ En la API: CareEpisodeCreated.
 En la interfaz: "Intervención" o "Ingreso de Servicio", según el contexto.
 
 Eso nos permite conservar un modelo de dominio muy sólido sin obligar a los usuarios a aprender terminología técnica que no forma parte de su día a día.
+
+---
+
+## Decisión T3 — Historia y DELETE (2026-09-04)
+
+**Problema:**
+La migración 005 aplica `onDelete: Cascade` masivo sobre `vehicle_ownerships`, `vehicle_transfers`, `appointments`, `work_orders`, `estimates`, `service_records` al borrar `vehicle`/`workshop`/`user`. Esto destruye la historia vehicular.
+
+**Decisión:**
+**Política de lifecycle por entidad, sin soft delete universal.**
+
+- **Categoría histórica (NO DELETE físico):** `CareEpisode`, `ServiceRecord`, `VehicleOwnership`, `VehicleTransfer`, `WorkOrder` completado, `Estimate` convertido. Proteger con FKs **`RESTRICT`/`NO ACTION`** + guards de negocio.
+- **Categoría operacional (DELETE posible):** `Appointment` draft, `Estimate`/`WorkOrder` en borrador sin historia.
+- **Retiro (soft delete):** `Vehicle`, `Workshop`, `User` — mantener `deletedAt` como mecanismo de "retiro" que preserva historia referenciada.
+- **ServiceRecord:** No tiene delete; se corrige/anula, no se borra.
+
+**Migración requerida:** Cambiar FKs de `service_records`, `work_orders`, `estimates`, `vehicle_ownerships`, `vehicle_transfers` de `CASCADE` → `RESTRICT`/`NO ACTION` solo en ejes históricos.
+
+**Impacto:** Migración nueva; handlers de delete revisados; UX "eliminar" → "retirar/archivar".
+
+**Razón:** Preservar historia vehicular es decisión de producto. Constraints de DB más robustos que solo lógica en handlers.
+
+---
+
+## Estado de implementación T3 (2026-09-04)
+
+**Schema actualizado** — FKs de entidades históricas cambiadas de `onDelete: Cascade` a `onDelete: Restrict`:
+
+| Tabla | FK | Comportamiento |
+|-------|-----|----------------|
+| `vehicle_ownerships` | `vehicle` | Restrict |
+| `vehicle_ownerships` | `user` | Restrict |
+| `vehicle_transfers` | `vehicle` | Restrict |
+| `vehicle_transfers` | `from_user` | Restrict |
+| `vehicle_transfers` | `to_user` | Restrict |
+| `vehicle_mileages` | `vehicle` | Restrict |
+| `work_orders` | `vehicle` | Restrict |
+| `work_orders` | `workshop` | Restrict |
+| `work_orders` | `branch` | Restrict |
+| `work_orders` | `customer` | Restrict |
+| `service_records` | `vehicle` | Restrict |
+| `service_records` | `workshop` | Restrict |
+| `estimates` | `vehicle` | Restrict |
+| `estimates` | `workshop` | Restrict |
+| `estimates` | `branch` | Restrict |
+| `estimates` | `customer` | Restrict |
+
+**Sin cambios** (mantienen CASCADE por ser operacionales/referenciales):
+- `appointments` (pre-episodio operacional)
+- `vehicle_photos`, `vehicle_documents` (referenciales/config)
+- `work_order_items`, `estimate_items` (cuelgan del padre histórico, el padre es quien protege la historia)
+- `workshop_members`, `workshop_settings`, etc. (referenciales a workshop, no historia vehicular)
+
+**Estado:** Schema y build actualizados. **Migración `protect-vehicle-history-fks` pendiente** de ejecución cuando la DB esté disponible (PostgreSQL no accesible en el entorno actual).
+
+**Pendientes:**
+- Revisar handlers de delete (`DeleteVehicleHandler`, etc.) para derivar a soft delete / bloquear por historia.
+- Ajustar UX "eliminar" → "retirar/archivar".
+- Tests de integridad de historia.
+
+---
+
+## Decisión T4 — ServiceRecord dentro de CareEpisode (2026-09-04)
+
+**Problema:**
+`ServiceRecord` es tabla independiente con FK a `Vehicle` y `Workshop`, sin `CareEpisode` padre. El producto exige que la unidad de historia sea el CareEpisode.
+
+**Decisión:**
+- **CareEpisode como tabla nueva** (aggregate conceptual), no reemplazo de Appointment.
+- Modelo: `Vehicle → CareEpisode → {Diagnosis, Estimate, WorkOrder, ServiceRecord}`.
+- `careEpisodeId` se añade como FK a `ServiceRecord` (requerido), `WorkOrder` y `Estimate` (derivable).
+- **Reutilizar** WorkOrder, Estimate, ServiceRecord (estructuras, estados, items); no reconstruir.
+- Migrar maintenance a operar sobre episodios con compatibilidad transitoria.
+- Timeline evolucionará para devolver episodios.
+
+**Requiere previo:** Decisión de producto P1/P2 (política CareEpisode MVP: quién crea episodios, qué journeys sobreviven).
+
+**Impacto:** Migración aditiva (tabla nueva + columnas nullable); refactor módulo maintenance; nuevos handlers/endpoints CareEpisode.
+
+**Razón:** CareEpisode es la decisión de producto más importante y la brecha bloqueante de la baseline. Es cambio estructural aditivo que no destruye el modelo existente.

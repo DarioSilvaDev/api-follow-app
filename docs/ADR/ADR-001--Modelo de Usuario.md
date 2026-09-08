@@ -372,3 +372,23 @@ systemRole: 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT';
 No se persiste.
 
 Se construye en cada request.
+
+---
+
+## Decisión T1 — Identity vs User (2026-09-04)
+
+**Problema:**
+El dominio requiere separar conceptualmente la cuenta de autenticación (User) del actor real (Identity) que tiene relaciones históricas con vehículos, talleres y clientes. Hoy `User` cumple ambas funciones.
+
+**Decisión:**
+**Evolución progresiva, sin tabla Identity ahora.** `User` representa cuenta+actor para el MVP. No migrar ninguna FK a Identity en este ciclo.
+
+**Criterio de activación:**
+Solo migrar a Identity cuando (1) exista un caso real que requiera un actor sin cuenta, o (2) se modele Trust Profile/confianza por actor, o (3) se introduzca multi-tenancy que separe identidad del login.
+
+**Candidatos a migración futura:**
+`VehicleOwnership.userId`, `VehicleTransfer.fromUserId/toUserId`, `Appointment.customerId`, `WorkOrder.customerId`, `Estimate.customerId`.
+
+**Impacto:** Sin cambios de schema, migración, módulos o API. Solo documentación ADR.
+
+**Razón:** No agregar abstracción sin consumidor real. `User` satisface todas las necesidades del MVP. Evita riesgo de migración de decenas de FKs.

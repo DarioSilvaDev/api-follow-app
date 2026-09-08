@@ -353,3 +353,74 @@ un mecánico puede rotar entre talleres,
 y el contexto activo puede incluir también la sucursal seleccionada cuando sea necesario.
 
 No es imprescindible para el MVP, pero el modelo queda preparado para crecer sin romper nada.
+
+---
+
+## Decisión T2 — Implementación de Active Context (2026-09-04)
+
+**Problema:**
+La autorización es inconsistente e incorrecta. `PermissionsGuard` y `WorkshopGuard` infieren `workshopId` desde `request.params.id` (heurística frágil). Vehicles, Maintenance y Dashboard usan solo `JwtAuthGuard` sin verificación de contexto ni permisos (alto riesgo de IDOR).
+
+**Decisión:**
+Implementar contexto explícito en `src/common/context/`:
+
+- **`CurrentContext`**: interface TS (no tabla), no persistida.
+- **`ContextModule`**: guards, decorator, resolver, cache.
+- **`@CurrentContext()`**: decorator para inyectar contexto en handlers.
+- **`ContextResolver`**: fuente **conmutable** (headers `X-Context-*` como opción principal, claims JWT como alternativa, derivación del path como fallback de compatibilidad).
+- Migrar `PermissionsGuard`/`WorkshopGuard` para leer `request.context` en lugar de `params.id`.
+- Endurecimiento por fases: Maintenance primero (cerrar IDOR), luego Vehicles, luego Dashboard.
+
+**Mecanismo HTTP:** Se decide en fase de contrato frontend. El resolver lo hace conmutable.
+
+**Secuencia:**
+1. Fase A: `ContextModule`, `CurrentContext`, `ContextResolver`, `ContextGuard`, decorator.
+2. Fase B: Migrar guards existentes con compatibilidad.
+3. Fase C: Endurecimiento por módulo.
+4. Fase D: Invalidación de cache por eventos.
+
+**Impacto:** `src/common/context/*` nuevo; `PermissionsGuard`/`WorkshopGuard` modificados; `auth.types.ts` ampliado; endpoints de Maintenance/Vehicles/Dashboard afectados en fases.
+
+**Razón:** Autorización inconsistente es riesgo crítico (IDOR en Maintenance). Mecanismo conmutable evita quedar atrapados en un contrato HTTP rígido.
+
+---
+
+## Estado de implementación (2026-09-04)
+
+**Fase A completada** — Fundación del ContextModule:
+
+- `src/common/context/` creado con estructura:
+  - `interfaces/current-context.interface.ts` — `CurrentContext`, `ContextType`, `PersonalContext`, `WorkshopContext`, `PlatformContext`
+  - `services/context-resolver.service.ts` — `ContextResolver` (fuente conmutable headers `X-Context-*` → path fallback → PERSONAL)
+  - `guards/context.guard.ts` — `ContextGuard` (resuelve y coloca `request.context`)
+  - `decorators/current-context.decorator.ts` — `@ActiveContext()` (inyecta el contexto en handlers)
+  - `context.module.ts` — `ContextModule` con providers/exports
+  - `index.ts` — barrel export
+- `AuthorizationModule` ahora importa y exporta `ContextModule`.
+- `PermissionsGuard` y `WorkshopGuard` migrados para leer `request.context` con fallback a `params.id` (compatibilidad).
+- **Build exitoso.**
+
+**Fase B pendiente** — Migrar controllers a usar `@ActiveContext()`. Aún se usa `@CurrentUser()` y `params.id` directo en handlers.
+**Fase C pendiente** — Endurecer Maintenance (cerrar IDOR), Vehicles, Dashboard.
+**Fase D pendiente** — Invalidación de cache de contexto por eventos.
+
+---
+
+## Actualización 2026-09-04 — Fases B y C completadas
+
+**Fase B** — Controllers migrados a `@ActiveContext()`:
+- maintenance, vehicles, dashboard: `@UseGuards(JwtAuthGuard, ContextGuard)` + `@ActiveContext()` en handlers clave.
+
+**Fase C** — Autorización endurecida (IDOR cerrado):
+- **maintenance:** todos los endpoints validan pertenencia al workshop del contexto. Permisos aplicados: `appointment.update`, `appointment.cancel`, `workorder.close`, `estimate.approve`.
+- **vehicles:** helper `assertVehicleAccess()` en el controller (ownership activo OR VehicleAccess no revocado OR super_admin). Aplicado a ~16 endpoints.
+- **delete-vehicle:** soft-delete según ADR-005 (si hay historia → `deletedAt`; si no → delete físico).
+- Build + typecheck OK.
+
+**Fase D** — Pendiente: invalidación de cache de contexto por eventos.
+
+## Escalaciones de Fase C (requieren decisión)
+
+1. **Permisos `vehicle.*` no aplicados:** `PermissionsGuard` no evalúa `VehicleAccessPermission`. Los permisos `vehicle.read/update/photos/documents/history.share` existen en seed pero no se enforcean. Si deben aplicarse por vehículo, `PermissionsGuard` o un guard vehicular necesita extensión. **DECISIÓN DE ARQUITECTURA.**
+2. **TOCTOU en escrituras:** la pertenencia se valida en controller (fetch → compare), luego update por `id`. Alternativa más estricta: scope de escritura por `workshopId` en repository. **DECISIÓN DE ARQUITECTURA.**
+3. **Reads de maintenance sin permiso:** `GET /appointments/:id`, `GET /work-orders/:id` accesibles desde PERSONAL y WORKSHOP sin permiso de lectura. Confirmar si `history.view` debe gatearlos. **DECISIÓN DE PRODUCTO.**
