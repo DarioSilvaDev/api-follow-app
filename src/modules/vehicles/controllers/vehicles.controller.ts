@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -15,6 +16,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
+import { ContextGuard } from '../../../common/context/guards/context.guard';
+import { ActiveContext } from '../../../common/context/decorators/current-context.decorator';
+import type { CurrentContext } from '../../../common/context/interfaces/current-context.interface';
+import { VehicleAccessService } from '../../../common/authorization/vehicle-access.service';
 import { RegisterVehicleDto } from '../dto/register-vehicle.dto';
 import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
 import { TransferVehicleDto } from '../dto/transfer-vehicle.dto';
@@ -68,9 +73,10 @@ import { StorageR2Service } from '../../../common/storage/storage-r2.service';
 import { envs } from '../../../config/envs';
 
 @Controller('vehicles')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ContextGuard)
 export class VehiclesController {
   constructor(
+    private readonly vehicleAccessService: VehicleAccessService,
     private readonly registerVehicleHandler: RegisterVehicleHandler,
     private readonly updateVehicleHandler: UpdateVehicleHandler,
     private readonly deleteVehicleHandler: DeleteVehicleHandler,
@@ -97,6 +103,32 @@ export class VehiclesController {
     private readonly getDocumentHandler: GetDocumentHandler,
     private readonly storage: StorageR2Service,
   ) {}
+
+  /**
+   * Strict-mode vehicle access check for /vehicles/* routes.
+   * Ownership / VehicleAccess / super_admin only — no workshop membership.
+   */
+  private assertVehicleAccess(
+    vehicleId: string,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.vehicleAccessService.assertOwnershipOrSharedAccess({
+      vehicleId,
+      user,
+    });
+  }
+
+  /**
+   * Ownership-only check (Security Review #8 — P1) for privileged vehicle
+   * operations (grant access, delete, transfer): shared-access holders must
+   * NOT be able to perform them. Accepts active ownership or super_admin.
+   */
+  private assertVehicleOwned(
+    vehicleId: string,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.vehicleAccessService.assertOwnership({ vehicleId, user });
+  }
 
   @Get('transfers/incoming')
   async getIncomingTransfers(@CurrentUser() user: AuthenticatedUser) {
@@ -147,6 +179,7 @@ export class VehiclesController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     const photo = await this.uploadPhotoHandler.execute(
       new UploadPhotoCommand(id, file, user.id),
     );
@@ -154,7 +187,11 @@ export class VehiclesController {
   }
 
   @Get(':id/photos')
-  async listPhotos(@Param('id') id: string) {
+  async listPhotos(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
     const photos = await this.listPhotosHandler.execute(id);
     return photos.map((p) => PhotoResponseDto.from(p));
   }
@@ -163,8 +200,10 @@ export class VehiclesController {
   async getPhoto(
     @Param('id') vehicleId: string,
     @Param('photoId') photoId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('signed') signed?: string,
   ) {
+    await this.assertVehicleAccess(vehicleId, user);
     const photo = await this.getPhotoHandler.execute(vehicleId, photoId);
     if (signed === 'true') {
       const url = await this.storage.getSignedUrl!(photo.key);
@@ -182,7 +221,9 @@ export class VehiclesController {
   async setPrimaryPhoto(
     @Param('id') id: string,
     @Param('photoId') photoId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     return this.setPrimaryPhotoHandler.execute(
       new SetPrimaryPhotoCommand(id, photoId),
     );
@@ -192,7 +233,9 @@ export class VehiclesController {
   async deletePhoto(
     @Param('id') id: string,
     @Param('photoId') photoId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     await this.deletePhotoHandler.execute(new DeletePhotoCommand(id, photoId));
   }
 
@@ -206,6 +249,7 @@ export class VehiclesController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     const doc = await this.uploadDocumentHandler.execute(
       new UploadDocumentCommand(id, dto, file, user.id),
     );
@@ -213,7 +257,11 @@ export class VehiclesController {
   }
 
   @Get(':id/documents')
-  async listDocuments(@Param('id') id: string) {
+  async listDocuments(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
     const docs = await this.listDocumentsHandler.execute(id);
     return docs.map((d) => DocumentResponseDto.from(d));
   }
@@ -222,8 +270,10 @@ export class VehiclesController {
   async getDocument(
     @Param('id') vehicleId: string,
     @Param('docId') docId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('signed') signed?: string,
   ) {
+    await this.assertVehicleAccess(vehicleId, user);
     const doc = await this.getDocumentHandler.execute(vehicleId, docId);
     if (signed === 'true') {
       const url = await this.storage.getSignedUrl!(doc.key);
@@ -242,14 +292,21 @@ export class VehiclesController {
     @Param('id') id: string,
     @Param('docId') docId: string,
     @Body() dto: UpdateDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     return this.updateDocumentHandler.execute(
       new UpdateDocumentCommand(id, docId, dto),
     );
   }
 
   @Delete(':id/documents/:docId')
-  async deleteDocument(@Param('id') id: string, @Param('docId') docId: string) {
+  async deleteDocument(
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
     await this.deleteDocumentHandler.execute(
       new DeleteDocumentCommand(id, docId),
     );
@@ -258,6 +315,7 @@ export class VehiclesController {
   @Post()
   async create(
     @Body() dto: RegisterVehicleDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const vehicle = await this.registerVehicleHandler.execute(
@@ -268,6 +326,7 @@ export class VehiclesController {
 
   @Get()
   async findAll(
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
@@ -280,18 +339,31 @@ export class VehiclesController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
     const vehicle = await this.getVehicleHandler.execute(id);
     return VehicleResponseDto.from(vehicle);
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateVehicleDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateVehicleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
     return this.updateVehicleHandler.execute(new UpdateVehicleCommand(id, dto));
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleOwned(id, user);
     await this.deleteVehicleHandler.execute(new DeleteVehicleCommand(id));
   }
 
@@ -299,6 +371,7 @@ export class VehiclesController {
   async transfer(
     @Param('id') id: string,
     @Body() dto: TransferVehicleDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.transferVehicleHandler.execute(
@@ -312,6 +385,7 @@ export class VehiclesController {
     @Body() dto: RecordMileageDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleAccess(id, user);
     return this.recordMileageHandler.execute(
       new RecordMileageCommand(id, dto, user.id),
     );
@@ -323,13 +397,18 @@ export class VehiclesController {
     @Body() dto: GrantAccessDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    await this.assertVehicleOwned(id, user);
     return this.grantAccessHandler.execute(
       new GrantAccessCommand(id, dto, user.id),
     );
   }
 
   @Get(':id/history')
-  async getHistory(@Param('id') id: string) {
-    return this.getVehicleHistoryHandler.execute(id);
+  async getHistory(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.assertVehicleAccess(id, user);
+    return this.getVehicleHistoryHandler.execute(id, user);
   }
 }

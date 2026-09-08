@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
@@ -6,6 +6,7 @@ import { randomBytes } from 'crypto';
 import { PinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { InvalidCredentialsException } from '../../../../common/exceptions/coded.exception';
 import { envs } from '../../../../config/envs';
 import { AUTH_REPOSITORY } from '../../tokens';
 import type { AuthRepository } from '../../repositories/auth.repository';
@@ -42,34 +43,33 @@ export class LoginHandler {
     userAgent?: string,
   ): Promise<LoginResult> {
     const { email, password } = command.dto;
-    this.logger.info({ email, message: 'Realizando login' });
+
+    // Security Review #12 (P1): do NOT log the email at info level. Account
+    // existence / state / credentials all produce the same generic outcome
+    // below, so the email is not a useful PII-free audit signal here.
+    this.logger.info({ message: 'Login attempt' });
 
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { credential: true },
     });
 
-    if (!user || !user.credential) {
-      await bcrypt.compare('a', 'b');
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
+    // Uniform, indistiguishable 401 INVALID_CREDENTIALS for every failure path
+    // (invalid credentials, nonexistent user, locked, pending or suspended
+    // account). Accounts whose state makes them unauthenticatable are normalized
+    // to the same response so an attacker cannot enumerate active emails.
     if (
-      user.credential.lockedUntil &&
-      new Date() < user.credential.lockedUntil
+      !user ||
+      !user.credential ||
+      user.credential.lockedUntil !== null &&
+        new Date() < user.credential.lockedUntil ||
+      user.status !== 'active'
     ) {
-      throw new UnauthorizedException(
-        `Cuenta bloqueada. Intenta nuevamente en ${envs.ACCOUNT_LOCKOUT_MINUTES} minutos.`,
-      );
-    }
-
-    if (user.status !== 'active') {
-      if (user.status === 'pending') {
-        throw new UnauthorizedException(
-          'Email no verificado. Revisa tu correo o solicita un nuevo enlace.',
-        );
-      }
-      throw new UnauthorizedException('Cuenta suspendida.');
+      const targetHash = user?.credential?.passwordHash ?? 'a';
+      // Equalize bcrypt timing with the legitimate login path for every
+      // failure branch that corresponds to an existing account.
+      await bcrypt.compare(password, targetHash);
+      throw new InvalidCredentialsException();
     }
 
     const valid = await bcrypt.compare(password, user.credential.passwordHash);
@@ -90,7 +90,7 @@ export class LoginHandler {
         data: updateData,
       });
 
-      throw new UnauthorizedException('Invalid credentials');
+      throw new InvalidCredentialsException();
     }
 
     await this.prisma.userCredential.update({

@@ -247,8 +247,6 @@ model UserSession {
 
   userId String @map("user_id") @db.Uuid
 
-  refreshToken String @unique @map("refresh_token")
-
   refreshTokenHash String @unique @map("refresh_token_hash")
 
   ipAddress String? @map("ip_address")
@@ -981,7 +979,8 @@ model VehicleMileage {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  // Histórico: el kilometraje forma parte de la historia del vehículo
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
 
   recordedByUser User? @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
@@ -1017,9 +1016,9 @@ model VehicleOwnership {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Histórico: la propiedad es parte de la historia del vehículo, no se borra en cascada
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id], onDelete: SetNull)
 
@@ -1063,11 +1062,11 @@ model VehicleTransfer {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
 
-  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: Restrict)
 
-  toUser User @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  toUser User @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: Restrict)
 
   ownerships VehicleOwnership[] @relation("TransferCreatesOwnership")
 
@@ -1290,11 +1289,12 @@ model WorkOrder {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  // Histórico: la orden de trabajo y su relación con el vehículo/taller forman parte de la historia
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Restrict)
   appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Restrict)
   assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id], onDelete: SetNull)
 
   items WorkOrderItem[]
@@ -1346,9 +1346,10 @@ model ServiceRecord {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  // Histórico: el servicio realizado forma parte de la historia del vehículo
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
   workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Restrict)
   performedBy WorkshopMember? @relation(fields: [performedByMemberId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId])
@@ -1382,11 +1383,12 @@ model Estimate {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Cascade)
-  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  // Histórico: el presupuesto (especialmente convertido) forma parte de la historia del vehículo
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Restrict)
   workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
   items EstimateItem[]
 

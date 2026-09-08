@@ -9,7 +9,18 @@ import { PrismaService } from '../database/prisma.service';
 import { PermissionCache } from '../cache/permission-cache';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { AuthenticatedUser, ResolvedPermissions } from '../types/auth.types';
+import { CurrentContext } from '../context/interfaces/current-context.interface';
 
+/**
+ * PermissionsGuard — Evalúa si el contexto activo posee los permisos requeridos.
+ *
+ * Lee el contexto de request.context (resuelto por ContextGuard).
+ * Fallback: si no hay contexto, infiere workshopId de request.params.id
+ * para compatibilidad con endpoints que aún no usan ContextGuard.
+ *
+ * @see ADR-002 -- Active Context
+ * @see ADR-003 -- Authorization & Permission Engine
+ */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -34,7 +45,10 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    const workshopId = request.params.id;
+    // Preferir contexto resuelto por ContextGuard
+    const ctx: CurrentContext | undefined = request.context;
+    const workshopId = this.resolveWorkshopId(ctx, request.params);
+
     const cacheKey = workshopId ? `${user.id}:${workshopId}` : user.id;
 
     const effective = await this.loadPermissions(user.id, workshopId, cacheKey);
@@ -52,6 +66,20 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /**
+   * Extrae workshopId del contexto activo, con fallback a path params.
+   */
+  private resolveWorkshopId(
+    ctx: CurrentContext | undefined,
+    params: Record<string, string>,
+  ): string | undefined {
+    if (ctx?.type === 'WORKSHOP') {
+      return ctx.workshopId;
+    }
+    // Fallback de compatibilidad
+    return params?.id;
   }
 
   private async loadPermissions(

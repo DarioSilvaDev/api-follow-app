@@ -103,7 +103,7 @@ export class AuthController {
     res.cookie('access_token', result.accessToken, accessTokenCookieOptions);
     res.cookie('refresh_token', result.refreshToken, refreshTokenCookieOptions);
 
-    return { success: true };
+    return { success: true, impersonated: result.impersonated };
   }
 
   @Post('logout')

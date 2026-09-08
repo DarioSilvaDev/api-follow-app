@@ -14,10 +14,11 @@ export class PrismaAuthRepository implements AuthRepository {
     ipAddress?: string;
     userAgent?: string;
   }) {
+    const { refreshToken, ...rest } = data;
     return this.prisma.userSession.create({
       data: {
-        ...data,
-        refreshToken: hashRefreshToken(data.refreshToken),
+        ...rest,
+        refreshTokenHash: hashRefreshToken(refreshToken),
       },
     });
   }
@@ -25,7 +26,7 @@ export class PrismaAuthRepository implements AuthRepository {
   async findSessionByRefreshToken(refreshToken: string) {
     const session = await this.prisma.userSession.findFirst({
       where: {
-        refreshToken: hashRefreshToken(refreshToken),
+        refreshTokenHash: hashRefreshToken(refreshToken),
         revokedAt: null,
         expiresAt: {
           gt: new Date(),
@@ -41,7 +42,7 @@ export class PrismaAuthRepository implements AuthRepository {
   async findRevokedSession(refreshToken: string) {
     return this.prisma.userSession.findFirst({
       where: {
-        refreshToken: hashRefreshToken(refreshToken),
+        refreshTokenHash: hashRefreshToken(refreshToken),
         revokedAt: { not: null },
       },
     });

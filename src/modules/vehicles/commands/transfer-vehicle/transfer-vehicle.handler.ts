@@ -21,8 +21,10 @@ export class TransferVehicleHandler {
       where: { email: command.dto.email },
     });
     if (!targetUser) {
+      // Security Review #12 (P1): keep the message generic so we don't reveal
+      // whether the recipient email exists (account enumeration).
       throw new BadRequestException(
-        `User with email '${command.dto.email}' not found`,
+        'Unable to transfer the vehicle to the specified recipient',
       );
     }
 

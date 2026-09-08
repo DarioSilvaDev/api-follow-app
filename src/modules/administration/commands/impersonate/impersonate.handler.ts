@@ -1,10 +1,18 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../../common/database/prisma.service';
 
 const IMPERSONATION_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * ImpersonateHandler — Starts an impersonation session.
+ *
+ * D-016 A1:
+ * - deleteMany by adminId WITHOUT expiration filter (deletes all previous rows)
+ * - expiresAt = now + 1h
+ * - impersonated token signed with exp ≈ 1h aligned to expiresAt
+ */
 @Injectable()
 export class ImpersonateHandler {
   constructor(
@@ -33,22 +41,31 @@ export class ImpersonateHandler {
       include: { role: { select: { id: true, type: true, name: true } } },
     });
 
+    const expiresAt = new Date(Date.now() + IMPERSONATION_TTL_MS);
+
+    // D-016 A1: token exp aligned to expiresAt (floor to seconds).
+    // jsonwebtoken v9 throws if payload.exp AND options.expiresIn coexist, and
+    // @nestjs/jwt always merges the module-level signOptions.expiresIn, so the
+    // exp must be expressed as a per-call expiresIn (in seconds) instead of a
+    // payload claim. This yields exp = floor(expiresAt/1000) exactly.
+    const expiresInSeconds = Math.max(
+      1,
+      Math.floor(expiresAt.getTime() / 1000) - Math.floor(Date.now() / 1000),
+    );
     const impersonatedToken = this.jwtService.sign(
       {
         sub: targetUserId,
         impersonatedBy: adminUserId,
         impersonated: true,
       },
-      { expiresIn: '1h' },
+      { expiresIn: expiresInSeconds },
     );
 
-    const expiresAt = new Date(Date.now() + IMPERSONATION_TTL_MS);
-
     await this.prisma.$transaction([
+      // D-016 A1: delete ALL previous rows for this admin (no expiration filter)
       this.prisma.impersonationSession.deleteMany({
         where: {
           adminId: adminUserId,
-          expiresAt: { lt: new Date() },
         },
       }),
       this.prisma.impersonationSession.create({

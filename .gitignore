@@ -22,6 +22,7 @@ lerna-debug.log*
 *.d.ts
 *.js.map
 *.js
+!jest.config.js
 
 # IDEs and editors
 /.idea

@@ -102,21 +102,23 @@ export class WorkshopsController {
 
   @Get()
   async findAll(
-    // @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
     return this.listWorkshopsHandler.execute({
-      // userId: user.id,
+      userId: user.id,
       page,
       limit,
     });
   }
 
   @Get(':id')
-  // @UseGuards(WorkshopGuard)
-  async findOne(@Param('id') id: string) {
-    const workshop = await this.getWorkshopHandler.execute(id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const workshop = await this.getWorkshopHandler.execute(id, user.id);
     return WorkshopResponseDto.from(workshop);
   }
 
@@ -176,9 +178,10 @@ export class WorkshopsController {
   async updateMemberRole(
     @Param('memberId') memberId: string,
     @Body() dto: UpdateMemberRoleDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.updateMemberRoleHandler.execute(
-      new UpdateMemberRoleCommand(memberId, dto.roleId),
+      new UpdateMemberRoleCommand(memberId, dto.roleId, user.id),
     );
   }
 
@@ -287,7 +290,7 @@ export class WorkshopsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const member = await this.acceptInvitationHandler.execute(
-      new AcceptInvitationCommand(dto.token, user.id),
+      new AcceptInvitationCommand(dto.token, user.id, user.email),
     );
     return MemberResponseDto.from(member);
   }

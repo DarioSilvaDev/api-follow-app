@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MaintenanceController } from './controllers/maintenance.controller';
 import { PrismaMaintenanceRepository } from './repositories/prisma-maintenance.repository';
 import { MAINTENANCE_REPOSITORY } from './tokens';
+import { AuthorizationModule } from '../../common/authorization.module';
 import { CreateAppointmentHandler } from './commands/create-appointment/create-appointment.handler';
 import { UpdateAppointmentHandler } from './commands/update-appointment/update-appointment.handler';
 import { CancelAppointmentHandler } from './commands/cancel-appointment/cancel-appointment.handler';
@@ -19,6 +20,7 @@ import { ListWorkOrdersHandler } from './queries/list-work-orders/list-work-orde
 import { GetVehicleServiceHistoryHandler } from './queries/get-vehicle-service-history/get-vehicle-service-history.handler';
 
 @Module({
+  imports: [AuthorizationModule],
   controllers: [MaintenanceController],
   providers: [
     CreateAppointmentHandler,

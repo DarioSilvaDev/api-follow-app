@@ -170,6 +170,21 @@ const permissions = [
     code: 'estimate.approve',
     description: 'Approve estimates',
   },
+  {
+    module: 'estimate',
+    resource: 'estimate',
+    action: 'convert',
+    code: 'estimate.convert',
+    description: 'Convert an accepted estimate into a work order',
+  },
+
+  {
+    module: 'service-record',
+    resource: 'service-record',
+    action: 'create',
+    code: 'service-record.create',
+    description: 'Create service records',
+  },
 
   {
     module: 'workorder',
@@ -184,6 +199,13 @@ const permissions = [
     action: 'close',
     code: 'workorder.close',
     description: 'Close work orders',
+  },
+  {
+    module: 'workorder',
+    resource: 'item',
+    action: 'add',
+    code: 'workorder.item.add',
+    description: 'Add items to a work order',
   },
 
   {
@@ -313,6 +335,13 @@ const permissions = [
     action: 'manage',
     code: 'admin.permissions.manage',
     description: 'Modify role permissions',
+  },
+  {
+    module: 'admin',
+    resource: 'dashboard',
+    action: 'view',
+    code: 'admin.dashboard',
+    description: 'View the platform admin dashboard',
   },
   {
     module: 'admin',
@@ -454,6 +483,7 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
     'admin.roles.list',
     'admin.users.list',
     'admin.users.read',
+    'admin.dashboard',
     'admin.vehicle-catalog.brands.list',
     'admin.vehicle-catalog.brands.read',
     'admin.vehicle-catalog.models.list',
@@ -463,6 +493,62 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
   ],
   [SystemRoleType.support]: ['admin.users.list'],
   [SystemRoleType.user]: [],
+};
+
+/**
+ * Workshop role → permission matrix for the system workshop roles created by
+ * `seedWorkshops` (owner / mechanic / employee).
+ *
+ * This links the system workshop roles to the permission codes they are allowed
+ * to exercise within a WORKSHOP context. It covers the operational permission
+ * domain enforced by `PermissionsGuard` on maintenance / workshop / member
+ * endpoints (D-024 A1 + Security Review items 1 & 8).
+ *
+ * Hierarchy (for update-member-role): owner (100) > mechanic (50) > employee (30).
+ *
+ * NOTE: Roles can be extended per-workshop with custom roles via
+ * `create-role` / `update-role`; this matrix only establishes the system roles.
+ */
+const systemWorkshopRolePermissions: Record<string, string[]> = {
+  owner: [
+    // members
+    'member.invite',
+    'member.role.update',
+    'member.remove',
+    // workshop
+    'workshop.update',
+    'workshop.branch.create',
+    'workshop.hours.set',
+    // appointments
+    'appointment.create',
+    'appointment.update',
+    'appointment.cancel',
+    // work orders
+    'workorder.create',
+    'workorder.close',
+    'workorder.item.add',
+    // estimates
+    'estimate.create',
+    'estimate.approve',
+    'estimate.convert',
+    // service records
+    'service-record.create',
+    // history
+    'history.view',
+    'history.share',
+  ],
+  mechanic: [
+    'appointment.create',
+    'workorder.create',
+    'workorder.close',
+    'workorder.item.add',
+    'estimate.create',
+    'estimate.approve',
+    'estimate.convert',
+    'service-record.create',
+    'history.view',
+  ],
+  employee: ['appointment.create', 'history.view'],
 };
 
 async function seedPermissions() {
@@ -1325,6 +1411,51 @@ async function seedWorkshops() {
   console.log(`  ✓ ${count} workshops seeded`);
 }
 
+/**
+ * Links system workshop roles (owner / mechanic / employee) to their
+ * permission codes. Idempotent: upserts the WorkshopRolePermission link.
+ *
+ * Requires the workshop roles to already exist (run after `seedWorkshops`).
+ */
+async function seedSystemWorkshopRolePermissions() {
+  const roles = await prisma.workshopRole.findMany({
+    where: { isSystem: true },
+  });
+
+  const permissionCodes = Array.from(
+    new Set(Object.values(systemWorkshopRolePermissions).flat()),
+  );
+  const permissionsByCode = new Map(
+    (
+      await prisma.permission.findMany({
+        where: { code: { in: permissionCodes } },
+      })
+    ).map((p) => [p.code, p]),
+  );
+
+  let linked = 0;
+  for (const role of roles) {
+    const codes = systemWorkshopRolePermissions[role.code] ?? [];
+    for (const code of codes) {
+      const permission = permissionsByCode.get(code);
+      if (!permission) continue; // permission not defined in seed → skip
+      await prisma.workshopRolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: role.id,
+            permissionId: permission.id,
+          },
+        },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+      linked++;
+    }
+  }
+
+  console.log(`  ✓ ${linked} system workshop role → permission links seeded`);
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -1333,6 +1464,7 @@ async function main() {
   await seedVehicleCatalog();
   await seedUsers();
   await seedWorkshops();
+  await seedSystemWorkshopRolePermissions();
 
   console.log('\n✅ Seed completed successfully\n');
 }

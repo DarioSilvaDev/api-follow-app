@@ -6,7 +6,7 @@ import { PrismaService } from '../../../../common/database/prisma.service';
 export class GetVehicleServiceHistoryHandler {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(vehicleId: string) {
+  async execute(vehicleId: string, workshopId?: string) {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: vehicleId },
     });
@@ -15,23 +15,27 @@ export class GetVehicleServiceHistoryHandler {
     const [serviceRecords, workOrders, estimates, appointments] =
       await Promise.all([
         this.prisma.serviceRecord.findMany({
-          where: { vehicleId },
+          where: { vehicleId, ...(workshopId ? { workshopId } : {}) },
           include: { workshop: { select: { id: true, name: true } } },
           orderBy: { serviceDate: 'desc' },
         }),
         this.prisma.workOrder.findMany({
-          where: { vehicleId },
+          where: { vehicleId, ...(workshopId ? { workshopId } : {}) },
           include: { _count: { select: { items: true } } },
           orderBy: { openedAt: 'desc' },
           take: 20,
         }),
         this.prisma.estimate.findMany({
-          where: { vehicleId },
+          where: { vehicleId, ...(workshopId ? { workshopId } : {}) },
           orderBy: { createdAt: 'desc' },
           take: 20,
         }),
         this.prisma.appointment.findMany({
-          where: { vehicleId, status: { not: 'cancelled' } },
+          where: {
+            vehicleId,
+            status: { not: 'cancelled' },
+            ...(workshopId ? { workshopId } : {}),
+          },
           orderBy: { scheduledFor: 'desc' },
           take: 10,
         }),

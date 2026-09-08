@@ -23,6 +23,11 @@ export class GetSessionHandler {
         avatarUrl: true,
         language: true,
         status: true,
+        _count: {
+          select: {
+            ownerships: { where: { endsAt: null } },
+          },
+        },
         workshopMemberships: {
           where: { status: 'active', leftAt: null },
           select: {
@@ -40,8 +45,11 @@ export class GetSessionHandler {
 
     const roles = await this.roleService.loadUserRoles(userId, true);
 
+    const { _count, ...userData } = user;
+
     return {
-      ...user,
+      ...userData,
+      isVehicleOwner: _count.ownerships > 0,
       roles,
       ...(impersonation?.impersonated
         ? {

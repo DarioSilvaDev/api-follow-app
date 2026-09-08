@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { PermissionCache } from '../../../../common/cache/permission-cache';
@@ -24,6 +28,18 @@ export class AcceptInvitationHandler {
       invitation.expiresAt < new Date()
     ) {
       throw new UnauthorizedException('Invalid or expired invitation');
+    }
+
+    // Security Review #5 (P1): the invitation is bound to a specific email.
+    // The authenticated user may only accept an invitation addressed to their
+    // own email. A mismatch is a permission error (403 PERMISSION_DENIED, D-025).
+    if (
+      command.email &&
+      invitation.email.toLowerCase() !== command.email.toLowerCase()
+    ) {
+      throw new ForbiddenException(
+        'This invitation is not addressed to your account',
+      );
     }
 
     const member = await this.prisma.workshopMember.create({
