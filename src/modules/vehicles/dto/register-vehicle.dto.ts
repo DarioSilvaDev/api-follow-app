@@ -1,7 +1,21 @@
-import { IsString, IsOptional, IsInt, Min, Max, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 
 export class RegisterVehicleDto {
+  // D-037: formato alfanumérico de 2 a 10 caracteres. La normalización a
+  // mayúsculas + trim se aplica en RegisterVehicleHandler y en
+  // findByLicensePlate (no aquí) para mantener una única fuente de verdad.
   @IsString()
+  @Matches(/^[A-Za-z0-9]{2,10}$/, {
+    message: 'La placa debe ser alfanumérica y tener entre 2 y 10 caracteres',
+  })
   licensePlate!: string;
 
   @IsOptional()

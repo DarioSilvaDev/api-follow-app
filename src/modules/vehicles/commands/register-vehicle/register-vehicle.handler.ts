@@ -14,17 +14,20 @@ export class RegisterVehicleHandler {
   ) {}
 
   async execute(command: RegisterVehicleCommand) {
-    const existing = await this.repository.findByLicensePlate(
-      command.dto.licensePlate,
-    );
+    // D-037: normalizar placa (trim + mayúsculas) antes de buscar y de guardar,
+    // para impedir duplicados tipo "abc123" vs "ABC123".
+    const licensePlate = command.dto.licensePlate.trim().toUpperCase();
+
+    const existing = await this.repository.findByLicensePlate(licensePlate);
     if (existing) {
       throw new ConflictException(
-        `Vehicle with plate '${command.dto.licensePlate}' already exists`,
+        'Ya existe un vehículo registrado con esa placa',
       );
     }
 
     const vehicle = await this.repository.create({
       ...command.dto,
+      licensePlate,
       ownerId: command.ownerId,
     });
 

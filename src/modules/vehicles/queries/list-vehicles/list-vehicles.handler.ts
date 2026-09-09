@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
+import { VehicleResponseDto } from '../../dto/vehicle-response.dto';
 
 interface ListVehiclesQuery {
   userId?: string;
@@ -30,6 +31,15 @@ export class ListVehiclesHandler {
         skip,
         take: limit,
         include: {
+          // F-010 (contrato list vs detail): desnormalizar brand/model/version
+          // para que el listado use el mismo shape que VehicleResponseDto.
+          version: {
+            include: {
+              model: {
+                include: { brand: true },
+              },
+            },
+          },
           ownerships: {
             where: { endsAt: null },
             include: {
@@ -44,7 +54,7 @@ export class ListVehiclesHandler {
     ]);
 
     return {
-      data: vehicles,
+      data: vehicles.map((vehicle) => VehicleResponseDto.from(vehicle)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
