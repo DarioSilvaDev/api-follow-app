@@ -169,8 +169,17 @@ export class VehicleAccessService {
   }
 
   /**
-   * Checks if the vehicle has at least one maintenance record for the given workshop.
-   * This prevents "any member can read any vehicle" over-exposure.
+   * Checks if the vehicle has at least one maintenance record for the given
+   * workshop. This prevents "any member can read any vehicle" over-exposure.
+   *
+   * Wave P2 — B6 (product decision): CANCELLED appointments do NOT constitute
+   * an association. service_records and work_orders exist regardless of their
+   * status enumeration (a work order may be cancelled after being created, but
+   * no explicit product decision was taken for it — treated as-is).
+   *
+   * Grey zones pending product decision (do NOT change the contract silently):
+   * - work_orders with status = 'cancelled' still count today;
+   * - estimates count today, even though an estimate is not a real attendance.
    */
   private async assertWorkshopVehicleAccess(
     vehicleId: string,
@@ -187,7 +196,7 @@ export class VehicleAccessService {
     // Check vehicle-workshop association via any maintenance record
     const association = await this.prisma.$queryRawUnsafe<unknown[]>(
       `SELECT 1 FROM (
-        SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2
+        SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'
         UNION
         SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2
         UNION

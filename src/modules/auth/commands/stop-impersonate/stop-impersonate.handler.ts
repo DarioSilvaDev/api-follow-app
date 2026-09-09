@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { envs } from '../../../../config/envs';
 
 /**
  * StopImpersonateHandler — Ends an impersonation session.
@@ -42,8 +43,12 @@ export class StopImpersonateHandler {
       throw new ForbiddenException('Admin user not active');
     }
 
-    // D-016 A1: re-sign a fresh admin token (never return the stored one)
-    const adminAccessToken = this.jwtService.sign({ sub: adminId });
+    // D-016 A1: re-sign a fresh admin token (never return the stored one).
+    // Explicit exp aligned to JWT_ACCESS_EXPIRES_IN (seconds) — Wave P2 B1.
+    const adminAccessToken = this.jwtService.sign(
+      { sub: adminId },
+      { expiresIn: parseInt(envs.JWT_ACCESS_EXPIRES_IN, 10) },
+    );
 
     await this.prisma.impersonationSession.delete({
       where: { id: session.id },

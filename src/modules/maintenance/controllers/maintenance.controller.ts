@@ -21,6 +21,7 @@ import { ActiveContext } from '../../../common/context/decorators/current-contex
 import type { CurrentContext } from '../../../common/context/interfaces/current-context.interface';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { VehicleAccessService } from '../../../common/authorization/vehicle-access.service';
+import { AppointmentStatus, WorkOrderStatus } from '@prisma/client';
 import {
   CreateAppointmentDto,
   UpdateAppointmentDto,
@@ -200,7 +201,7 @@ export class MaintenanceController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('workshopId') workshopId?: string,
     @Query('vehicleId') vehicleId?: string,
-    @Query('status') status?: any,
+    @Query('status') status?: AppointmentStatus,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
@@ -245,7 +246,7 @@ export class MaintenanceController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('workshopId') workshopId?: string,
     @Query('vehicleId') vehicleId?: string,
-    @Query('status') status?: any,
+    @Query('status') status?: WorkOrderStatus,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {

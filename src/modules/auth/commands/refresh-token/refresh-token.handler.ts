@@ -8,6 +8,7 @@ import { RefreshTokenCommand } from './refresh-token.command';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { hashRefreshToken } from '../../utils/token-hash.util';
 import { SessionExpiredException } from '../../../../common/exceptions/coded.exception';
+import { envs } from '../../../../config/envs';
 
 interface RefreshResult {
   accessToken: string;
@@ -168,7 +169,10 @@ export class RefreshTokenHandler {
 
     // ── Normal refresh (no impersonation or impersonation expired) ──
     const payload = { sub: session.userId };
-    const accessToken = this.jwtService.sign(payload);
+    // Explicit exp aligned to JWT_ACCESS_EXPIRES_IN (seconds) — Wave P2 B1.
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: parseInt(envs.JWT_ACCESS_EXPIRES_IN, 10),
+    });
     const newRefreshToken = randomBytes(32).toString('base64url');
 
     const expiresAt = new Date();

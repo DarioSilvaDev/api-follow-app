@@ -8,11 +8,11 @@ import {
   Post,
   Put,
   Query,
-  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Response } from 'express';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { impersonationTokenCookieOptions } from '../../../config/cookies.config';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
@@ -455,26 +455,18 @@ export class AdministrationController {
   }
 
   @Post('users/:id/impersonate')
-  @UseGuards(PermissionsGuard)
+  // Wave P2 — B4: rate limit against impersonation abuse (admin token refresh).
+  @UseGuards(ThrottlerGuard, PermissionsGuard)
   @Permissions('admin.users.manage')
   async impersonate(
     @Param('id') id: string,
     @CurrentUser() currentUser: AuthenticatedUser,
-    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const adminToken = req.cookies?.access_token;
-    if (!adminToken) {
-      throw new (await import('@nestjs/common')).ForbiddenException(
-        'No admin token found',
-      );
-    }
-
-    const result = await this.impersonateHandler.execute(
-      id,
-      currentUser.id,
-      adminToken,
-    );
+    // D-016 A2: the admin access token is no longer persisted. The admin is
+    // authenticated by the class-level JwtAuthGuard + PermissionsGuard; the
+    // impersonated token is signed with exp aligned to the 1h window.
+    const result = await this.impersonateHandler.execute(id, currentUser.id);
 
     res.cookie(
       'access_token',

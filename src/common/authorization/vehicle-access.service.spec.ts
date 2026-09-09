@@ -141,6 +141,41 @@ describe('VehicleAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('should exclude cancelled appointments from the vehicle-workshop association (Wave P2 — B6)', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.workshopMember.findUnique.mockResolvedValue({
+        id: 'member-1',
+        status: 'active',
+      });
+      prismaMock.$queryRawUnsafe.mockResolvedValue(
+        [] as unknown[],
+      );
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.assertVehicleAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: workshopCtx,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      // The appointments leg of the UNION must never match cancelled rows
+      const sql = prismaMock.$queryRawUnsafe.mock.calls[0][0] as string;
+      expect(sql).toContain(
+        "SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
+      );
+      // Other legs are kept as-is (grey zones documented in the service)
+      expect(sql).toContain(
+        'SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2',
+      );
+      expect(sql).toContain(
+        'SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2',
+      );
+    });
+
     it('should throw ForbiddenException when WORKSHOP context with no membership and no super_admin', async () => {
       prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
       prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);

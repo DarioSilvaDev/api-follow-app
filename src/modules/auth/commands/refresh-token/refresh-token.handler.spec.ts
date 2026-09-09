@@ -2,6 +2,13 @@ import { UnauthorizedException } from '@nestjs/common';
 import { RefreshTokenHandler } from './refresh-token.handler';
 import { RefreshTokenCommand } from './refresh-token.command';
 
+// Mock envs before the handler imports it, to avoid Joi validation failure
+// (same pattern as login.handler.spec). The handler reads only
+// JWT_ACCESS_EXPIRES_IN for the explicit signing exp (Wave P2 — B1).
+jest.mock('../../../../config/envs', () => ({
+  envs: { JWT_ACCESS_EXPIRES_IN: '1500' },
+}));
+
 describe('RefreshTokenHandler — atomic rotation (TOCTOU, Security Review #3)', () => {
   let handler: RefreshTokenHandler;
   let authRepository: any;

@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { LoginDto } from '../dto/login.dto';
@@ -65,6 +66,9 @@ export class AuthController {
   }
 
   @Post('login')
+  // Wave P2 — B4: rate limit against credential brute force (D-001). Uses the
+  // module-wide ttl/limit (envs THROTTLE_TTL/THROTTLE_LIMIT, default 10/60s).
+  @UseGuards(ThrottlerGuard)
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -83,6 +87,8 @@ export class AuthController {
   }
 
   @Post('refresh')
+  // Wave P2 — B4: rate limit against refresh-token/impersonation abuse.
+  @UseGuards(ThrottlerGuard)
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -140,6 +146,8 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  // Wave P2 — B4: rate limit against email-bombing / enumeration abuse.
+  @UseGuards(ThrottlerGuard)
   async forgotPassword(@Body() dto: RequestPasswordResetDto) {
     await this.requestPasswordResetHandler.execute(
       new RequestPasswordResetCommand(dto.email),
@@ -147,6 +155,8 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  // Wave P2 — B4: rate limit against reset-token brute force.
+  @UseGuards(ThrottlerGuard)
   async resetPassword(@Body() dto: ResetPasswordDto) {
     await this.resetPasswordHandler.execute(
       new ResetPasswordCommand(dto.token, dto.password),

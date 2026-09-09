@@ -105,7 +105,13 @@ export class LoginHandler {
 
     const roles = await this.roleService.loadUserRoles(user.id, false);
     const payload = { sub: user.id };
-    const accessToken = this.jwtService.sign(payload);
+    // Explicit exp: access token TTL comes from JWT_ACCESS_EXPIRES_IN (seconds).
+    // The module-level signOptions also applies it, but stating it here makes
+    // the expiration explicit at the signing site (Wave P2 — B1) and keeps the
+    // strategy's manual exp check (ignoreExpiration: true) deterministic.
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: parseInt(envs.JWT_ACCESS_EXPIRES_IN, 10),
+    });
     const refreshToken = randomBytes(32).toString('base64url');
 
     const expiresAt = new Date();

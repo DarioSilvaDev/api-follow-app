@@ -12,6 +12,10 @@ const IMPERSONATION_TTL_MS = 60 * 60 * 1000; // 1 hour
  * - deleteMany by adminId WITHOUT expiration filter (deletes all previous rows)
  * - expiresAt = now + 1h
  * - impersonated token signed with exp ≈ 1h aligned to expiresAt
+ *
+ * D-016 A2 (Security Review P1):
+ * - The admin access token is NO LONGER persisted (adminToken column dropped).
+ *   stop-impersonate re-signs a fresh admin token and never reads the stored one.
  */
 @Injectable()
 export class ImpersonateHandler {
@@ -20,7 +24,7 @@ export class ImpersonateHandler {
     private readonly jwtService: JwtService,
   ) {}
 
-  async execute(targetUserId: string, adminUserId: string, adminToken: string) {
+  async execute(targetUserId: string, adminUserId: string) {
     const targetUser = await this.prisma.user.findUnique({
       where: { id: targetUserId },
       select: {
@@ -71,7 +75,6 @@ export class ImpersonateHandler {
       this.prisma.impersonationSession.create({
         data: {
           adminId: adminUserId,
-          adminToken,
           targetUserId,
           expiresAt,
         },
