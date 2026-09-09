@@ -16,6 +16,8 @@ import { CurrentContext } from '../context/interfaces/current-context.interface'
  *   6. WORKSHOP context + NO membership → fall through to super_admin check
  *   7. super_admin → return
  *   8. Nothing matches → ForbiddenException
+ *   9. UNION legs: appointments/cancelled excluded, work_orders/cancelled excluded,
+ *      estimates present (no filter), service_records present (no filter)
  *
  * - assertOwnershipOrSharedAccess (strict mode):
  *   1. Vehicle not exists → return
@@ -141,7 +143,7 @@ describe('VehicleAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    it('should exclude cancelled appointments from the vehicle-workshop association (Wave P2 — B6)', async () => {
+    it('should exclude cancelled appointments and work_orders from vehicle-workshop association (Wave P3 — B6 Amendment 3)', async () => {
       prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
       prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
       prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
@@ -162,15 +164,21 @@ describe('VehicleAccessService', () => {
         }),
       ).rejects.toThrow(ForbiddenException);
 
-      // The appointments leg of the UNION must never match cancelled rows
       const sql = prismaMock.$queryRawUnsafe.mock.calls[0][0] as string;
+
+      // (a) appointments leg: status <> 'cancelled'
       expect(sql).toContain(
         "SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
       );
-      // Other legs are kept as-is (grey zones documented in the service)
+      // (b) work_orders leg: status <> 'cancelled' (Wave P3 — Amendment 3)
       expect(sql).toContain(
-        'SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2',
+        "SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
       );
+      // (c) estimates leg: present WITHOUT status filter (D-019)
+      expect(sql).toContain(
+        'SELECT workshop_id FROM estimates WHERE vehicle_id = $1 AND workshop_id = $2',
+      );
+      // (d) service_records leg: present WITHOUT status filter
       expect(sql).toContain(
         'SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2',
       );
