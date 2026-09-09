@@ -26,4 +26,8 @@ export interface AuthRepository {
   findPasswordResetByToken(token: string): Promise<PasswordReset | null>;
 
   markPasswordResetUsed(id: string): Promise<void>;
+
+  revokeUnusedPasswordResets(userId: string): Promise<void>;
+
+  deleteCleanupPasswordResets(userId: string): Promise<void>;
 }

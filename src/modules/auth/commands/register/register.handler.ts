@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { v4 as uuid } from 'uuid';
 import * as bcrypt from 'bcrypt';
@@ -26,7 +26,11 @@ export class RegisterHandler {
 
     const existing = await this.userRepository.findByEmail(email);
     if (existing) {
-      throw new UnauthorizedException('Email already registered');
+      // D-032: duplicate registration is a resource conflict (409), not an
+      // authentication failure. Deliberate enumeration: register is a public
+      // endpoint where the user enters their own email, and the frontend maps
+      // 409 CONFLICT (D-025) to show this message.
+      throw new ConflictException('Ya existe una cuenta con este email');
     }
 
     const { password, ...rest } = command.dto;

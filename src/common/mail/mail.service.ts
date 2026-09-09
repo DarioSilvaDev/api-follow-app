@@ -41,7 +41,10 @@ export class MailService {
   }
 
   async sendVerificationEmail(to: string, token: string): Promise<void> {
-    const link = `${envs.API_URL}/auth/verify-email?token=${token}`;
+    // D-034: the verification link points to the frontend page (which consumes
+    // GET /auth/verify-email), consistent with D-028 for password reset.
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/verify-email?token=${token}`;
     await this.send({
       to,
       subject: 'Verifica tu correo electrónico - FollowApp',
@@ -55,7 +58,8 @@ export class MailService {
   }
 
   async sendPasswordResetEmail(to: string, token: string): Promise<void> {
-    const link = `${envs.API_URL}/auth/reset-password?token=${token}`;
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/reset-password?token=${token}`;
     await this.send({
       to,
       subject: 'Restablece tu contraseña - FollowApp',
@@ -64,6 +68,19 @@ export class MailService {
         <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
         <p><a href="${link}">${link}</a></p>
         <p>Este enlace expira en 1 hora.</p>
+        <p>Si no solicitaste este cambio, puedes ignorar este mensaje.</p>
+      `,
+    });
+  }
+
+  async sendPasswordResetCompletedEmail(to: string): Promise<void> {
+    await this.send({
+      to,
+      subject: 'Tu contraseña ha sido cambiada - FollowApp',
+      html: `
+        <h2>Contraseña cambiada</h2>
+        <p>Tu contraseña ha sido restablecida exitosamente.</p>
+        <p>Si no realizaste este cambio, contacta al soporte inmediatamente.</p>
       `,
     });
   }

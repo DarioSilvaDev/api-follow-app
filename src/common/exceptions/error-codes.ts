@@ -6,6 +6,7 @@
  * - 401 triggers refresh → retry → redirect
  * - IMPERSONATION_EXPIRED triggers /impersonation-expired flow
  * - INVALID_CONTEXT reserves for D-004/D-021 recovery UX
+ * - RATE_LIMITED maps HTTP 429 from @nestjs/throttler (D-025 Amendment)
  */
 export const ERROR_CODES = {
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
@@ -16,6 +17,7 @@ export const ERROR_CODES = {
   NOT_FOUND: 'NOT_FOUND',
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   CONFLICT: 'CONFLICT',
+  RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 

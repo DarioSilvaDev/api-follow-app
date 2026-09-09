@@ -19,6 +19,7 @@ import { StopImpersonateHandler } from './commands/stop-impersonate/stop-imperso
 import { GetSessionHandler } from './queries/get-session/get-session.handler';
 import { RoleService } from './services/role.service';
 import { SendPasswordResetEmailListener } from './listeners/send-password-reset-email.listener';
+import { SendPasswordResetCompletedEmailListener } from './listeners/send-password-reset-completed-email.listener';
 import { SendVerificationEmailListener } from './listeners/send-verification-email.listener';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
@@ -48,6 +49,7 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     GetSessionHandler,
     RoleService,
     SendPasswordResetEmailListener,
+    SendPasswordResetCompletedEmailListener,
     SendVerificationEmailListener,
     JwtStrategy,
     { provide: AUTH_REPOSITORY, useClass: PrismaAuthRepository },

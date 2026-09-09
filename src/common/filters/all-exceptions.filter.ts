@@ -128,6 +128,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return ERROR_CODES.NOT_FOUND;
       case HttpStatus.CONFLICT:
         return ERROR_CODES.CONFLICT;
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return ERROR_CODES.RATE_LIMITED;
       default:
         return 'INTERNAL_ERROR' as ErrorCode;
     }

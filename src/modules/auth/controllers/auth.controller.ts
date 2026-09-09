@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response, Request } from 'express';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { LoginDto } from '../dto/login.dto';
@@ -141,26 +141,38 @@ export class AuthController {
   async changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
-  ): Promise<void> {
+  ): Promise<{ message: string }> {
     await this.changePasswordHandler.execute(user.id, dto);
+    return { message: 'Contraseña actualizada exitosamente' };
   }
 
   @Post('forgot-password')
   // Wave P2 — B4: rate limit against email-bombing / enumeration abuse.
+  @Throttle({ default: { limit: 3, ttl: 600000 } })
   @UseGuards(ThrottlerGuard)
-  async forgotPassword(@Body() dto: RequestPasswordResetDto) {
+  async forgotPassword(
+    @Body() dto: RequestPasswordResetDto,
+  ): Promise<{ message: string }> {
     await this.requestPasswordResetHandler.execute(
       new RequestPasswordResetCommand(dto.email),
     );
+    return {
+      message:
+        'Si el email está registrado, recibirás un enlace para restablecer tu contraseña',
+    };
   }
 
   @Post('reset-password')
   // Wave P2 — B4: rate limit against reset-token brute force.
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @UseGuards(ThrottlerGuard)
-  async resetPassword(@Body() dto: ResetPasswordDto) {
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+  ): Promise<{ message: string }> {
     await this.resetPasswordHandler.execute(
       new ResetPasswordCommand(dto.token, dto.password),
     );
+    return { message: 'Contraseña actualizada exitosamente' };
   }
 
   @Get('me')

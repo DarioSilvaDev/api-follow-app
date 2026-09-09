@@ -38,6 +38,7 @@ interface Ienvs {
   B2_BUCKET?: string;
   B2_PUBLIC_URL?: string;
   SIGNED_URL_EXPIRES_SECONDS: number;
+  FRONTEND_URL: string;
 }
 
 const schema = Joi.object({
@@ -77,6 +78,7 @@ const schema = Joi.object({
   B2_BUCKET: Joi.string().required(),
   B2_PUBLIC_URL: Joi.string().required(),
   SIGNED_URL_EXPIRES_SECONDS: Joi.number().default(3600),
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
 }).unknown(true);
 
 const { error, value: validatedEnvs } = schema.validate(process.env, {
