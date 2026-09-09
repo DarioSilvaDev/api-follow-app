@@ -717,10 +717,10 @@ async function seedVehicleCatalog() {
 
   if (corollaId) {
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000001' },
+      where: { id: '00000000-0000-4000-8000-000000000001' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000001',
+        id: '00000000-0000-4000-8000-000000000001',
         modelId: corollaId,
         name: '1.8 XLI',
         fuelType: 'gasoline',
@@ -732,10 +732,10 @@ async function seedVehicleCatalog() {
       },
     });
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000002' },
+      where: { id: '00000000-0000-4000-8000-000000000002' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000002',
+        id: '00000000-0000-4000-8000-000000000002',
         modelId: corollaId,
         name: '1.8 XLI CVT',
         fuelType: 'gasoline',
@@ -747,10 +747,10 @@ async function seedVehicleCatalog() {
       },
     });
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000003' },
+      where: { id: '00000000-0000-4000-8000-000000000003' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000003',
+        id: '00000000-0000-4000-8000-000000000003',
         modelId: corollaId,
         name: '2.0 SE-G CVT',
         fuelType: 'gasoline',
@@ -765,10 +765,10 @@ async function seedVehicleCatalog() {
 
   if (hiluxId) {
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000004' },
+      where: { id: '00000000-0000-4000-8000-000000000004' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000004',
+        id: '00000000-0000-4000-8000-000000000004',
         modelId: hiluxId,
         name: '2.4 TD SRV 4x4',
         fuelType: 'diesel',
@@ -780,10 +780,10 @@ async function seedVehicleCatalog() {
       },
     });
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000005' },
+      where: { id: '00000000-0000-4000-8000-000000000005' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000005',
+        id: '00000000-0000-4000-8000-000000000005',
         modelId: hiluxId,
         name: '2.8 TD SRX 4x4 AT',
         fuelType: 'diesel',
@@ -798,10 +798,10 @@ async function seedVehicleCatalog() {
 
   if (amarokId) {
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000006' },
+      where: { id: '00000000-0000-4000-8000-000000000006' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000006',
+        id: '00000000-0000-4000-8000-000000000006',
         modelId: amarokId,
         name: '2.0 TD Trendline 4x2',
         fuelType: 'diesel',
@@ -813,10 +813,10 @@ async function seedVehicleCatalog() {
       },
     });
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000007' },
+      where: { id: '00000000-0000-4000-8000-000000000007' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000007',
+        id: '00000000-0000-4000-8000-000000000007',
         modelId: amarokId,
         name: '3.0 V6 TD Highline 4x4 AT',
         fuelType: 'diesel',
@@ -831,10 +831,10 @@ async function seedVehicleCatalog() {
 
   if (rangerId) {
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000008' },
+      where: { id: '00000000-0000-4000-8000-000000000008' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000008',
+        id: '00000000-0000-4000-8000-000000000008',
         modelId: rangerId,
         name: '2.2 TD XL 4x2',
         fuelType: 'diesel',
@@ -846,10 +846,10 @@ async function seedVehicleCatalog() {
       },
     });
     await prisma.vehicleVersion.upsert({
-      where: { id: '00000000-0000-0000-0000-000000000009' },
+      where: { id: '00000000-0000-4000-8000-000000000009' },
       update: {},
       create: {
-        id: '00000000-0000-0000-0000-000000000009',
+        id: '00000000-0000-4000-8000-000000000009',
         modelId: rangerId,
         name: '3.2 TD XLT 4x4 AT',
         fuelType: 'diesel',
