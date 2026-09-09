@@ -1531,3 +1531,40 @@ PostgreSQL + Prisma
 ```
 
 El registro debe permanecer deliberadamente pequeño y orientado a decisiones. Las decisiones de implementación menores no deben convertirse automáticamente en entradas del Decision Register.
+
+---
+
+# 12. Wave P2 — Implementación registrada (2026-09-08)
+
+## Implementado (QA post-onda: APROBADO CON OBSERVACIONES; 0 defectos corregibles)
+
+| Ítem | Detalle |
+| ---- | ------- |
+| D-016 A2 completado | Drop de `adminToken` en claro: migración `prisma/migrations/20260908000000_drop_admin_token_from_impersonation_sessions` (DROP COLUMN) + schema + `impersonate.handler` ya no persiste token. `stop-impersonate` sigue re-firmando token fresco (D-016 A1). Cero lecturas residuales de DB (verificado por QA). |
+| exp explícita | `login`, `refresh` (normal), `impersonate` y `stop-impersonate` firman con exp determinada; impersonación usa exp absoluta de la ventana de 1h. |
+| Throttler | `ThrottlerModule` habilitado (envs `THROTTLE_TTL`/`THROTTLE_LIMIT` con defaults) en login, refresh, forgot/reset-password e impersonate. Sin APP_GUARD global (SPA). Sin dependencias nuevas. |
+| B2 | `status` tipado a `AppointmentStatus`/`WorkOrderStatus` en maintenance. Sin cambio de contrato runtime. |
+| B3 | `fileFilter` MIME en fotos (jpeg/png/webp/avif) y documentos (+pdf), consistente con `isImage` de storage. 400 → envelope D-025. |
+| B5 | `jwt.strategy.spec.ts` instancia la estrategia real (elimina `validatePayload` que replicaba lógica). |
+| Asociación vehículo-taller | Appointments con `status = 'cancelled'` ya NO generan asociación (SQL en `assertWorkshopVehicleAccess`). |
+| Dead code | Eliminado `src/common/exceptions/domain.exception.ts` (sin imports). |
+
+Verificación: `tsc --noEmit` exit 0 · `npm test` 132 PASS · `npm run build` exit 0 (backend y frontend).
+
+## Decisión de producto aplicada
+
+- **D-024 A1 regla 3 (asociación, enmienda parcial):** los appointments **cancelados no constituyen atención real** y por lo tanto no generan asociación vehículo-taller para acceso WORKSHOP.
+
+## DECISIÓN DE PRODUCTO PENDIENTE
+
+- **¿Los work-orders con `status = 'cancelled'` y los estimates deben seguir contando como asociación vehículo-taller?** (regla 3 de D-024 A1). Documentado en `src/common/authorization/vehicle-access.service.ts`. No se cambió el contrato silenciosamente. Recomendación: resolver junto con D-019 (semántica de WORKSHOP y "parque de clientes").
+
+## Observaciones QA post-wave (deuda menor)
+
+- **D-025:** agregar código `RATE_LIMITED` para HTTP 429 (throttler) al catálogo `error-codes.ts` + `statusToCode`; hoy cae en `INTERNAL_ERROR` (funcional pero engañoso).
+- **Tests faltantes:** `fileTypeFilter()`/MIME (B3) y verificación explícita del leg `estimates` en el test B6.
+- **Entorno:** `.env` local sin `JWT_REFRESH_SECRET` (solo vive en shell del dev); recomendar agregarla a `.env`/`.env.example`.
+
+## Migración requerida
+
+- Aplicar `npm run db:deploy` en el entorno correspondiente (DROP COLUMN `admin_token`; no destructivo, no se lee desde D-016 A1).
