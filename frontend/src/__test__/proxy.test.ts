@@ -87,6 +87,38 @@ describe("Proxy — route protection", () => {
       const location = res.headers.get("location");
       expect(location).toBeNull();
     });
+
+    it("redirects /vehicles to /login when no cookie", () => {
+      const req = makeRequest("/vehicles");
+      const res = proxy(req);
+
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.status).toBeLessThan(400);
+      expect(res.headers.get("location")).toContain("/login");
+      expect(res.headers.get("location")).toContain(
+        encodeURIComponent("/vehicles"),
+      );
+    });
+
+    it("redirects /vehicles/new to /login with correct next param", () => {
+      const req = makeRequest("/vehicles/new");
+      const res = proxy(req);
+
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.status).toBeLessThan(400);
+      const location = res.headers.get("location")!;
+      expect(location).toContain("/login");
+      expect(location).toContain(encodeURIComponent("/vehicles/new"));
+    });
+
+    it("allows /vehicles when access_token cookie is present", () => {
+      const req = makeRequest("/vehicles", { access_token: "valid-token" });
+      const res = proxy(req);
+
+      const location = res.headers.get("location");
+      expect(location).toBeNull();
+      expect(res.status).not.toBe(307);
+    });
   });
 
   describe("auth routes", () => {

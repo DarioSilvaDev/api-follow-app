@@ -8,6 +8,7 @@ import {
   CardTitle,
   CardContent,
   CardFooter,
+  CardDescription,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -95,6 +96,20 @@ export default function DashboardPage() {
           </Card>
         )}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Mis vehículos</CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Registrá y consultá los vehículos de tu propiedad.
+          </CardDescription>
+        </CardHeader>
+        <CardFooter>
+          <Link href="/vehicles">
+            <Button variant="outline">Ver mis vehículos</Button>
+          </Link>
+        </CardFooter>
+      </Card>
 
       <Card>
         <CardFooter>

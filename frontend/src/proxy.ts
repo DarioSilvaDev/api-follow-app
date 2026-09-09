@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 // This is purely navigation UX protection (D-001, RF-5).
 // ---------------------------------------------------------------------------
 
-const protectedRoutes = ["/dashboard", "/profile"];
+const protectedRoutes = ["/dashboard", "/profile", "/vehicles"];
 const authRoutes = ["/login", "/register"];
 
 function isProtectedRoute(pathname: string): boolean {

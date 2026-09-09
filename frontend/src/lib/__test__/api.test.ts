@@ -211,3 +211,98 @@ describe("API client — refresh interceptor", () => {
     expect(nonRefreshCalls.length).toBeLessThanOrEqual(4);
   });
 });
+
+// ── Vehicle API ──────────────────────────────────────────────────────────────
+
+describe("API client — vehicleApi", () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  let capturedRequests: Array<{ url: string; method: string }>;
+
+  beforeEach(() => {
+    capturedRequests = [];
+    vi.resetModules();
+
+    fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, { data: [] });
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("listVehicles parses the paginated response", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (url.includes("auth/refresh")) {
+        return makeResponse(200, { message: "ok" });
+      }
+      return makeResponse(200, {
+        data: [{ id: "v1", licensePlate: "ABC123" }],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.listVehicles({ page: 1, limit: 20 });
+
+    expect(result.meta.total).toBe(1);
+    expect(result.data[0].licensePlate).toBe("ABC123");
+
+    const vehicleCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles"),
+    );
+    expect(vehicleCalls).toHaveLength(1);
+  });
+
+  it("maps registerVehicle 409 to { status, message, code } without refresh", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (url.includes("auth/refresh")) {
+        return makeResponse(200, { message: "ok" });
+      }
+      return makeResponse(409, {
+        message: "Vehicle with plate 'ABC123' already exists",
+        code: "VEHICLE_PLATE_EXISTS",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+
+    await expect(
+      vehicleApi.registerVehicle({ licensePlate: "ABC123" }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "Vehicle with plate 'ABC123' already exists",
+      code: "VEHICLE_PLATE_EXISTS",
+    });
+
+    // 409 is not in the retry statusCodes → refresh must NOT be triggered
+    const refreshCalls = capturedRequests.filter((r) =>
+      r.url.includes("auth/refresh"),
+    );
+    expect(refreshCalls).toHaveLength(0);
+  });
+
+  it("listModels sends brandId as a query param", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, [{ id: "m1", brandId: "b1", name: "Corolla" }]);
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.listModels("b1");
+
+    expect(result[0].name).toBe("Corolla");
+    expect(capturedRequests[0].url).toContain("vehicle-models");
+    expect(capturedRequests[0].url).toContain("brandId=b1");
+  });
+});

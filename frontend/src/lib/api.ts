@@ -1,5 +1,13 @@
 import ky, { HTTPError, isHTTPError } from "ky";
 import type { SessionUser } from "@/types/auth";
+import type {
+  RegisterVehicleInput,
+  Vehicle,
+  VehicleBrand,
+  VehicleListResponse,
+  VehicleModel,
+  VehicleVersion,
+} from "@/types/vehicle";
 
 export { HTTPError, isHTTPError };
 
@@ -83,6 +91,25 @@ export const api = ky.create({
     ],
   },
 });
+
+// ---------------------------------------------------------------------------
+// Shared error mapping — HTTPError → { status, message, code }
+// Used so the UI can read API errors without importing ky internals.
+// ---------------------------------------------------------------------------
+
+async function toApiError(error: unknown): Promise<never> {
+  if (isHTTPError(error)) {
+    const status = error.response.status;
+    let body: { message?: string; code?: string } = {};
+    try {
+      body = await error.response.json();
+    } catch {
+      // Response not JSON
+    }
+    throw { status, message: body.message, code: body.code };
+  }
+  throw error;
+}
 
 // ---------------------------------------------------------------------------
 // Auth API methods
@@ -251,4 +278,48 @@ export const authApi = {
         }
         throw error;
       }),
+};
+
+// ---------------------------------------------------------------------------
+// Vehicle API methods
+//
+// D-035 (MVP): vehicle calls run in PERSONAL context — no X-Context-Type
+// header is sent; the backend defaults to PERSONAL.
+// ---------------------------------------------------------------------------
+
+export interface VehicleApiError {
+  status?: number;
+  message?: string;
+  code?: string;
+}
+
+export const vehicleApi = {
+  listVehicles: ({
+    page = 1,
+    limit = 20,
+  }: { page?: number; limit?: number } = {}) =>
+    api
+      .get("vehicles", { searchParams: { page, limit } })
+      .json<VehicleListResponse>()
+      .catch(toApiError),
+
+  registerVehicle: (input: RegisterVehicleInput) =>
+    api
+      .post("vehicles", { json: input })
+      .json<Vehicle>()
+      .catch(toApiError),
+
+  listBrands: () => api.get("vehicle-brands").json<VehicleBrand[]>().catch(toApiError),
+
+  listModels: (brandId: string) =>
+    api
+      .get("vehicle-models", { searchParams: { brandId } })
+      .json<VehicleModel[]>()
+      .catch(toApiError),
+
+  listVersions: (modelId: string) =>
+    api
+      .get("vehicle-versions", { searchParams: { modelId } })
+      .json<VehicleVersion[]>()
+      .catch(toApiError),
 };
