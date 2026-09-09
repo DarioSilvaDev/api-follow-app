@@ -2021,3 +2021,55 @@ El Tech Lead emitió `DESIGN-F-010` con 7 decisiones (D1 contrato uniforme, D2 n
 | Contrato list | ✅ Implementada (validación TL pendiente) | `GET /vehicles` con shape `VehicleResponseDto` + `meta`; divergencias D1-DTO/D3/D4 registradas arriba. |
 
 Verificación global: backend `npm test` 22 suites / 185 PASS · backend `npm run build` exit 0 · frontend `npm test` 34/34 PASS · frontend `npm run build` exit 0.
+
+---
+
+# 17. Registro (2026-09-09): QA E2E F-010 + mini-iteración de corrección (F-1/F-2)
+
+## Objetivo
+
+Ejecutar el plan de QA E2E de F-010 (Registrar Vehículo) contra backend real + BD local, verificar el journey UI, y corregir los hallazgos detectados antes de dar por cerrada la iteración.
+
+## Cobertura QA (ejecutada 2026-09-09)
+
+### API / BD (backend-engineer) — 12 casos en primera pasada
+| Resultado | Casos |
+|---|---|
+| **PASS** (10) | Login seed 201+cookies; ownership en BD correcta; placa duplicada lowercase→409 (D-037); VIN→409 sin 500; engineNumber→409 sin 500; sin sesión→401; `GET /vehicles` con `meta` + shape desnormalizado; `GET /:id` 200/403/404; catálogo cascada 200; POST sin versionId→201 `versionId:null` (D-038); listado con ownerships activas. |
+| **FAIL parcial** (1) | **F-1:** `POST /api/vehicles` con `versionId` válido → 201 pero `brand/model/version: null` (AC §10 no cumplido; `create()` sin include). |
+| **FAIL integración** (1) | **F-2:** 9/10 versiones del catálogo seed con IDs `00000000-...-0001..009` rechazadas con 400 por `@IsUUID()` (seed, no DTO). En UI real, elegir la mayoría de las versiones del catálogo → 400. |
+
+### UI (frontend-tech-lead) — 10 casos
+8 PASS · 1 PARTIAL (QA-U5: manejo 409 engineNumber/fallback correcto en código, sin tests — LOW) · 0 FAIL.
+4 vacíos de cobertura LOW: test 409 engineNumber, test 409 fallback, test dashboard card "Mis vehículos", edge cases zod (min/max placa, rango años). 34/34 tests PASS + build OK (rutas `/vehicles` y `/vehicles/new` generadas).
+
+## Validación técnica (Tech Lead)
+
+- **F-1:** causa raíz confirmada (`vehicle.create` sin include; el patrón ya existía en list/get). Decisión: agregar `include: { version: { include: { model: { include: { brand: true } } } } }` en `create()` (único round-trip, consistente con list/detail). Descartado refetch tras create (ventana de carrera) y handler-lectura (viola patrón).
+- **F-2:** `@IsUUID()` en class-validator 0.15.1 delega a `validator` con `version='all'` — verificado empíricamente: **`@IsUUID('all')` NO acepta los IDs del seed** (fallan por dígito de versión `0`; solo `'loose'` los aceptaría). El DTO es correcto; el defecto es del **seed**. Opciones: A) re-seed con v4 deterministas (recomendada), B) re-seed sin id explícito (rompe idempotencia), C) `@IsUUID('loose')` (deuda fallback, degrada contrato), D) `'all'` (no resuelve).
+
+## Correcciones aplicadas y verificadas (10/10 PASS en re-QA)
+
+### F-1 (commit `f8d6654`) — hidratación en create
+- `prisma-vehicle.repository.ts` `create()`: + include de `version.model.brand` (idéntico a list/get).
+- `vehicle.repository.ts`: tipo de retorno con relación hidratada (sin mover al DTO para evitar dependencia repositorio→DTO).
+- Tests: +1 en `prisma-vehicle.repository.spec.ts` (assert include) + nuevo `vehicle-response.dto.spec.ts` (2 casos: con rama poblada → nombres; sin versión → `null`, no rompe).
+- Verificación: 23 suites / 188 tests PASS + build OK + e2e 201 con `brand:"Toyota", model:"Corolla", version:"1.8 XLI"`.
+
+### F-2 (commit `e07cf9b`) — IDs de catálogo v4 deterministas
+- **Estrategia (Database):** migración de datos versionada (no re-seed directo) porque 2 vehículos reales referenciaban `...007`/`...008`. Re-key en sitio (`UPDATE vehicle_versions SET id = <v4> WHERE id = <v0>` × 9) aprovechando `ON UPDATE CASCADE` de la FK (actualiza automáticamente los vehículos referenciantes; atómico; no-op en BD frescas).
+- Migración: `prisma/migrations/20260909000001_fix_catalog_version_ids/migration.sql` (SQL puro, sin cambios de schema).
+- `prisma/seed.ts`: 9 IDs `00000000-0000-0000-...-0001..009` → `00000000-0000-4000-8000-...-0001..009` (v4 deterministas; `crypto.randomUUID()` descartado por idempotencia).
+- Verificación: seed idempotente (doble `db:seed`, sin duplicados), catálogo expone solo v4, POST 201 con versión del catálogo (antes 400).
+- **Regla para el futuro:** el patrón `00000000-...` determinista es correcto para catálogo semilla vía upsert, pero **no debe usarse para entidades de usuario** (vehicles/users).
+
+## Re-QA de cierre (backend-engineer) — 10/10 PASS
+
+QA-2 (registro con versión → brand/model/version no-null; sin versión → null, D-038) · QA-5 (placa/VIN/engine duplicados → 409, no 500) · QA-6 (listado/detalle desnormalizados, 403/404, catálogo sin IDs v0). BD restaurada a estado previo (4 vehículos, 10 versiones; registros de prueba eliminados en transacción).
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Bug pre-existente `DELETE /api/vehicles/:id` → 500** (descubierto por Database, NO introducido por F-2): el handler borra físicamente cuando no hay historial, pero `VehicleOwnership.vehicle` es `onDelete: Restrict` → `prisma.vehicle.delete` falla con P2003 para todo vehículo creado vía API. Decisión del TL recomendada: **ticket separado** (probablemente ampliar `hasHistory` a ownerships y/o borrar ownerships sin historial en la misma transacción). **No bloquea** la iteración F-010; se agenda para F-011 o próxima iteración de vehículos.
+2. **Baseline QA con datos de prueba previos:** `QA2ZZZ9` y `QA11PLACA` (owner user2) permanecen como vehículos de desarrollo. Decisión de depuración: Database/Tech Lead pueden limpiarlos en una pasada dedicada.
+3. **Proceso backend en 3001:** quedó corriendo el `dist` nuevo con F-1 (PID 25180 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
+4. **Datos QA primera pasada vs baseline:** los criterios del QA asumieron baseline "4 vehículos"; los registros QA previos forman parte de ese conteo. Documentado para no volver a contar como pérdida.
