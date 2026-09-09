@@ -1910,3 +1910,114 @@ Backend build + start (`node dist/main.js`, `npm run build` exit 0) sobre Postgr
 | Menores | ✅ Aceptadas | Spec `frontend-auth-flow.md` documenta 201 (POST), D-032 (409), D-031 (roles.type). Mensaje 429 crudo y drift seed→DB registrados como deuda menor. |
 
 Verificación global: `npm test` → **19 suites / 173 tests PASS** (165 previos + 8 nuevos) · backend `npm run build` exit 0 · frontend `npm run build` exit 0 + `npm test` 19 tests PASS · limpieza de migraciones huérfanas ejecutada (Database) · E2E backend con backend real verificado (Backend Tech Lead).
+
+---
+
+# 16. Registro (2026-09-09): F-010 Registrar Vehículo end-to-end (D-035..D-038)
+
+## Objetivo
+
+Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propietario registra su vehículo desde el frontend, el vehículo queda asociado como owner (VehicleOwnership) y aparece en "Mis vehículos". El backend ya exponía el alta; el trabajo real fue el journey frontend + ajustes menores de robustez backend.
+
+## Spec
+
+- `docs/specs/vehicle-register-flow.md` — aprobada por PM con las 4 decisiones confirmadas.
+
+## Decisiones de producto aceptadas en el cierre (2026-09-09)
+
+> **Estado: TODAS APROBADAS POR PM; IMPLEMENTADAS** — ver "Cierre de implementación" al final de esta sección.
+
+### D-035 — Registro de vehículo solo en contexto PERSONAL (MVP)
+
+- **Decisión:** el alta de vehículo se asocia al `user.id` autenticado como owner; solo aplica en contexto PERSONAL en MVP. Los miembros de taller (WORKSHOP) **no** registran vehículos en esta iteración (post-MVP). El frontend no envía `X-Context-Type` en estas llamadas (default PERSONAL, D-020 A1).
+- **Razón:** "el taller no es propietario del vehículo por registrar una atención"; el alta es un acto de propiedad. Evita abrir la semántica WORKSHOP sin una decisión explícita (D-004/D-021).
+- **Impacto:** ningún cambio de código requerido en el guard de contexto (el default PERSONAL ya aplica); solo documentación de journey y ausencia del header en el cliente.
+- **Alternativas descartadas:** alta en WORKSHOP (requiere Ownership por taller/miembro y semántica de contexto no resuelta — post-MVP).
+
+### D-036 — VIN opcional en MVP
+
+- **Decisión:** `vin` es opcional al crear vehículo. La UI informa que completarlo mejora la trazabilidad, pero no bloquea el registro. `vin` duplicado → 409 CONFLICT con mensaje específico.
+- **Razón:** obligar VIN aumenta fricción de alta sin valor probado en MVP; la trazabilidad mejora si se completa, pero el registro con placa es válido.
+- **Impacto:** backend — capturar P2002 de `vin`/`engine_number` en `create()` y mapearlo a 409 (antes 500). Frontend — campo VIN opcional con nota.
+- **Alternativas descartadas:** VIN obligatorio (fricción); texto libre de VIN (rompe unicidad/trazabilidad).
+
+### D-037 — Placa: formato libre + normalización a mayúsculas
+
+- **Decisión:** placa alfanumérica de 2–10 caracteres. El backend normaliza `trim().toUpperCase()` tanto al buscar como al guardar, impidiendo duplicados "abc123" vs "ABC123". Sin regex por país en MVP.
+- **Razón:** el producto no define un formato nacional único; la normalización canonical evita duplicados case-insensitive con costo mínimo.
+- **Impacto:** validación DTO (`@Matches(/^[A-Za-z0-9]{2,10}$/)`), normalización en handler (armoniza busca+guarda) y en `findByLicensePlate` (red de seguridad).
+- **Alternativas descartadas:** regex por país (MVP multi-país sin decisión); solo trim (no resuelve case-insensitive).
+
+### D-038 — Catálogo opcional, sin texto libre
+
+- **Decisión:** el selector marca → modelo → versión (catálogo) es opcional. Si no se selecciona versión, el vehículo se guarda con `versionId: null` y la UI muestra marca/modelo/versión como "—". No hay campos de texto libre para marca/modelo/versión en esta iteración.
+- **Razón:** el catálogo ya existe; el texto libre degradaría la consistencia de datos y complicaría el timeline futuro (F-013).
+- **Impacto:** frontend — cascada brands/models/versions on-demand; si el catálogo falla, el registro sigue sin versionId. Backend — sin cambios (versionId ya es opcional).
+- **Alternativas descartadas:** texto libre (deuda de normalización de datos); catálogo obligatorio (bloquea registros cuando el catálogo está incompleto).
+
+## Implementado
+
+### Backend (robustez, sin migración — el schema no cambió)
+
+| Ítem | Detalle |
+| ---- | ------- |
+| D-037 | `register-vehicle.dto.ts` — `@Matches(/^[A-Za-z0-9]{2,10}$/)` (mensaje español). |
+| D-037 | `register-vehicle.handler.ts` — `trim().toUpperCase()` antes de `findByLicensePlate` y `create`; pre-check placa → 409 conservado. |
+| D-037 | `prisma-vehicle.repository.ts` — `findByLicensePlate()` normaliza su input (red de seguridad). |
+| D-036 | `prisma-vehicle.repository.ts` `create()` — captura `PrismaClientKnownRequestError` P2002, inspecciona `meta.target` (`license_plate`/`vin`/`engine_number`) y relanza `ConflictException` con mensaje específico en español; fallback genérico. |
+| Contrato | `list-vehicles.handler.ts` — `GET /api/vehicles` devuelve ítems con shape `VehicleResponseDto` (brand/model/version desnormalizados vía include) + ownerships activas + foto primaria + `meta` (antes raw Prisma). |
+
+### Frontend (journey completo)
+
+| Ítem | Detalle |
+| ---- | ------- |
+| API | `src/lib/api.ts` — `toApiError` + `vehicleApi` (listVehicles, registerVehicle, listBrands, listModels, listVersions) sobre el cliente ky existente (refresh 401 ya integrado); sin `X-Context-Type` (D-035). |
+| Tipos | `src/types/vehicle.ts` — `Vehicle`, `VehicleListResponse/Meta`, `VehicleBrand/Model/Version`, `RegisterVehicleInput` (brand/model/version opcionales por tolerancia). |
+| Listado | `src/app/(dashboard)/vehicles/page.tsx` — listado con estados loading/error/vacío; CTA "Registrar vehículo"; paginación con `meta`. |
+| Formulario | `src/app/(dashboard)/vehicles/new/page.tsx` — RHF + zod (placa 2–10 alfanumérica normalizada; VIN opcional con nota D-036; cascada catálogo on-demand D-038); 409 mapeado por campo (licensePlate/vin) o general (engineNumber); valores preservados en error; post-201 → invalidate + refreshSession + redirect `/vehicles`. |
+| UI | `src/components/ui/select.tsx` + `textarea.tsx` (primitivas nativas, patrón shadcn existente). |
+| Navegación | `src/app/(dashboard)/dashboard/page.tsx` — card "Mis vehículos"; `src/proxy.ts` — `/vehicles` en `protectedRoutes`. |
+
+## Decisions técnicas del Tech Lead (divergencias a validar)
+
+El Tech Lead emitió `DESIGN-F-010` con 7 decisiones (D1 contrato uniforme, D2 normalización, D3 validación, D4 P2002, D5 sin migración, D6 tests, D7 contrato frontend). Estado de seguimiento:
+
+| Directiva | Estado | Nota |
+| --------- | ------ | ---- |
+| D1 list vs detail con `VehicleResponseDto` + `meta` | ✅ Implementada | `list-vehicles.handler.ts`. **Validación TL (2026-09-09):** la sub-instrucción `?? []` se descarta deliberadamente — el listado NO incluye `documents` en su query de forma intencional (no hay consumidor en MVP; `?? []` mentiría al consumidor "no tiene documentos" cuando la realidad es "no se consultaron"). Registrada como deuda P2: fix = agregar `documents` al include del list-vehicles handler cuando aparezca un consumidor. |
+| D2 normalización en handler (autoritativa) | ✅ Implementada | + red de seguridad en `findByLicensePlate`. |
+| D3 validación DTO | ✅ Decisión técnica cerrada | **Validación TL (2026-09-09):** se acepta la normalización en handler/repository (implementación actual) en lugar de `@Transform` en el DTO. Razones: resultado funcional idéntico (D-037 satisfecho); más explícito y testeable; red de seguridad en repository (defensa en profundidad que `@Transform` no brindaría a llamadas directas al repository); no depende de `transform: true` del ValidationPipe. Sin deuda. |
+| D4 P2002 → 409 | ⚠️ Deuda P1 aceptada (MVP) | **Validación TL (2026-09-09):** se acepta `ConflictException` (envelope CONFLICT sin `errors.field`) para MVP con un único consumidor controlado. El frontend mapea por texto (`conflictField`) — frágil pero contenido. **Trigger de corrección:** segundo consumidor de `POST /api/vehicles` (mobile/API pública) → bloquear y aplicar fix (~30 líneas, 5 archivos): `CodedHttpException` + `errors.field` en repository y handler, `expectConflictWithMessage` verifica shape, frontend lee `errors.field` en vez de texto. Inconsistencia con patrón `record-mileage` (que sí usa `CodedHttpException` + `errors`) = cosmética. |
+| D5 sin migración | ✅ Cumplida | Schema intacto; constraints unique ya existían. |
+| D6 tests | ✅ Implementada | 3 specs nuevos (handler, repository, list handler). |
+| D7 contrato frontend | ✅ Implementada | Según D1/D7; el frontend tolera shape opcional de brand/model/version. |
+
+**Resultado del escalamiento al Tech Lead (2026-09-09):** los 3 puntos (D1-DTO, D3, D4) fueron validados y aceptados como están — 2 decisiones técnicas cerradas sin deuda (D3) o con deuda P2 condicional (D1), y 1 deuda P1 con trigger explícito (D4). **No se requirió implementación adicional del backend-engineer.**
+
+## Verificación
+
+- Backend: `npm test` → **22 suites / 185 tests PASS** (19/173 previos + 3 suites/12 tests nuevos: register-vehicle.handler, prisma-vehicle.repository, list-vehicles.handler) · `npm run build` exit 0.
+- Frontend: `npm test` → **34/34 PASS** (4 suites nuevas: vehicles list 4, register form 5, proxy +3, api +3) · `npm run build` exit 0 (rutas `/vehicles` y `/vehicles/new` prerenderizadas; proxy activo).
+- Sin cambios de schema; sin migraciones; sin nuevas dependencias (RHF + zod ya estaban en el proyecto).
+
+## Observaciones / deuda registrada
+
+- **Puntos del Tech Lead a validar** (escalados el 2026-09-09; no los resuelve el PM):
+  1. `vehicle-response.dto.ts` `?? []` no aplicado → key-drifting list vs detail persiste en `documents`.
+  2. `@Transform` del DTO omitido por el engineer (divergencia deliberada documentada).
+  3. Envelope 409 sin `errors.field` tipado (usa `ConflictException` en vez de `CodedHttpException`).
+- **Mensajes de error en español:** el pre-check de placa ahora responde en español (el snapshot de la spec §5 lo tenía en inglés — el AC §10 y el journey 6.2 exigen español). Sin consumidores previos del mensaje en inglés; el `code` (`CONFLICT`) no cambia.
+- **`engineNumber` no está en el formulario MVP:** su 409 se muestra como error general de submit (no es campo del form).
+- **E2E pendiente:** el journey completo aún no se verificó contra el backend real con base de datos (tests unitarios + build verdes). QA debe correr el flujo completo (registro → listado → dashboard isVehicleOwner) antes del cierre formal.
+
+## Cierre de implementación (2026-09-09)
+
+| Decisión | Estado | Implementación |
+| -------- | ------ | -------------- |
+| D-035 | ✅ Aprobada e implementada | Frontend sin `X-Context-Type`; ownership automático por el repository existente. |
+| D-036 | ✅ Aprobada e implementada | VIN opcional en formulario (nota de trazabilidad); P2002 vin/engine → 409. |
+| D-037 | ✅ Aprobada e implementada | `@Matches` 2–10 + normalización trim/UPPER en handler y `findByLicensePlate`. |
+| D-038 | ✅ Aprobada e implementada | Cascada catálogo on-demand; registro sin versionId funciona; UI "—" ante ausencia. |
+| Contrato list | ✅ Implementada (validación TL pendiente) | `GET /vehicles` con shape `VehicleResponseDto` + `meta`; divergencias D1-DTO/D3/D4 registradas arriba. |
+
+Verificación global: backend `npm test` 22 suites / 185 PASS · backend `npm run build` exit 0 · frontend `npm test` 34/34 PASS · frontend `npm run build` exit 0.
