@@ -3,6 +3,9 @@
 /node_modules
 /build
 
+# opencode (local agent workspace)
+/.opencode/node_modules
+
 # Logs
 logs
 *.log

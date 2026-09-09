@@ -3,7 +3,7 @@
 > Registro único de decisiones de producto, dominio, arquitectura y UX que condicionan la evolución de Historia Clínica Digital Vehicular (HCDV).
 
 **Estado del documento:** Activo
-**Última actualización:** 2026-09-04
+**Última actualización:** 2026-09-09
 **Producto:** Historia Clínica Digital Vehicular (HCDV)
 **Alcance:** MVP y decisiones estructurales que condicionan su evolución
 
@@ -1160,6 +1160,149 @@ El envelope es portable por transporte (cookies web / Bearer mobile): el cliente
 
 ---
 
+# D-026 — Password reset: token hashing
+
+**Estado:** `ACCEPTED`
+**Tipo:** Security / Data
+**Prioridad:** P0
+
+### Decisión
+
+El token de password reset se almacena en base de datos únicamente como **hash SHA-256**, nunca en texto plano.
+
+```text
+Token en memoria/email: randomBytes(32).toString('hex')  (64 chars hex, 256 bits)
+Token en BD:            SHA-256(token)                   (column token_hash)
+```
+
+### Reglas
+
+- `PasswordReset.tokenHash` es el único campo persistido (columna `token_hash`, unique).
+- El token en claro solo existe transitoriamente en el handler y en el email enviado al usuario.
+- El hash se calcula con el mismo mecanismo que `refreshToken` (`hashPasswordResetToken`).
+- Aplica también como patrón obligatorio para cualquier token de verificación futuro (p. ej. `email_verifications`), evitando reintroducir texto plano.
+
+### Implicaciones
+
+Database:
+
+- Migración `20260909000000_hash_password_reset_token`: agrega `token_hash`, migra datos existentes con `pgcrypto` (`encode(digest(token,'sha256'),'hex')`), índice único, drop de `token`.
+
+Seguridad:
+
+- Un volcado de BD no permite usar tokens de reset.
+- No se requiere cifrado reversible; el hash es suficiente porque el token tiene 256 bits de entropía.
+
+---
+
+# D-027 — Password reset: flujo seguro (revocación, atomicidad, lockout)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Security / Product
+**Prioridad:** P0
+
+### Decisión
+
+El flujo de password reset incorpora las siguientes reglas de seguridad:
+
+1. **Un solo token activo por usuario:** al crear un nuevo token de reset, se revocan (`usedAt = now`) todos los tokens previos no utilizados del usuario.
+2. **Atomicidad:** la actualización de la contraseña, el marcado del token como usado y la revocación de sesiones se ejecutan dentro de una única transacción (`prisma.$transaction`). No puede quedar un estado intermedio (token reutilizable o sesiones no revocadas).
+3. **Limpieza de lockout:** un reset exitoso reinicia `failedAttempts = 0` y `lockedUntil = null` junto con el cambio de contraseña.
+4. **Revocación de sesiones:** todas las sesiones activas del usuario (`revokedAt IS NULL`) se revocan al completar un reset.
+5. **Token de un solo uso:** el `usedAt` se establece dentro de la misma transacción; un token ya usado es rechazado.
+
+### Regla
+
+El reset de contraseña es un evento de alta seguridad: modifica credenciales, limpieza de bloqueo y sesiones de forma atómica. No puede degradarse ninguna de estas tres operaciones a un paso opcional.
+
+### Implicaciones
+
+Backend:
+
+- `reset-password.handler` ejecuta todo en `$transaction`.
+- `request-password-reset.handler` revoca tokens anteriores antes de crear el nuevo.
+
+---
+
+# D-028 — Reset password: link del email apunta al frontend
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Architecture / Backend Contract
+**Prioridad:** P0
+
+### Decisión
+
+El email de password reset genera un link hacia la **aplicación frontend**, no hacia el backend API.
+
+```text
+Link en email: ${FRONTEND_URL}/reset-password?token=${token}
+```
+
+### Reglas
+
+- Se introduce la variable de entorno `FRONTEND_URL` (URI, default `http://localhost:3000`), independiente de `API_URL`.
+- El frontend consume el token desde el query param y lo elimina de la URL (`history.replaceState`) tras leerlo.
+- `forgot-password` y `reset-password` son endpoints públicos (sin auth); el token es la autorización del reset.
+
+### Implicaciones
+
+Backend:
+
+- `mail.service.ts` usa `envs.FRONTEND_URL` para construir el link.
+
+Frontend:
+
+- Ruta canónica de reset: `/reset-password?token=...` (ruta pública, grupo `(auth)`).
+- Página `forgot-password` implementa anti-enumeración: respuesta idéntica exista o no el email.
+
+---
+
+# D-029 — Email de confirmación post-reset
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+### Decisión
+
+Se envía un **email de confirmación** al usuario cuando su contraseña es restablecida exitosamente.
+
+### Reglas
+
+- Se emite el evento `auth.password_reset.completed` después de la transacción exitosa.
+- El listener `SendPasswordResetCompletedEmailListener` busca al usuario y le envía el email de notificación.
+- Incluye advertencia de seguridad: "Si no realizaste este cambio, contacta al soporte inmediatamente".
+- Un usuario inexistente (borrado entre reset y envío) no produce error ni email.
+
+### Razón
+
+Permite que la víctima de un reset malicioso detecte el compromiso de su cuenta sin depender de otros canales.
+
+---
+
+# D-030 — Rate limiting diferenciado en auth público
+
+**Estado:** `ACCEPTED`
+**Tipo:** Security / Backend Contract
+**Prioridad:** P1
+
+### Decisión
+
+Los endpoints públicos de recuperación de contraseña tienen límites de throttling específicos, diferenciados del throttle global:
+
+```text
+POST /auth/forgot-password   3 requests / 10 minutos por IP
+POST /auth/reset-password    5 requests /  5 minutos por IP
+```
+
+`change-password` (autenticado) conserva el throttle global existente.
+
+### Observación QA registrada
+
+Queda como deuda menor agregar el código `RATE_LIMITED` para HTTP 429 al catálogo D-025 (`error-codes.ts` + `statusToCode`); hoy el 429 cae en `INTERNAL_ERROR` (funcional pero engañoso para el frontend).
+
+---
+
 # 6. Dependency Graph
 
 Las decisiones tienen las siguientes dependencias principales:
@@ -1186,8 +1329,17 @@ D-005
 
 
 D-020
- └── D-024
-       └── D-025
+  └── D-024
+        └── D-025
+
+
+D-026
+  └── D-027
+        └── D-029
+
+
+D-028
+  └── D-030
 ```
 
 ---
@@ -1452,6 +1604,11 @@ D-017  Bearer production policy
 D-020  Invalid Active Context → 403
 D-024  VehicleAccessService / access validation (P0)
 D-025  Error envelope contract
+D-026  Password reset token hashing
+D-027  Password reset flow seguro (revocación, atomicidad, lockout)
+D-028  Reset password link → FRONTEND_URL
+D-029  Email de confirmación post-reset
+D-030  Rate limiting diferenciado en auth público
 ```
 
 ### Pending
@@ -1555,9 +1712,10 @@ Verificación: `tsc --noEmit` exit 0 · `npm test` 132 PASS · `npm run build` e
 
 - **D-024 A1 regla 3 (asociación, enmienda parcial):** los appointments **cancelados no constituyen atención real** y por lo tanto no generan asociación vehículo-taller para acceso WORKSHOP.
 
-## DECISIÓN DE PRODUCTO PENDIENTE
+## DECISIÓN DE PRODUCTO PENDIENTE — RESUELTA (2026-09-09, PM)
 
-- **¿Los work-orders con `status = 'cancelled'` y los estimates deben seguir contando como asociación vehículo-taller?** (regla 3 de D-024 A1). Documentado en `src/common/authorization/vehicle-access.service.ts`. No se cambió el contrato silenciosamente. Recomendación: resolver junto con D-019 (semántica de WORKSHOP y "parque de clientes").
+- **D-024 A1 regla 3, Amendment 3 (ACCEPTED):** los **work-orders con `status = 'cancelled'` NO generan asociación** vehículo-taller (mismo criterio que citas canceladas: no hubo atención real). Los **estimates SÍ mantienen la asociación de forma provisional**: representan la puerta de entrada comercial del taller con un vehículo nuevo; excluirlos rompería el journey de primer contacto (sin asociación previa no se puede crear el primer registro). Sujeto a revisión con D-019 (semántica de WORKSHOP y "parque de clientes").
+- Implementación: añadir `status <> 'cancelled'` al leg de `work_orders` en `assertWorkshopVehicleAccess` (Wave P3).
 
 ## Observaciones QA post-wave (deuda menor)
 
@@ -1568,3 +1726,187 @@ Verificación: `tsc --noEmit` exit 0 · `npm test` 132 PASS · `npm run build` e
 ## Migración requerida
 
 - Aplicar `npm run db:deploy` en el entorno correspondiente (DROP COLUMN `admin_token`; no destructivo, no se lee desde D-016 A1).
+
+---
+
+# 13. Iteración registrada (2026-09-09): Flujo completo de Reset Password (D-026 a D-030)
+
+## Objetivo
+
+Completar el flujo de reset password de extremo a extremo: seguridad del token, atomicidad, emails funcionales, frontend operativo y pruebas automatizadas. Las decisiones de producto asociadas son D-026 a D-030.
+
+## Implementado
+
+### Backend — Seguridad
+
+| Ítem | Detalle |
+| ---- | ------- |
+| D-026 | `PasswordReset.token` (texto plano) → `tokenHash` (SHA-256). Migración `20260909000000_hash_password_reset_token` (add `token_hash`, `pgcrypto`, migrar datos, índice único, drop `token`). Aplicada en dev. |
+| D-027 | `reset-password.handler` con `prisma.$transaction`: update credential (`passwordHash`, `passwordChangedAt`, `failedAttempts=0`, `lockedUntil=null`) + mark token used + revoke sesiones activas. Error unificado `401 'Enlace inválido o expirado'`. |
+| D-027 | `request-password-reset.handler` revoca tokens previos no usados antes de crear el nuevo; token generado con `randomBytes(32).toString('hex')`. |
+| D-030 | Throttling diferenciado: `forgot-password` `@Throttle` 3/10min, `reset-password` 5/5min. |
+
+### Backend — Funcional
+
+| Ítem | Detalle |
+| ---- | ------- |
+| D-028 | `FRONTEND_URL` en `envs` (URI, default `http://localhost:3000`). `mail.service.sendPasswordResetEmail` construye link `FRONTEND_URL/reset-password?token=...` en lugar de apuntar al backend. |
+| D-029 | Nuevo evento `PasswordResetCompletedEvent` (`auth.password_reset.completed`) emitido tras transacción exitosa + listener que envía email de confirmación. |
+| Contratos | `forgotPassword`/`resetPassword`/`changePassword` retornan `{ message }`. `ResetPasswordDto` con `@MaxLength(100)` (consistente con change/register). Mensajes de error unificados en español para el flujo de reset. |
+
+### Frontend (creado desde cero en `frontend/`)
+
+| Ítem | Detalle |
+| ---- | ------- |
+| Stack | Next.js 15+ (App Router) + TypeScript strict + Tailwind CSS 4 + shadcn/ui (Base UI) + ky + React Hook Form + Zod + TanStack Query. |
+| Página | `/forgot-password` — email + Zod; estado success siempre idéntico (anti-enumeración); maneja 429. |
+| Página | `/reset-password` — token desde query param, eliminado de la URL con `replaceState`; password + confirmación; 401 → enlace expirado; success → auto-redirect 3s a `/login`. |
+| Página | `/login` (stub funcional) y `/profile` (change-password: current + new + confirm, validaciones Zod, 401 → contraseña actual incorrecta). |
+| Componentes | `PasswordInput` (toggle mostrar/ocultar), Card/Button/Input/Label (shadcn). `authApi` (ky) + hooks `useForgotPassword`/`useResetPassword`/`useChangePassword`. |
+
+### Tests (backend)
+
+| Suite | Resultado |
+| ----- | --------- |
+| `request-password-reset.handler.spec.ts` | 6 tests (email inexistente, revocación previa, token 64 hex, evento, expiración 1h) |
+| `reset-password.handler.spec.ts` | 9 tests (inválido/usado/expirado, transacción, failedAttempts reset, evento, bcrypt rounds) |
+| `send-password-reset-completed-email.listener.spec.ts` | 2 tests (usuario existe/no existe) |
+
+Verificación global: `npm test` → **17 suites / 165 tests PASS** · `tsc --noEmit` exit 0 · backend `npm run build` exit 0 · frontend `npm run build` exit 0 (6 rutas generadas).
+
+## Decisiones de producto aplicadas
+
+- **Ruta canónica frontend de reset:** `/reset-password?token=...` (grupo público `(auth)`).
+- **Comportamiento post-reset:** revocación total de sesiones + email de confirmación + limpieza de lockout (regla D-027).
+- **Idioma:** mensajes de error del flujo en español (consistente con el email).
+
+## Observaciones / deuda registrada
+
+- **D-025 (deuda previa):** agregar código `RATE_LIMITED` para 429 al catálogo `error-codes.ts` + `statusToCode` (hoy cae en `INTERNAL_ERROR`).
+- **Limpieza de tokens expirados/usados:** no se introdujo cron en MVP (requeriría `@nestjs/schedule`). Mitigación actual: cada nuevo request revoca tokens previos (D-027). Se recomienda revisar cuando la tabla crezca o con decisión de arquitectura explícita.
+- **Filas huérfanas en `_prisma_migrations`:** 2 entradas fallidas de `20260904000000_remove_refresh_token_field_from_user_session` (finished_at NULL) detectadas por Database agent; inofensivas, pueden causar prompt de reset en `prisma migrate dev`. Limpieza opcional documentada: DELETE de esas filas.
+- **Login stub y auth real:** ~~el frontend tiene login stub funcional (guarda `access_token` en `localStorage`)~~ **RESUELTO en iteración Sección 14** (2026-09-09): el stub fue reemplazado por auth real con cookies HttpOnly (D-001), AuthProvider, refresh automático y protección de rutas vía `proxy.ts` (Next.js 16).
+- **Coordinación backend/frontend pendiente:** el frontend debe exigir `FRONTEND_URL`/`NEXT_PUBLIC_API_URL` en cada entorno; documentado en `frontend/.env.example`.
+
+---
+
+# 14. Iteración registrada (2026-09-09): Auth real del frontend (D-001 sin violaciones)
+
+## Objetivo
+
+Eliminar el login stub del frontend (que violaba D-001 guardando `access_token` en `localStorage`) e implementar autenticación real de extremo a extremo: login/registro/verificación de email funcionales, sesión persistente vía cookies HttpOnly, refresh automático del access token, logout y protección de rutas.
+
+## Spec
+
+- `docs/specs/frontend-auth-flow.md` — aprobada por PM (RF-1 a RF-10).
+
+## Implementado (frontend)
+
+| Ítem | Detalle |
+| ---- | ------- |
+| D-001 | `src/providers/auth-provider.tsx` — AuthProvider con `status: loading/authenticated/unauthenticated`, `user: SessionUser`, `refreshSession`, `clearSession`. Bootstrap con `GET /auth/me` al montar. |
+| D-001 | `src/lib/api.ts` — `authApi.login/logout/me/register/verifyEmail` + estrategia de refresh automático: ky `beforeRetry` (401 → `POST /auth/refresh` → reintento máx. 1; refrescos concurrentes coordinados; endpoints públicos excluidos del refresh). |
+| D-001 | `src/app/(auth)/login/page.tsx` — reescrito: **sin localStorage**, cookies HttpOnly, redirect respeta `?next=` con protección anti open-redirect. |
+| Registro | `src/app/(auth)/register/page.tsx` — firstName/lastName/email/password/confirm, Zod, success → pantalla "Revisa tu email". |
+| Verificación | `src/app/(auth)/verify-email/page.tsx` — `GET /auth/verify-email?token=...`, estados loading/success/error. |
+| Rutas | `src/proxy.ts` (convención Next.js 16: middleware → proxy) — protección `/dashboard` y `/profile` (sin cookie `access_token` → `/login?next=`); `/login` y `/register` con cookie → `/dashboard`. Matcher excluye API/static/favicon. |
+| Layout | `src/app/(dashboard)/layout.tsx` — header HCDV con UserNav (avatar inicial + logout); si sesión expira → redirect `/login?next=`. |
+| Dashboard | `src/app/(dashboard)/dashboard/page.tsx` — home mínima: saludo, email, roles, propietario, talleres. |
+| Tipos | `src/types/auth.ts` — `SessionUser` (contrato `GET /auth/me`). |
+
+## Decisions técnicas del Tech Lead
+
+- **Next.js 16**: `middleware.ts` renombrado a `proxy.ts` (convención oficial de la versión instalada, verificada en `node_modules/next/dist/docs`).
+- **Sin next-auth**: con D-001 (cookies HttpOnly del backend) un AuthProvider ligero + ky es suficiente; next-auth agregaría complejidad sin valor (decisión de implementación dentro de la autoridad del Tech Lead; alineada con `frontend-auth-flow.md` sección 9).
+- **Refresh**: ky `beforeRetry` con flag global para no duplicar refrescos concurrentes y exclusión de endpoints públicos.
+
+## Verificación
+
+- `npm run build` → exit 0 (Next.js 16.3.4, Turbopack): 9 rutas generadas + `ƒ Proxy (Middleware)`.
+- Rutas: `/`, `/_not-found`, `/dashboard`, `/forgot-password`, `/login`, `/profile`, `/register`, `/reset-password`, `/verify-email`.
+
+## Observaciones / deuda registrada
+
+- **Pruebas E2E pendientes:** no hay test runner de frontend configurado (deuda conocida). El flujo completo (login con cookies en dev localhost:3000 ↔ backend:3001) requiere verificación manual o script E2E; CORS + credentials ya están habilitados en backend.
+- **Contrato `/auth/me` a confirmar:** el campo `workshopMemberships` y `roles` fueron tipados en `SessionUser` según el handler backend; confirmar con Backend Tech Lead antes de construir UI dependiente (p. ej. `/profile` avanzado).
+- **Splash global:** AuthProvider muestra splash de carga en toda la app mientras resuelve sesión; correcto para evitar flash en páginas autenticadas.
+- **Registro no auto-login:** deliberado (verificar email primero); coherente con backend.
+- **Deuda previa sin cambios:** RATE_LIMITED para 429 (`error-codes.ts`), cron limpieza de tokens, filas huérfanas en `_prisma_migrations`, evidente en Sección 13.
+
+---
+
+# 15. Registro (2026-09-09): Backend E2E auth + config CORS/FRONTEND_URL (cierre de iteración D-001)
+
+## Objetivo
+
+Cerrar la iteración de auth real del frontend (Sección 14) validando el backend de extremo a extremo y documentando la configuración de orígenes. Sin cambios de producto.
+
+## Decisión de configuración (Tech Lead)
+
+- **`CORS_ORIGIN`** en `.env.example` pasa de `*` a `http://localhost:3000`. Con `cors.credentials: true` (cookies HttpOnly, D-001) el browser rechaza `*` + credentials; el origen debe ser el real (lista separada por comas permitida). Resuelve el hardening pendiente anotado en `DECISION-PROPOSALS.md` (D-001).
+- **`FRONTEND_URL`** agregado a `.env.example` (`http://localhost:3000`, URI validada por Joi). Ya existía en `src/config/envs.ts` (D-028); el ejemplo del entorno no lo reflejaba. El `.env` local ya tenía `CORS_ORIGIN=http://localhost:3000` (verificado, sin cambios).
+- Implementación: `.env.example` — 2 líneas de comentario + 1 valor cambiado + bloque nuevo `FRONTEND_URL`. Sin secretos.
+
+## Verificación E2E backend (evidencia registrada)
+
+Backend build + start (`node dist/main.js`, `npm run build` exit 0) sobre PostgreSQL local (50 usuarios seed). Matriz completa en el reporte de cierre del Backend Tech Lead (este ítem). Resumen:
+
+- `POST /api/auth/register` → 201 `{ user }`, sin Set-Cookie (no auto-login). Duplicado → 401 `SESSION_EXPIRED` (no 409 — comportamiento existente, ver observaciones).
+- `POST /api/auth/login` → 201 + `Set-Cookie access_token` (HttpOnly, SameSite=Lax, Max-Age=1500) + `refresh_token` (HttpOnly, SameSite=Strict, Max-Age=604800); body `{ user }` sin tokens. CORS verificado: `Access-Control-Allow-Origin: http://localhost:3000` + `Access-Control-Allow-Credentials: true`.
+- `GET /api/auth/me` → 200 con `{ id, email, firstName, lastName, avatarUrl, language, status, isVehicleOwner, roles[], workshopMemberships[] }` — payload coincide con `SessionUser` del frontend (excepto `roles[].type` vs `roles[].code`, ver observaciones).
+- `POST /api/auth/refresh` → 201, cookies rotadas (nuevo `refresh_token`), body `{ success: true, impersonated: false }`.
+- `POST /api/auth/logout` → 201 `{ message }`, cookies limpiadas (`Max-Age=0`); `/auth/me` posterior → 401 `SESSION_EXPIRED`.
+- `POST /api/auth/forgot-password` (email desconocido) → 201 con mensaje fijo anti-enumeración; 4º intento → 429 `RATE_LIMITED` (mapeo D-025 confirmado).
+- `POST /api/auth/reset-password` (token inválido) → 401 `'Enlace inválido o expirado'`.
+- `GET /api/auth/verify-email?token=...` → 400 `VALIDATION_ERROR` (token no UUID) / 404 `NOT_FOUND 'Token inválido'` (UUID inexistente).
+- Tests unitarios auth: 6 suites / 37 tests PASS.
+
+## Decisiones de producto aceptadas en el cierre (2026-09-09)
+
+> **Estado: TODAS IMPLEMENTADAS Y VERIFICADAS** (2026-09-09) — ver "Cierre de implementación" al final de esta sección.
+
+### D-031 — Contrato `roles` en `/auth/me`: el backend es la fuente de verdad
+
+- **Decisión:** `GET /auth/me` devuelve `roles[]: { id, type, name, permissions[] }`. El frontend `SessionUser.roles[]` se corrige a ese contrato (`type` en lugar de `code`, + `permissions` opcional).
+- **Razón:** el handler y `RoleDto` del backend usan `type` en toda la aplicación; no hay contrato anterior que defina `code`. Frontend debe tipar el payload real.
+- **Impacto:** cambio localizado en `frontend/src/types/auth.ts`. Runtime actualmente OK (solo se consume `name`).
+- **Alternativas descartadas:** renombrar el campo backend a `code` (cambio breaking sin necesidad real).
+
+### D-032 — Register duplicado → 409 `CONFLICT`
+
+- **Decisión:** `POST /auth/register` con email ya registrado debe responder **409** con código `CONFLICT` y mensaje claro ("Ya existe una cuenta con este email").
+- **Razón:** 401 `SESSION_EXPIRED` es semánticamente incorrecto para un registro duplicado (no es un problema de credenciales); la UI de register ya mapea 409 (código D-025).
+- **Impacto:** cambio en el handler de register + tests. Revisar que no rompa el flujo de login.
+- **Alternativas descartadas:** mantener 401 (contradice semántica y la UI existente); usar 400 (confunde validación).
+
+### D-033 — Limpieza oportunista de tokens de reset expirados/usados (Opción A)
+
+- **Decisión:** en `request-password-reset`, además de la revocación previa (D-027), ejecutar `DELETE` oportunista de tokens `usedAt IS NOT NULL OR expiresAt < now` del mismo usuario.
+- **Razón:** mantiene la higiene de `password_resets` sin introducir cron ni dependencia nueva (`@nestjs/schedule`); el endpoint ya está throttled (3/10min), volumen acotado.
+- **Impacto:** ~3 líneas en handler/repository + tests. Cero impacto en contratos.
+- **Alternativas descartadas:** `@nestjs/schedule` + cron (dependencia nueva sin necesidad real en MVP — rechazada por ahora; revisar cuando la tabla crezca o en staging pre-producción); no limpiar (aceptable a corto plazo pero deja la deuda).
+
+### D-034 — Email de verificación de cuenta → journey frontend
+
+- **Decisión:** el email de verificación de cuenta debe apuntar a `FRONTEND_URL/verify-email?token=...` (página frontend), no directamente al endpoint backend.
+- **Razón:** consistencia con D-028 (reset ya usa `FRONTEND_URL`); el frontend ya tiene la página `/verify-email` con UX completa; evitar mostrar texto/JSON del backend al usuario.
+- **Impacto:** cambio en `mail.service` (build link con `FRONTEND_URL`) + tests. El endpoint `GET /auth/verify-email` permanece como API consumida por la página.
+
+### Decisiones menores (aceptadas, sin cambio de código)
+
+- **Status 201 vs 200 en POST:** se documenta en specs que los POST responden 201 (default NestJS). No se agrega `@HttpCode(200)` — el frontend maneja cualquier 2xx y el costo de alinear no aporta valor.
+- **Mensaje 429 crudo** (`"ThrottlerException: Too Many Requests"`): cosmético; el frontend mapea por `code: RATE_LIMITED`, no por mensaje. Se acepta como deuda menor.
+- **Drift seed→DB (roles/permissions):** el rol `user` en DB tiene 13 permissions vs `systemRolePermissions.user = []` en seed. Deuda de mantenimiento de seed, fuera del scope de auth.
+- **`verify-email` exige token UUID:** comportamiento razonable y ya documentado en el journey.
+
+## Cierre de implementación (2026-09-09)
+
+| Decisión | Estado | Implementación |
+| -------- | ------ | -------------- |
+| D-031 | ✅ Implementada | `frontend/src/types/auth.ts` → `roles: Array<{ id; type; name; permissions? }>`. Sin referencias residuales a `roles.code`. Frontend build exit 0 + 19 tests PASS. |
+| D-032 | ✅ Implementada | `register.handler.ts` → `ConflictException('Ya existe una cuenta con este email')`. `statusToCode` ya mapeaba 409→CONFLICT. Nuevo spec: `register.handler.spec.ts` (3 tests). Login intacto (401 INVALID_CREDENTIALS). |
+| D-033 | ✅ Implementada | `AuthRepository.deleteCleanupPasswordResets(userId)` + `prisma-auth.repository` (DELETE `usedAt != null OR expiresAt < now`). Orden en handler: revoke → delete → create. Spec actualizado (+2 tests). Sin `@nestjs/schedule`. |
+| D-034 | ✅ Implementada | `mail.service.sendVerificationEmail` → link `${FRONTEND_URL}/verify-email?token=...`. Cubre register y resend-verification (mismo evento). Nuevo spec: `mail.service.spec.ts` (3 tests; protege también D-028). |
+| Menores | ✅ Aceptadas | Spec `frontend-auth-flow.md` documenta 201 (POST), D-032 (409), D-031 (roles.type). Mensaje 429 crudo y drift seed→DB registrados como deuda menor. |
+
+Verificación global: `npm test` → **19 suites / 173 tests PASS** (165 previos + 8 nuevos) · backend `npm run build` exit 0 · frontend `npm run build` exit 0 + `npm test` 19 tests PASS · limpieza de migraciones huérfanas ejecutada (Database) · E2E backend con backend real verificado (Backend Tech Lead).
