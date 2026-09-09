@@ -1,11 +1,24 @@
-import { Vehicle } from '@prisma/client';
+import {
+  Vehicle,
+  VehicleBrand,
+  VehicleModel,
+  VehicleVersion,
+} from '@prisma/client';
 import { RegisterVehicleDto } from '../dto/register-vehicle.dto';
 import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
 
 export type RegisterVehicleData = RegisterVehicleDto & { ownerId: string };
 
 export interface VehicleRepository {
-  create(data: RegisterVehicleData): Promise<Vehicle>;
+  create(
+    data: RegisterVehicleData,
+  ): Promise<
+    Vehicle & {
+      version:
+        | (VehicleVersion & { model: VehicleModel & { brand: VehicleBrand } })
+        | null;
+    }
+  >;
   update(id: string, data: UpdateVehicleDto): Promise<Vehicle>;
   delete(id: string): Promise<void>;
   findById(id: string): Promise<Vehicle | null>;

@@ -84,6 +84,38 @@ describe('PrismaVehicleRepository — P2002 unique violations → 409 and plate 
     await expect(repository.create(registerData)).rejects.toBe(error);
   });
 
+  it('hydrates version.model.brand via include on create (F-010 §10)', async () => {
+    prismaMock.vehicle.create.mockResolvedValue({
+      id: 'v1',
+      licensePlate: 'ABC123',
+      version: {
+        id: 'version-1',
+        name: '1.6 LX',
+        model: {
+          id: 'model-1',
+          name: 'Civic',
+          brand: { id: 'brand-1', name: 'Honda' },
+        },
+      },
+    });
+
+    await repository.create({ ...registerData, versionId: 'version-1' });
+
+    expect(prismaMock.vehicle.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          version: {
+            include: {
+              model: {
+                include: { brand: true },
+              },
+            },
+          },
+        },
+      }),
+    );
+  });
+
   it('normalizes the plate (trim + uppercase) before findByLicensePlate (D-037)', async () => {
     prismaMock.vehicle.findUnique.mockResolvedValue(null);
 

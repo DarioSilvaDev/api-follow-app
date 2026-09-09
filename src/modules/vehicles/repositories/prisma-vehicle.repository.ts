@@ -24,6 +24,12 @@ export class PrismaVehicleRepository implements VehicleRepository {
             },
           },
         },
+        include: {
+          // F-010 (§10): hidratar version.model.brand para que
+          // VehicleResponseDto.from() devuelva brand/model/version y no null.
+          // Mismo shape que list-vehicles.handler.ts / get-vehicle.handler.ts.
+          version: { include: { model: { include: { brand: true } } } },
+        },
       });
     } catch (error) {
       // D-036: los campos únicos (license_plate/vin/engine_number) pueden
