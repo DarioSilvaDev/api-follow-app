@@ -212,6 +212,130 @@ describe("API client — refresh interceptor", () => {
   });
 });
 
+// ── Active context headers (F-020 / RF-3) ──────────────────────────────────
+
+/**
+ * These tests verify the active-context header contract on the shared ky
+ * instance WITHOUT modifying api.ts:
+ * - null (PERSONAL) → no X-Context-Type / X-Context-Id headers (D-035).
+ * - WORKSHOP selected → both headers injected on every non-auth request.
+ * - `auth/*` requests NEVER carry context headers (RF-3) — a stale context on
+ *   /auth/me breaks session bootstrap with 403 INVALID_CONTEXT (D-020).
+ * - logout resets the context to null.
+ */
+describe("API client — active context headers (F-020 / RF-3)", () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  let capturedRequests: Array<{
+    url: string;
+    method: string;
+    headers: Headers;
+  }>;
+
+  function extractRequestHeaders(
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Headers {
+    if (input instanceof Request) {
+      return input.headers;
+    }
+    return new Headers(init?.headers);
+  }
+
+  beforeEach(() => {
+    capturedRequests = [];
+    vi.resetModules();
+
+    fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({
+        url,
+        method,
+        headers: new Headers(extractRequestHeaders(input, init)),
+      });
+      return makeResponse(200, { data: "ok" });
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("PERSONAL (default) → NO context headers (D-035)", async () => {
+    const { api } = await import("@/lib/api");
+    await api.get("vehicles").json();
+
+    expect(capturedRequests).toHaveLength(1);
+    const headers = capturedRequests[0].headers;
+    expect(headers.get("X-Context-Type")).toBeNull();
+    expect(headers.get("X-Context-Id")).toBeNull();
+  });
+
+  it("WORKSHOP → injects X-Context-Type + X-Context-Id", async () => {
+    const { selectWorkshop } = await import("@/lib/active-context");
+    selectWorkshop("w1");
+
+    const { api } = await import("@/lib/api");
+    await api.get("care-episodes/lookup", { searchParams: { plate: "ABC123" } }).json();
+
+    expect(capturedRequests).toHaveLength(1);
+    const headers = capturedRequests[0].headers;
+    expect(headers.get("X-Context-Type")).toBe("WORKSHOP");
+    expect(headers.get("X-Context-Id")).toBe("w1");
+  });
+
+  it("auth/* NEVER carries context headers (RF-3)", async () => {
+    const { selectWorkshop } = await import("@/lib/active-context");
+    selectWorkshop("w1");
+
+    const { authApi } = await import("@/lib/api");
+    await authApi.me();
+    await authApi.login("test@example.com", "password123");
+    await authApi.logout().catch(() => {});
+
+    // Every captured request must be header-free (me/login/logout are auth/*)
+    const contextRoutes = capturedRequests.filter((r) =>
+      r.url.includes("auth/"),
+    );
+    expect(contextRoutes.length).toBeGreaterThanOrEqual(3);
+    for (const request of contextRoutes) {
+      expect(request.headers.get("X-Context-Type")).toBeNull();
+      expect(request.headers.get("X-Context-Id")).toBeNull();
+    }
+  });
+
+  it("logout resets the active context to null (RF-3)", async () => {
+    const { selectWorkshop, getActiveContext } = await import(
+      "@/lib/active-context"
+    );
+    selectWorkshop("w1");
+    expect(getActiveContext()).toEqual({ type: "WORKSHOP", workshopId: "w1" });
+
+    const { authApi } = await import("@/lib/api");
+    await authApi.logout();
+
+    expect(getActiveContext()).toBeNull();
+  });
+
+  it("logout resets the context even when the API call fails (RF-3)", async () => {
+    fetchSpy.mockImplementation(async () =>
+      makeResponse(500, { message: "Internal Server Error" }),
+    );
+
+    const { selectWorkshop, getActiveContext } = await import(
+      "@/lib/active-context"
+    );
+    selectWorkshop("w1");
+
+    const { authApi } = await import("@/lib/api");
+    await authApi.logout().catch(() => {});
+
+    expect(getActiveContext()).toBeNull();
+  });
+});
+
 // ── Vehicle API ──────────────────────────────────────────────────────────────
 
 describe("API client — vehicleApi", () => {

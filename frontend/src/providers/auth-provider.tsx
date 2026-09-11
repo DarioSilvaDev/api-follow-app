@@ -3,6 +3,7 @@
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import type { SessionUser } from "@/types/auth";
 import { authApi } from "@/lib/api";
+import { clearWorkshop } from "@/lib/active-context";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -54,6 +55,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadSession]);
 
   const clearSession = useCallback(() => {
+    // F-020 / RF-3: logout resetea el contexto activo a null. Si no, el
+    // próximo login hereda un workshopId stale y toda la navegación PERSONAL
+    // falla con 403 INVALID_CONTEXT (ContextResolver, D-020).
+    clearWorkshop();
     setUser(null);
     setStatus("unauthenticated");
   }, []);

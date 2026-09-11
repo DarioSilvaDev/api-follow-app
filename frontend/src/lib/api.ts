@@ -1,5 +1,12 @@
 import ky, { HTTPError, isHTTPError } from "ky";
+import { clearWorkshop, getActiveContext } from "@/lib/active-context";
 import type { SessionUser } from "@/types/auth";
+import type {
+  CareEpisode,
+  CareEpisodeLookupVehicle,
+  CreateCareEpisodeInput,
+} from "@/types/care-episode";
+import type { WorkshopDetail } from "@/types/workshop";
 import type {
   RegisterVehicleInput,
   UpdateVehicleInput,
@@ -17,6 +24,57 @@ import type {
 export { HTTPError, isHTTPError };
 
 // ---------------------------------------------------------------------------
+// Active context headers (F-020 / RF-3, D-020 A1)
+//
+// El contexto activo se inyecta por request vía headers:
+// - WORKSHOP activo → `X-Context-Type: WORKSHOP` + `X-Context-Id: {workshopId}`
+//   en todas las llamadas EXCEPTO `auth/*`.
+// - PERSONAL (null) → sin headers (comportamiento actual intacto, D-035).
+// ---------------------------------------------------------------------------
+
+/**
+ * Relativiza la URL absoluta que arma ky (prefix + path) → "auth/login",
+ * "vehicles", "care-episodes/lookup", etc.
+ */
+function apiRelativePath(requestUrl: string): string {
+  const apiPrefix =
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+  try {
+    const url = new URL(requestUrl);
+    const prefixUrl = new URL(apiPrefix);
+    return url.pathname.replace(prefixUrl.pathname.replace(/\/$/, "") + "/", "");
+  } catch {
+    const marker = "/api/";
+    const idx = requestUrl.indexOf(marker);
+    return idx >= 0 ? requestUrl.slice(idx + marker.length) : requestUrl;
+  }
+}
+
+/**
+ * `auth/*` NUNCA lleva headers de contexto (RF-3). Un contexto stale en
+ * /auth/me rompería el bootstrap de sesión con 403 INVALID_CONTEXT
+ * (ContextResolver, D-020). Prefijo amplio a propósito: login/refresh/logout/
+ * me/verify/forgot-password/reset-password/register son bootstrap o ciclo de
+ * cuenta, y ninguna debe arrastrar contexto.
+ */
+function isAuthApiPath(path: string): boolean {
+  return path.startsWith("auth/");
+}
+
+/** Inyecta los headers de contexto si hay taller seleccionado y NO es auth/*. */
+function injectActiveContextHeaders({ request }: { request: Request }): void {
+  const context = getActiveContext();
+  if (!context) {
+    return;
+  }
+  if (isAuthApiPath(apiRelativePath(request.url))) {
+    return;
+  }
+  request.headers.set("X-Context-Type", context.type);
+  request.headers.set("X-Context-Id", context.workshopId);
+}
+
+// ---------------------------------------------------------------------------
 // Base API client — credentials: include for HttpOnly cookie auth (D-001)
 // ---------------------------------------------------------------------------
 
@@ -29,6 +87,12 @@ export const api = ky.create({
   credentials: "include",
   retry: { limit: 1, statusCodes: [401] },
   hooks: {
+    beforeRequest: [
+      // F-020 / RF-3: contexto activo por headers (no aplica a auth/*).
+      (hookArg) => {
+        injectActiveContextHeaders(hookArg);
+      },
+    ],
     beforeRetry: [
       async ({ error, retryCount }) => {
         // Only handle 401 on first retry — never on refresh itself
@@ -163,7 +227,10 @@ export const authApi = {
           throw { status, message: body.message };
         }
         throw error;
-      }),
+      })
+      // F-020 / RF-3: el logout SIEMPRE resetea el contexto a null (PERSONAL),
+      // incluso si la API falla — un workshopId stale rompería el próximo login.
+      .finally(() => clearWorkshop()),
 
   me: () =>
     api
@@ -475,5 +542,47 @@ export const vehicleApi = {
     api
       .get(`vehicles/${vehicleId}/history`)
       .json<VehicleHistoryResponse>()
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
+// CareEpisode API methods (F-020)
+//
+// WORKSHOP-only: requieren contexto activo de taller (headers inyectados por
+// `injectActiveContextHeaders`). En PERSONAL el backend responde 403
+// (D-024 A2). El lookup NO va en vehicles — vive en `care-episodes` (foot-gun
+// `:id` evitado por diseño, F-012).
+// ---------------------------------------------------------------------------
+
+export const careEpisodeApi = {
+  /** F-020 RF-2: busca vehículo por placa EXACTA (normalizada trim+uppercase, D-037/D-042). Sin PII. */
+  lookupVehicleByPlate: (plate: string) =>
+    api
+      .get("care-episodes/lookup", { searchParams: { plate } })
+      .json<CareEpisodeLookupVehicle>()
+      .catch(toApiError),
+
+  /** F-020 RF-1: crea el CareEpisode (check-in). workshopId/createdByMemberId los fija el backend del contexto. */
+  createCareEpisode: (input: CreateCareEpisodeInput) =>
+    api
+      .post("care-episodes", { json: input })
+      .json<CareEpisode>()
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
+// Workshop API methods (F-020 — branches del taller para el check-in)
+//
+// GET /workshops/:id (backend existente) exige membresía activa y devuelve las
+// branches activas (sede primero). Sin ContextGuard: tolera los headers de
+// contexto y valida por `userId` en el handler.
+// ---------------------------------------------------------------------------
+
+export const workshopApi = {
+  /** GET /workshops/:id → WorkshopResponseDto (branches activas, sede primero). */
+  getWorkshop: (id: string) =>
+    api
+      .get(`workshops/${id}`)
+      .json<WorkshopDetail>()
       .catch(toApiError),
 };

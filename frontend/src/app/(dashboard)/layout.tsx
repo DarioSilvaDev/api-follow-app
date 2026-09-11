@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WorkshopSelector } from "@/components/layout/workshop-selector";
+import { useActiveContext } from "@/hooks/use-active-context";
 import { useAuth } from "@/hooks/use-auth";
 import { authApi } from "@/lib/api";
 
@@ -15,6 +17,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { status, user, clearSession } = useAuth();
+  const activeContext = useActiveContext();
 
   // Session lost (expired cookies, refresh failure) → redirect to login
   // preserving the intended destination (RF-3).
@@ -52,6 +55,17 @@ export default function DashboardLayout({
             HCDV
           </Link>
           <nav className="flex items-center gap-2">
+            <WorkshopSelector />
+            {/* F-020 / P2-6: la creación de atenciones es WORKSHOP-only — el
+                acceso aparece solo con taller seleccionado (UX mínima). */}
+            {activeContext?.type === "WORKSHOP" && (
+              <Link
+                href="/atenciones/nueva"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Nueva atención
+              </Link>
+            )}
             <Link
               href="/profile"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
