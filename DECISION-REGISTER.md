@@ -2073,3 +2073,65 @@ QA-2 (registro con versión → brand/model/version no-null; sin versión → nu
 2. **Baseline QA con datos de prueba previos:** `QA2ZZZ9` y `QA11PLACA` (owner user2) permanecen como vehículos de desarrollo. Decisión de depuración: Database/Tech Lead pueden limpiarlos en una pasada dedicada.
 3. **Proceso backend en 3001:** quedó corriendo el `dist` nuevo con F-1 (PID 25180 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
 4. **Datos QA primera pasada vs baseline:** los criterios del QA asumieron baseline "4 vehículos"; los registros QA previos forman parte de ese conteo. Documentado para no volver a contar como pérdida.
+
+# 18. Registro (2026-09-11): F-011 Editar Veh�culo end-to-end (D-039..D-043)
+
+## Objetivo
+
+Completar el journey de edici�n de veh�culo (F-011) de extremo a extremo: el owner edita sus veh�culos desde "Mis veh�culos" con PATCH parcial, duplicados a 409, normalizaci�n de placa, y persistencia de null al vaciar campos opcionales.
+
+## Decisiones de producto confirmadas (2026-09-11)
+
+### D-039 � Solo el owner puede editar
+- `PATCH /api/vehicles/:id` usa `assertVehicleOwned` (no `assertVehicleAccess`). Usuarios con acceso compartido consultan (GET) pero no editan en MVP.
+- La UI solo muestra "Editar" cuando `ownerships` tiene `type: 'owner'` activa (verificado por `o.userId === user.id && o.type === 'owner' && !o.endsAt`).
+- Alternativas descartadas: permitir edici�n a co-owners (equivaldr�a a transferencia informal, fuera de MVP); mantener `assertVehicleAccess` (habilitar�a edici�n a cualquier acceso compartido).
+
+### D-040 � Campos editables = todos los del alta, en PATCH parcial
+- Mismos campos de `RegisterVehicleDto`, solo los enviados. Corregir el VIN mal registrado es leg�timo: el `id` y el historial permanecen.
+
+### D-041 � Duplicados al editar ? 409, no 500
+- `P2002` (placa/VIN/engine) en `update()` se traduce igual que en register (mensaje espec�fico; reuso de `mapUniqueViolation`).
+
+### D-042 � Normalizaci�n de placa tambi�n al editar
+- `trim().toUpperCase()` antes de buscar/guardar en el update (igual que D-037).
+- Solo condicional: si `licensePlate` no viene en el PATCH, no se toca (guard `typeof === 'string'`; nunca `undefined`?`null`).
+
+### D-043 � Vaciar campos opcionales en edici�n persiste null
+- Campo opcional de texto/n�mero vaciado por el usuario (`vin`, `engineNumber`, `color`, `notes`, `manufactureYear`, `modelYear`) se env�a como `null` expl�cito ? backend persiste NULL.
+- **El cat�logo (`versionId`) NUNCA viaja `null`:** si no cambia, se omite (`undefined`) para no borrar la rama (RF-2). `licensePlate` es obligatoria y no se vac�a.
+- Comprobado emp�ricamente por backend: `class-validator 0.15.1` con `@IsOptional()` acepta `null`; `null` en Prisma = SET NULL (vs `undefined` = no tocar); columnas opcionales son nullable en schema. Sin cambios de producci�n backend necesarios para D-043 � solo tests (6 nuevos).
+
+## Decisiones t�cnicas validadas por el Tech Lead (2026-09-11)
+
+1. **Controller PATCH**: `assertVehicleOwned` (D-039) + el 200 DEBE devolver `VehicleResponseDto.from(vehicle)` (mismo patr�n que `create()`/`findOne()`; sin esto el 200 respond�a raw Prisma anidado). Verificado en c�digo y smoke e2e.
+2. **P2025 (registro no encontrado en `update()`) ? NO se mapea.** El engineer verific� con docs oficiales que `prisma.model.update` con `where` inexistente lanza P2025 (no P2001). TL acept� el no-mapeo: coherente con el proyecto (0 mapeos P2025 existentes; 404 v�a `findById` pre-operaci�n; race window �nfimo y solo con hard-delete de veh�culo sin historial).
+3. **No-op PATCH `{}` sin hidratar ? aceptado como deuda.** Edge case solo alcanzable con body literal `{}` (el frontend siempre env�a el form completo). Hidratar exigir�a cambiar la interfaz `VehicleRepository.findById`: costo desproporcionado. Deuda registrada.
+4. **`brandId`/`modelId` agregados a `VehicleResponseDto` (cambio exigido por el TL).** Riesgo ~0 verificado (specs usan asserts por propiedad, no `toEqual` completo). Elimina el workaround de preselecci�n de cat�logo por nombre en el frontend (colisiones de nombres; edge case del no-op). Reemplazo del workaround por IDs en la cascada = follow-up de frontend.
+
+## Cambios t�cnicos aplicados
+
+### Backend (commit `78c2619`)
+- `vehicles.controller.ts` PATCH `:id`: `assertVehicleOwned` + `VehicleResponseDto.from` (shape aplanado en 200).
+- `update-vehicle.handler.ts`: guard PATCH `{}` ? no-op 200 sin llamar a `update()`; normalizaci�n placa D-042 condicional; sin eventos nuevos.
+- `prisma-vehicle.repository.ts` `update()`: include `version.model.brand` (id�ntico a create/list/get), P2002?409 reusando `mapUniqueViolation`, red de seguridad D-042 condicional (`typeof licensePlate === 'string'`).
+- `vehicle.repository.ts`: tipo de retorno `update` ? `HydratedVehicle` id�ntico a `create()`.
+- `vehicle-response.dto.ts`: + `brandId`/`modelId` (aditivo, desde relaci�n ya hidratada).
+- Tests: 24 suites / 206 tests (handler update 8, repository update 17, DTO 2; +6 por D-043).
+- Smoke e2e (backend 3001): 200 aplanado con brand/model/version � 409 placa duplicada � 403 no-owner � 404 inexistente � PATCH `{}` 200 no-op � `{ color: null }` persiste NULL. Registros QA limpiados en transacci�n.
+
+### Frontend (commit `8f518c1`)
+- `api.ts`: + `getVehicle`/`updateVehicle`; `types/vehicle.ts`: `UpdateVehicleInput` con opcionales `string | null`.
+- P�gina `/vehicles/[id]/edit`: precarga GET /:id, cascada con preselecci�n, PATCH parcial, manejo 409/403/404/401, invalidate + redirect.
+- `vehicle-form-schema.ts` (m�dulo compartido): `vehicleFormSchema` extra�do de `new/page.tsx` (alta y edici�n no divergen) + `toEditVehicleInput` (regla D-043: vac�o con prefill contenido ? `null`; vac�o sin prefill ? omitido; `versionId` cambia solo si se modific�).
+- Listado: bot�n "Editar" solo owner (D-039).
+- Tests: 6 files / 51 tests (+4 D-043: `color: null`, omitir vac�os, `manufactureYear: null` no `0`, `versionId` omitido si no cambia) + build OK (ruta din�mica `/vehicles/[id]/edit`).
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Deuda de contrato: no-op PATCH `{}`** ? 200 con `versionId` poblado pero `brand/model/version: null` (fix = hidratar retorno del no-op, follow-up barato; no alcanzable por consumidor MVP).
+2. **Deuda preexistente (nueva, TL): `findById` no filtra `deletedAt`** ? PATCH sobre veh�culo soft-deleted (ADR-005) editar�a el registro. Backlog; NO accionar en la misma iteraci�n.
+3. **Deuda de validaci�n (backend-engineer, escalada): `PartialType()` agrega `@IsOptional()` a TODOS los campos, incluido `licensePlate`** ? `PATCH` con `{ licensePlate: null }` pasar�a validaci�n y reventar�a en `null.trim()` ? 500 (deber�a ser 400). El frontend nunca lo env�a (zod bloquea vac�o; D-043 no aplica a placa). Fix sugerido (fuera de alcance): rechazar null en `licensePlate` en `UpdateVehicleDto` (ej. `@ValidateIf` + `@IsNotEmpty()`) + test de validaci�n. Backlog.
+4. **Detecci�n de owner en frontend por `ownerships`** (`userId` + `type` + `!endsAt`): depende del shape real del listado; verificado en tests. Si el contrato del listado cambia, revisitar.
+5. **Bug pre-existente `DELETE /api/vehicles/:id` ? 500** (Secci�n 17): sigue como ticket separado, NO tocado en F-011.
+6. **Proceso backend en 3001:** qued� corriendo el `dist` nuevo (PID 10364 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
