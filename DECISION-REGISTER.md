@@ -2306,3 +2306,74 @@ Mostrar en la vista de detalle una sección "Historial" con los eventos del veh�
 3. **Decisiones pendientes registradas en UNIFIED-BASELINE:** si `history.view` / `vehicle.history.read` deben gatear los endpoints de history (hoy ownership-scoped sin PermissionsGuard) — se resolverá con el contexto workshop.
 4. **Todos los estados de transfer visibles (D-054):** si el usuario los encuentra ruidosos (ej. transfers rejected/expired), filtrar post-MVP.
 5. **Emails en transfers:** `fromUser`/`toUser` se muestran sin email en todos los casos (el handler solo expone email en ownerships para owner activo). Si una futura UI de transfers lo requiera, revisar PII.
+## Objetivo
+
+Completar el journey **"el taller registra el ingreso (check-in) de un vehículo"** end-to-end: selector de contexto WORKSHOP en el frontend + crear CareEpisode (`open`) con datos de check-in. Primera iteración de la Fase 2 (F-020), la única del roadmap que introduce la entidad central `CareEpisode` (D-005, resuelto parcialmente con policy MVP). El propietario sigue sin poder registrar servicios propios (iteración 2-2).
+
+## Decisiones de producto confirmadas (2026-09-11) — P2-1..P2-6 (usuario)
+
+### D-056 — F-020 alcance: solo el taller crea CareEpisodes (P2-1)
+
+- El registro de atenciones es actividad del taller (D-024 A2 ACCEPTED, contexto WORKSHOP obligatorio). El propietario registrando servicios propios (`source=owner`) es la iteración 2-2 (requiere amendar D-024 A2 parcialmente — decisión aparte).
+
+### D-057 — Walk-in permitido: appointment NO obligatorio (P2-2)
+
+- `Appointment = reserva`; `CareEpisode = atención efectivamente iniciada` (D-023). El episodio nace en el check-in (el vehículo ingresa), con o sin appointment previo. `appointmentId` opcional; si viene, debe pertenecer al vehículo y al taller del contexto.
+
+### D-058 — Primer contacto taller↔vehículo por placa (P2-3)
+
+- El taller puede crear un episodio sobre cualquier vehículo existente (lookup por placa exacta) aunque no tenga historial previo. Es el onboarding natural (el taller atiende el vehículo de un cliente). El episodio crea la asociación taller↔vehículo (derivada, D-019 PENDING), visible en la timeline del propietario. Mitigaciones: WorkshopOnly + Throttler 30/60s en el lookup + auditoría vía `createdByMemberId`. El handler valida existencia por `findUnique`, SIN `assertVehicleAccess` full mode (ampliación deliberada de superficie, documentada en AC de la spec).
+
+### D-059 — Permiso `care-episode.create` para owner + mechanic (P2-4)
+
+- Employee NO (se queda solo con appointment). Convención: `module: 'care-episode', resource: 'care-episode', action: 'create'`. Seed idempotente (upsert por code + links por roleId_permissionId).
+
+### D-060 — Trust / nivel de confianza: DIFERIDO (P2-5)
+
+- El Trust Profile es conceptual (ROADMAP 0); no se implementa infraestructura de confianza en esta iteración. La UI puede mostrar "Registrado por {taller}" como dato informativo (sin sistema de trust).
+
+### D-061 — Frontend mínimo de taller (P2-6)
+
+- Selector de contexto (dropdown en header, desde `workshopMemberships`) + página "Nueva atención" (lookup por placa → check-in). Contexto en memoria (D-021 PENDING), por-request vía headers (D-020 A1). SIN la UI completa de taller (Fase 4: F-040..F-045).
+
+## Decisiones técnicas validadas por el Tech Lead (2026-09-11)
+
+1. **Módulo nuevo `src/modules/care-episodes/`** (no extender MaintenanceModule): CareEpisode es entidad central del dominio (ADR-005/D-005), no "un write más de maintenance". Controller + commands + queries + events; sin repository (handler usa `PrismaService`, patrón maintenance).
+2. **Lookup fuera de vehicles:** `GET /api/care-episodes/lookup?plate=` (no `GET /vehicles/lookup`). Evita el foot-gun de `@Get(':id')` (F-012) y no contamina el controller PERSONAL-strict (D-035). Guards: Jwt+Context (clase) + WorkshopOnly + Throttler 30/60s (método). Sin permiso granular (el ContextResolver ya valida membership activa).
+3. **FKs aditivas con `onDelete: Restrict`** (ServiceRecord/WorkOrder/Estimate.careEpisodeId): ADR-005 T3 clasifica estas entidades como categoría histórica (NO delete físico); `SetNull` destruiría la trazabilidad. Columnas NULLABLE (aditivas, sin backfill); T4 (`careEpisodeId` requerido) se satisface en F-021/F-022 (deuda registrada, no es error). Solo `Appointment` del episodio conserva `SetNull` (patrón `WorkOrder.appointmentId`).
+4. **Guard order:** WorkshopOnlyGuard ANTES de PermissionsGuard (evita bypass de super_admin desde PERSONAL; verificado por test de matriz).
+5. **Rate-limit existente:** `@nestjs/throttler` (add-on por endpoint, NO global en app.module). `@Throttle({ default: { limit: 30, ttl: 60_000 } })` en lookup: 30/60s mitiga enumeración sin romper UX de check-in (el default 10/60s sería demasiado agresivo para búsquedas legítimas).
+6. **Evento `care-episode.created`** (extiende BaseEvent) emitido SOLO tras éxito de persistencia; in-process EventEmitter2 sin outbox (decisión de arquitectura existente).
+7. **Frontend:** store `active-context` puro + `useSyncExternalStore` (sin librería nueva); inyector `beforeRequest` de ky; **exclusión de TODAS las rutas `auth/*`** (más amplia que las 5 enumeradas en la spec — aceptada: el ciclo de cuenta nunca debe arrastrar contexto, un contexto stale en `/auth/me` rompería el bootstrap con 403 INVALID_CONTEXT); `logout()/.clearSession()` resetean el contexto a `null` (próximo login en PERSONAL limpio).
+
+## Cambios técnicos aplicados — Backend (commit `feat(care-episodes)`)
+
+- `schema.prisma` + migración `20260911180704_add_care_episodes` (ADITIVA, sin backfill): modelo `CareEpisode` (`care_episodes`), enum `CareEpisodeStatus { open delivered cancelled }`, FKs Restrict (vehicle/workshop/branch/createdByMember), appointment SetNull, índices `[vehicleId, createdAt]`/`[workshopId, createdAt]`/`[status]`, FK nullable `careEpisodeId` en ServiceRecord/WorkOrder/Estimate (Restrict).
+- `src/modules/care-episodes/` (nuevo): controller (`POST /api/care-episodes` guard chain Jwt+Context+WorkshopOnly→Permissions+`care-episode.create`; `GET /api/care-episodes/lookup?plate=` con Throttler 30/60s y datos mínimos sin VIN/engineNumber/owner), command + handler create (validaciones vehículo/branch/appointment, status open, checkedInAt), query lookup (placa normalizada trim+uppercase), evento, DTO.
+- `app.module.ts`: `CareEpisodesModule` registrado después de MaintenanceModule.
+- `seed.ts`: permiso `care-episode.create` (62 total) + links owner/mechanic (employee NO); idempotente.
+- Tests: +17 (handler 7, lookup 4, controller matriz 6) → **29 suites / 264 tests**; build OK; smoke test de arranque OK (rutas mapeadas, sin errores).
+
+## Cambios técnicos aplicados — Frontend (commit `feat(frontend)`)
+
+- `src/lib/active-context.ts` + `src/hooks/use-active-context.ts`: store `null` = PERSONAL | `{ type: 'WORKSHOP', workshopId }` con `useSyncExternalStore`.
+- `src/lib/api.ts`: inyector `beforeRequest` (headers workshop, excluye rutas `auth/*`); `careEpisodeApi.lookupVehicleByPlate()` + `careEpisodeApi.createCareEpisode()`; `workshopApi.getWorkshop()` (branches reales del backend).
+- `auth-provider.tsx`: `clearSession()` resetea contexto; `authApi.logout()` también en `.finally` (incluye fallo de red).
+- `components/layout/workshop-selector.tsx` + header del dashboard (dropdown por taller + link "Nueva atención" visible solo con WORKSHOP activo; sin membresías no renderiza — journey PERSONAL intacto).
+- Página `/(dashboard)/atenciones/nueva`: lookup por placa → branch preseleccionada (GET /workshops/:id) → check-in (RHF+zod) → POST → éxito ("Atención ingresada OK — vehículo {placa}"); estados 404/429+Reintentar/5xx/403; sin taller seleccionado → guía. Ruta protegida en proxy.
+- Tests: +24 → **13 files / 122 tests**; build OK (Next 16.3.4, TypeScript estricto).
+
+### Spec (commit `docs: spec F-020`)
+
+- `docs/specs/care-episode-create-flow.md` (nueva, v2): problema, objetivo, actores, P2-1..P2-6, journey, flujos alternativos, RF-1..RF-6, contrato backend validado por TL (correcciones 1-7 incorporadas), alcance dentro/fuera, criterios de aceptación (backend + frontend + calidad), dependencias, riesgos. Aprobada por TL antes de implementar.
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **PDP — Selector no filtra por permiso `care-episode.create`:** el dropdown muestra todas las membresías; el backend enforcea con 403 controlado. Filtrar por permiso (¿global o por-taller?) es decisión de F-021/F-023.
+2. **PDP — Branches en sesión:** la página usa `GET /api/workshops/:id` para las sucursales (no están en `/auth/me`). Si el producto quiere evitar esa llamada por sesión, agregar sucursales a `/auth/me` (decisión para iteración 2-2 / contexto taller completo).
+3. **Transitoriedad ADR-005 T4:** `careEpisodeId` NULLABLE en ServiceRecord/WorkOrder/Estimate; la vinculación obligatoria llega con F-021/F-022 (ciclo de vida del episodio).
+4. **`mileageIn` vs `VehicleMileage`:** ¿el kilometraje de ingreso del check-in debe registrar también un `VehicleMileage` con `source: workshop`? Afecta al timeline F-014 → decidir en iteración 2-2.
+5. **¿Un vehículo puede tener más de un episodio `open` simultáneo?** (partial unique index si aplica) → F-021.
+6. **`vehicle.transferred` event muerto** (deuda previa, F-014): se mantiene abierta; decidir con CareEpisodes/F-024 si la timeline consume eventos o sigue leyendo la tabla.
+7. **Permisos fantasma de workshops (deuda pre-existente):** `workshop.roles.create/update/delete` y `workshop.specialties.manage` existen en controllers pero no en seed → 403 para no-super_admin. Fuera de F-020; registrar para una pasada de workshops.
+8. **Build warnings multi-lockfile** (backend + frontend): cosmético; considerar `turbopack.root` o consolidar lockfiles al abordar el build.
