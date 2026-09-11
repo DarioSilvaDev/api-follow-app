@@ -1,15 +1,15 @@
-# HCDV — Decision Register
+﻿# HCDV â€” Decision Register
 
-> Registro único de decisiones de producto, dominio, arquitectura y UX que condicionan la evolución de Historia Clínica Digital Vehicular (HCDV).
+> Registro Ãºnico de decisiones de producto, dominio, arquitectura y UX que condicionan la evoluciÃ³n de Historia ClÃ­nica Digital Vehicular (HCDV).
 
 **Estado del documento:** Activo
-**Última actualización:** 2026-09-09
-**Producto:** Historia Clínica Digital Vehicular (HCDV)
-**Alcance:** MVP y decisiones estructurales que condicionan su evolución
+**Ãšltima actualizaciÃ³n:** 2026-09-09
+**Producto:** Historia ClÃ­nica Digital Vehicular (HCDV)
+**Alcance:** MVP y decisiones estructurales que condicionan su evoluciÃ³n
 
 ---
 
-## 1. Propósito
+## 1. PropÃ³sito
 
 Este documento mantiene el registro oficial de decisiones que afectan:
 
@@ -18,14 +18,14 @@ Este documento mantiene el registro oficial de decisiones que afectan:
 - dominio;
 - arquitectura;
 - persistencia;
-- autenticación y autorización;
-- contratos Backend ↔ Frontend;
+- autenticaciÃ³n y autorizaciÃ³n;
+- contratos Backend â†” Frontend;
 - seguridad;
-- evolución futura del sistema.
+- evoluciÃ³n futura del sistema.
 
-Su objetivo es evitar que decisiones importantes queden implícitas en código, documentación aislada o conversaciones entre agentes.
+Su objetivo es evitar que decisiones importantes queden implÃ­citas en cÃ³digo, documentaciÃ³n aislada o conversaciones entre agentes.
 
-Una decisión registrada aquí debe ser considerada **fuente de verdad** para los agentes de desarrollo, salvo que exista posteriormente una decisión explícita que la modifique o superseda.
+Una decisiÃ³n registrada aquÃ­ debe ser considerada **fuente de verdad** para los agentes de desarrollo, salvo que exista posteriormente una decisiÃ³n explÃ­cita que la modifique o superseda.
 
 ---
 
@@ -33,46 +33,46 @@ Una decisión registrada aquí debe ser considerada **fuente de verdad** para lo
 
 | Estado       | Significado                                          |
 | ------------ | ---------------------------------------------------- |
-| `PROPOSED`   | Propuesta inicial pendiente de evaluación            |
-| `PENDING`    | Requiere una decisión adicional antes de implementar |
-| `ACCEPTED`   | Decisión aprobada y aplicable                        |
-| `REJECTED`   | Decisión explícitamente descartada                   |
-| `SUPERSEDED` | Fue reemplazada por una decisión posterior           |
+| `PROPOSED`   | Propuesta inicial pendiente de evaluaciÃ³n            |
+| `PENDING`    | Requiere una decisiÃ³n adicional antes de implementar |
+| `ACCEPTED`   | DecisiÃ³n aprobada y aplicable                        |
+| `REJECTED`   | DecisiÃ³n explÃ­citamente descartada                   |
+| `SUPERSEDED` | Fue reemplazada por una decisiÃ³n posterior           |
 
 ### Regla fundamental
 
-Los agentes **NO deben implementar silenciosamente una decisión `PENDING`**.
+Los agentes **NO deben implementar silenciosamente una decisiÃ³n `PENDING`**.
 
-Si una implementación requiere resolver una decisión pendiente, el agente debe:
+Si una implementaciÃ³n requiere resolver una decisiÃ³n pendiente, el agente debe:
 
-1. identificar la decisión;
-2. explicar por qué bloquea el trabajo;
-3. proponer una resolución;
-4. esperar aprobación cuando corresponda.
+1. identificar la decisiÃ³n;
+2. explicar por quÃ© bloquea el trabajo;
+3. proponer una resoluciÃ³n;
+4. esperar aprobaciÃ³n cuando corresponda.
 
 ---
 
-# 3. Jerarquía de fuentes de verdad
+# 3. JerarquÃ­a de fuentes de verdad
 
-En caso de contradicción, utilizar el siguiente orden:
+En caso de contradicciÃ³n, utilizar el siguiente orden:
 
 1. Decisiones `ACCEPTED` de este documento.
 2. ADRs aceptados.
-3. Product Blueprint / especificación funcional vigente.
-4. Baselines técnicos.
-5. Documentación de agentes.
-6. Código existente.
+3. Product Blueprint / especificaciÃ³n funcional vigente.
+4. Baselines tÃ©cnicos.
+5. DocumentaciÃ³n de agentes.
+6. CÃ³digo existente.
 7. Suposiciones o convenciones.
 
-El código existente **no prevalece automáticamente** sobre una decisión aceptada.
+El cÃ³digo existente **no prevalece automÃ¡ticamente** sobre una decisiÃ³n aceptada.
 
-Cuando el código contradiga una decisión aceptada, debe considerarse legacy, bug o deuda técnica hasta determinar lo contrario.
+Cuando el cÃ³digo contradiga una decisiÃ³n aceptada, debe considerarse legacy, bug o deuda tÃ©cnica hasta determinar lo contrario.
 
 ---
 
 # 4. Principios transversales
 
-## 4.1 MVP pragmático
+## 4.1 MVP pragmÃ¡tico
 
 El MVP debe priorizar:
 
@@ -80,9 +80,9 @@ El MVP debe priorizar:
 - seguridad;
 - consistencia de datos;
 - mantenibilidad;
-- velocidad de evolución.
+- velocidad de evoluciÃ³n.
 
-No se introducen abstracciones o patrones únicamente por anticipación de necesidades futuras.
+No se introducen abstracciones o patrones Ãºnicamente por anticipaciÃ³n de necesidades futuras.
 
 ---
 
@@ -90,13 +90,13 @@ No se introducen abstracciones o patrones únicamente por anticipación de neces
 
 El backend del MVP utiliza un **modular monolith**.
 
-No se introducen microservicios, brokers o comunicación distribuida salvo decisión explícita posterior.
+No se introducen microservicios, brokers o comunicaciÃ³n distribuida salvo decisiÃ³n explÃ­cita posterior.
 
 ---
 
 ## 4.3 DDD no es requisito del MVP
 
-El MVP no adopta DDD táctico como metodología obligatoria.
+El MVP no adopta DDD tÃ¡ctico como metodologÃ­a obligatoria.
 
 Se pueden utilizar conceptos de dominio cuando aporten claridad, pero no deben introducirse:
 
@@ -108,31 +108,31 @@ Se pueden utilizar conceptos de dominio cuando aporten claridad, pero no deben i
 
 ---
 
-## 4.4 Historial como información protegida
+## 4.4 Historial como informaciÃ³n protegida
 
-La información histórica del vehículo debe preservarse.
+La informaciÃ³n histÃ³rica del vehÃ­culo debe preservarse.
 
-Las relaciones históricas importantes utilizan `RESTRICT` cuando corresponde, evitando que eliminar una entidad actual destruya o invalide artificialmente el historial.
+Las relaciones histÃ³ricas importantes utilizan `RESTRICT` cuando corresponde, evitando que eliminar una entidad actual destruya o invalide artificialmente el historial.
 
 ---
 
 # 5. Registro de decisiones
 
-## D-001 — Estrategia de autenticación
+## D-001 â€” Estrategia de autenticaciÃ³n
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture / Security
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
-Para clientes web/browser, HCDV utilizará **HttpOnly Cookies** como mecanismo oficial de autenticación.
+Para clientes web/browser, HCDV utilizarÃ¡ **HttpOnly Cookies** como mecanismo oficial de autenticaciÃ³n.
 
 El backend mantiene soporte para:
 
 - `access_token` mediante cookie HttpOnly;
 - `refresh_token` mediante cookie HttpOnly;
-- Bearer tokens para clientes no-browser que explícitamente los necesiten.
+- Bearer tokens para clientes no-browser que explÃ­citamente los necesiten.
 
 ### Regla
 
@@ -142,15 +142,15 @@ El flujo browser utiliza:
 
 ```text
 Browser
-   ↓
+   â†“
 HttpOnly Cookies
-   ↓
+   â†“
 NestJS API
-   ↓
+   â†“
 JWT authentication
 ```
 
-NextAuth puede utilizarse como mecanismo de integración de sesión del frontend, pero **no reemplaza la autoridad de autenticación del backend**.
+NextAuth puede utilizarse como mecanismo de integraciÃ³n de sesiÃ³n del frontend, pero **no reemplaza la autoridad de autenticaciÃ³n del backend**.
 
 ### Bearer
 
@@ -162,50 +162,50 @@ Su uso queda destinado a:
 - integraciones;
 - testing;
 - futuros clientes no-browser;
-- otros consumidores explícitamente autorizados.
+- otros consumidores explÃ­citamente autorizados.
 
-No debe utilizarse como mecanismo alternativo implícito para el frontend web.
+No debe utilizarse como mecanismo alternativo implÃ­cito para el frontend web.
 
 ### Implicaciones
 
 Backend:
 
-- mantener rotación de refresh tokens;
-- mantener detección de reuse;
-- revisar configuración de cookies;
+- mantener rotaciÃ³n de refresh tokens;
+- mantener detecciÃ³n de reuse;
+- revisar configuraciÃ³n de cookies;
 - corregir CORS;
-- activar protección contra abuso en login/refresh;
-- eliminar configuración JWT obsoleta.
+- activar protecciÃ³n contra abuso en login/refresh;
+- eliminar configuraciÃ³n JWT obsoleta.
 
 Frontend:
 
 - utilizar `credentials: include`;
 - no almacenar access/refresh tokens en `localStorage`;
-- mantener refresh automático;
+- mantener refresh automÃ¡tico;
 - documentar correctamente el flujo real.
 
 ### Seguridad
 
-SameSite ayuda a mitigar CSRF, pero no debe considerarse la única protección.
+SameSite ayuda a mitigar CSRF, pero no debe considerarse la Ãºnica protecciÃ³n.
 
-La configuración final debe contemplar:
+La configuraciÃ³n final debe contemplar:
 
-- CORS explícito;
-- validación de `Origin`/mecanismo equivalente cuando corresponda;
-- política correcta de cookies;
-- protección específica de endpoints sensibles.
+- CORS explÃ­cito;
+- validaciÃ³n de `Origin`/mecanismo equivalente cuando corresponda;
+- polÃ­tica correcta de cookies;
+- protecciÃ³n especÃ­fica de endpoints sensibles.
 
 ---
 
-# D-002 — Fuente de verdad para `isVehicleOwner`
+# D-002 â€” Fuente de verdad para `isVehicleOwner`
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Authorization / UX
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
-La propiedad de un vehículo se determina exclusivamente a partir de **VehicleOwnership**.
+La propiedad de un vehÃ­culo se determina exclusivamente a partir de **VehicleOwnership**.
 
 No debe inferirse mediante:
 
@@ -215,7 +215,7 @@ AND
 workshopMemberships.length === 0
 ```
 
-ni mediante cualquier combinación equivalente de roles, memberships o heurísticas de frontend.
+ni mediante cualquier combinaciÃ³n equivalente de roles, memberships o heurÃ­sticas de frontend.
 
 ### Regla
 
@@ -227,11 +227,11 @@ El frontend puede utilizar un flag derivado como:
 isVehicleOwner
 ```
 
-cuando sea útil para UX, pero dicho flag es una **proyección**, no una fuente de autorización.
+cuando sea Ãºtil para UX, pero dicho flag es una **proyecciÃ³n**, no una fuente de autorizaciÃ³n.
 
-### Autorización
+### AutorizaciÃ³n
 
-Las operaciones sobre un vehículo deben evaluarse utilizando las relaciones reales:
+Las operaciones sobre un vehÃ­culo deben evaluarse utilizando las relaciones reales:
 
 ```text
 VehicleOwnership
@@ -241,26 +241,26 @@ Platform permissions
 Active Context
 ```
 
-según corresponda.
+segÃºn corresponda.
 
 ### `/auth/me`
 
-El contrato de `/auth/me` puede exponer información derivada útil para la sesión, pero **no se obliga a incluir la lista completa de vehículos/ownerships del usuario**.
+El contrato de `/auth/me` puede exponer informaciÃ³n derivada Ãºtil para la sesiÃ³n, pero **no se obliga a incluir la lista completa de vehÃ­culos/ownerships del usuario**.
 
-La información vehicle-specific debe obtenerse desde los recursos correspondientes.
+La informaciÃ³n vehicle-specific debe obtenerse desde los recursos correspondientes.
 
 Por lo tanto:
 
-- `/auth/me` representa capacidades/contexto de sesión;
+- `/auth/me` representa capacidades/contexto de sesiÃ³n;
 - Vehicle endpoints representan ownership/access concreto.
 
 ### Regla de seguridad
 
-El frontend nunca debe utilizar `isVehicleOwner` como mecanismo de autorización.
+El frontend nunca debe utilizar `isVehicleOwner` como mecanismo de autorizaciÃ³n.
 
-La autorización definitiva ocurre en backend.
+La autorizaciÃ³n definitiva ocurre en backend.
 
-### Amendment 1 — Contrato de sesión (2026-09-04)
+### Amendment 1 â€” Contrato de sesiÃ³n (2026-09-04)
 
 `GET /auth/me` expone:
 
@@ -268,87 +268,87 @@ La autorización definitiva ocurre en backend.
 isVehicleOwner: boolean
 ```
 
-como campo **requerido** del contrato, proyección derivada de la existencia de al menos un `VehicleOwnership` activo (`endsAt: null`), de cualquier tipo (`owner`, `co_owner`, `company`).
+como campo **requerido** del contrato, proyecciÃ³n derivada de la existencia de al menos un `VehicleOwnership` activo (`endsAt: null`), de cualquier tipo (`owner`, `co_owner`, `company`).
 
 Reglas:
 
-- Es proyección de UX/routing únicamente; **nunca** autorización.
+- Es proyecciÃ³n de UX/routing Ãºnicamente; **nunca** autorizaciÃ³n.
 - `VehicleAccess` **no** alimenta el flag (sigue siendo ownership-based exclusivamente).
-- No se agrega a la sesión NextAuth (sesión permanece lean).
+- No se agrega a la sesiÃ³n NextAuth (sesiÃ³n permanece lean).
 - Es **context-independiente**: verdadero aunque el Active Context sea WORKSHOP.
-- Evolución del contrato aditiva únicamente. `ownershipCount`/`ownershipIds` no se exponen por ahora (aditivo futuro si mobile lo requiere).
-- `co_owner`/`company` alimentan el flag; los **derechos** de co-owner quedan sujetos a D-018 sin alterar necesariamente la proyección.
+- EvoluciÃ³n del contrato aditiva Ãºnicamente. `ownershipCount`/`ownershipIds` no se exponen por ahora (aditivo futuro si mobile lo requiere).
+- `co_owner`/`company` alimentan el flag; los **derechos** de co-owner quedan sujetos a D-018 sin alterar necesariamente la proyecciÃ³n.
 
 ---
 
-# D-003 — Identity vs User
+# D-003 â€” Identity vs User
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Architecture
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
 El MVP **NO introduce una entidad `Identity` separada**.
 
-Se ratifica la decisión conceptual de ADR-001 T1:
+Se ratifica la decisiÃ³n conceptual de ADR-001 T1:
 
 > Durante el MVP, `User` representa tanto la cuenta autenticada como el actor del sistema.
 
 ### Implicaciones
 
-No se migrarán relaciones actuales desde `User` hacia una entidad `Identity`.
+No se migrarÃ¡n relaciones actuales desde `User` hacia una entidad `Identity`.
 
-No se agregará una abstracción paralela únicamente para anticipar escenarios futuros.
+No se agregarÃ¡ una abstracciÃ³n paralela Ãºnicamente para anticipar escenarios futuros.
 
-Las relaciones actuales continuarán utilizando `User` donde corresponda.
+Las relaciones actuales continuarÃ¡n utilizando `User` donde corresponda.
 
-### Separación conceptual
+### SeparaciÃ³n conceptual
 
 Aunque no exista una tabla `Identity`, conceptualmente deben distinguirse:
 
 ```text
 Authentication
-    ↓
+    â†“
 User / Account
-    ↓
+    â†“
 Actor
 ```
 
-Esta separación conceptual permite evolucionar posteriormente sin forzar al MVP a implementar el modelo completo.
+Esta separaciÃ³n conceptual permite evolucionar posteriormente sin forzar al MVP a implementar el modelo completo.
 
 ### Triggers para introducir Identity
 
-La decisión deberá revisarse cuando aparezca una necesidad real como:
+La decisiÃ³n deberÃ¡ revisarse cuando aparezca una necesidad real como:
 
 - actores sin cuenta;
-- representación de organizaciones como actores;
+- representaciÃ³n de organizaciones como actores;
 - perfiles de confianza independientes de cuentas;
-- integración multi-tenant más compleja;
+- integraciÃ³n multi-tenant mÃ¡s compleja;
 - actores externos/API;
-- relaciones históricas que no correspondan exclusivamente a usuarios registrados.
+- relaciones histÃ³ricas que no correspondan exclusivamente a usuarios registrados.
 
 Hasta entonces, `Identity` permanece como concepto futuro.
 
 ---
 
-# D-004 — Active Context
+# D-004 â€” Active Context
 
 **Estado:** `PENDING`
 **Tipo:** Architecture / Authorization / Product
 **Prioridad:** P0
 
-### Decisión parcial aceptada
+### DecisiÃ³n parcial aceptada
 
-El concepto de **Active Context** es válido y debe formar parte del modelo de autorización y resolución de recursos.
+El concepto de **Active Context** es vÃ¡lido y debe formar parte del modelo de autorizaciÃ³n y resoluciÃ³n de recursos.
 
-Sin embargo, la semántica funcional definitiva todavía depende de resolver D-019 y D-021.
+Sin embargo, la semÃ¡ntica funcional definitiva todavÃ­a depende de resolver D-019 y D-021.
 
 ### Principio
 
-Active Context es una **dimensión/input para autorización y resolución de recursos**.
+Active Context es una **dimensiÃ³n/input para autorizaciÃ³n y resoluciÃ³n de recursos**.
 
-No es, por sí mismo, un sistema de autorización.
+No es, por sÃ­ mismo, un sistema de autorizaciÃ³n.
 
 Ejemplo:
 
@@ -358,7 +358,7 @@ Authorization
 Active Context
     +
 Resource
-    ↓
+    â†“
 Decision
 ```
 
@@ -379,29 +379,29 @@ X-Context-Id: workshop-id
 
 ### Reglas preliminares
 
-- El contexto explícito tiene prioridad sobre inferencias.
-- Un `WORKSHOP` debe corresponder a un Workshop Membership válido.
+- El contexto explÃ­cito tiene prioridad sobre inferencias.
+- Un `WORKSHOP` debe corresponder a un Workshop Membership vÃ¡lido.
 - `PLATFORM` requiere privilegios de plataforma.
-- `PERSONAL` representa el ámbito personal del usuario.
-- Un contexto inválido no debe degradarse silenciosamente a otro contexto.
+- `PERSONAL` representa el Ã¡mbito personal del usuario.
+- Un contexto invÃ¡lido no debe degradarse silenciosamente a otro contexto.
 
 ### Pendientes
 
-D-019 define qué significa consultar vehículos bajo `WORKSHOP`.
+D-019 define quÃ© significa consultar vehÃ­culos bajo `WORKSHOP`.
 
-D-021 define la relación entre contexto de sesión, navegación y URL.
+D-021 define la relaciÃ³n entre contexto de sesiÃ³n, navegaciÃ³n y URL.
 
-Por lo tanto, **no implementar todavía el modelo frontend definitivo de Active Context** hasta cerrar esas decisiones.
+Por lo tanto, **no implementar todavÃ­a el modelo frontend definitivo de Active Context** hasta cerrar esas decisiones.
 
 ---
 
-# D-005 — CareEpisode
+# D-005 â€” CareEpisode
 
 **Estado:** `PENDING`
 **Tipo:** Domain / Product / Architecture
 **Prioridad:** P0
 
-### Decisión conceptual
+### DecisiÃ³n conceptual
 
 Se acepta la existencia de **CareEpisode** como una entidad nueva y central del dominio.
 
@@ -411,25 +411,25 @@ Modelo conceptual:
 
 ```text
 Vehicle
-   │
-   └── CareEpisode
-          ├── Diagnosis
-          ├── Estimate
-          ├── WorkOrder
-          └── ServiceRecord
+   â”‚
+   â””â”€â”€ CareEpisode
+          â”œâ”€â”€ Diagnosis
+          â”œâ”€â”€ Estimate
+          â”œâ”€â”€ WorkOrder
+          â””â”€â”€ ServiceRecord
 ```
 
-### Semántica
+### SemÃ¡ntica
 
-Un `CareEpisode` representa una instancia concreta de atención de un vehículo.
+Un `CareEpisode` representa una instancia concreta de atenciÃ³n de un vehÃ­culo.
 
 Puede originarse mediante:
 
 - Appointment;
 - walk-in;
-- otra entrada explícitamente definida por el producto.
+- otra entrada explÃ­citamente definida por el producto.
 
-El episodio comienza cuando el vehículo es efectivamente recibido/ingresado al proceso de atención.
+El episodio comienza cuando el vehÃ­culo es efectivamente recibido/ingresado al proceso de atenciÃ³n.
 
 ### ServiceRecord
 
@@ -438,18 +438,18 @@ El episodio comienza cuando el vehículo es efectivamente recibido/ingresado al 
 No debe realizarse un search/replace conceptual:
 
 ```text
-ServiceRecord → CareEpisode
+ServiceRecord â†’ CareEpisode
 ```
 
 En el modelo objetivo:
 
 ```text
 CareEpisode
-    ↓
+    â†“
 ServiceRecord
 ```
 
-El ServiceRecord representa el resultado/documentación final de la atención.
+El ServiceRecord representa el resultado/documentaciÃ³n final de la atenciÃ³n.
 
 ### WorkOrder / Estimate
 
@@ -457,77 +457,77 @@ En el modelo objetivo:
 
 ```text
 CareEpisode
-    ├── Estimate
-    └── WorkOrder
+    â”œâ”€â”€ Estimate
+    â””â”€â”€ WorkOrder
 ```
 
-Las relaciones legacy existentes deberán migrarse progresivamente.
+Las relaciones legacy existentes deberÃ¡n migrarse progresivamente.
 
 ### Pendiente
 
 El schema definitivo y lifecycle exacto quedan sujetos a:
 
-- D-022 — MVP CareEpisode policies;
-- D-023 — Appointment cancellation after CareEpisode starts.
+- D-022 â€” MVP CareEpisode policies;
+- D-023 â€” Appointment cancellation after CareEpisode starts.
 
-No implementar todavía el lifecycle completo basándose únicamente en la propuesta inicial.
+No implementar todavÃ­a el lifecycle completo basÃ¡ndose Ãºnicamente en la propuesta inicial.
 
 ---
 
-# D-006 — Repositorios
+# D-006 â€” Repositorios
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture
 
-### Decisión
+### DecisiÃ³n
 
-Los repositories permanecen dentro de sus respectivos módulos.
+Los repositories permanecen dentro de sus respectivos mÃ³dulos.
 
-Las interfaces se exponen mediante tokens de inyección.
+Las interfaces se exponen mediante tokens de inyecciÃ³n.
 
 Ejemplo conceptual:
 
 ```text
 Module
-├── application
-├── domain
-├── infrastructure
-│   └── repositories
-└── presentation
+â”œâ”€â”€ application
+â”œâ”€â”€ domain
+â”œâ”€â”€ infrastructure
+â”‚   â””â”€â”€ repositories
+â””â”€â”€ presentation
 ```
 
-No se crea un repository global transversal salvo necesidad explícita.
+No se crea un repository global transversal salvo necesidad explÃ­cita.
 
 ---
 
-# D-007 — Commands y Queries
+# D-007 â€” Commands y Queries
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture
 
-### Decisión
+### DecisiÃ³n
 
-El backend separará conceptualmente:
+El backend separarÃ¡ conceptualmente:
 
 ```text
 Commands
 Queries
 ```
 
-No se utilizará `@nestjs/cqrs` para implementar esta separación en el MVP.
+No se utilizarÃ¡ `@nestjs/cqrs` para implementar esta separaciÃ³n en el MVP.
 
-La separación es organizacional y semántica, no una obligación de infraestructura.
+La separaciÃ³n es organizacional y semÃ¡ntica, no una obligaciÃ³n de infraestructura.
 
 ---
 
-# D-008 — Domain Events / Application Events
+# D-008 â€” Domain Events / Application Events
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture
 
-### Decisión
+### DecisiÃ³n
 
-Los eventos internos del MVP utilizarán:
+Los eventos internos del MVP utilizarÃ¡n:
 
 ```text
 @nestjs/event-emitter
@@ -535,25 +535,25 @@ Los eventos internos del MVP utilizarán:
 
 mediante `EventEmitter2`.
 
-Los eventos representan hechos ocurridos dentro de la aplicación.
+Los eventos representan hechos ocurridos dentro de la aplicaciÃ³n.
 
 No se introduce Kafka, NATS, RabbitMQ u otro broker para el MVP.
 
 ---
 
-# D-009 — Ownership vs Access
+# D-009 â€” Ownership vs Access
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Authorization
 
-### Decisión
+### DecisiÃ³n
 
 Ownership y Access son conceptos diferentes.
 
 ```text
 Ownership
     =
-relación de propiedad sobre un vehículo
+relaciÃ³n de propiedad sobre un vehÃ­culo
 
 Access
     =
@@ -565,7 +565,7 @@ Una persona puede:
 - ser owner sin pertenecer a un workshop;
 - tener acceso sin ser owner;
 - pertenecer a un workshop sin ser owner;
-- tener múltiples relaciones simultáneas.
+- tener mÃºltiples relaciones simultÃ¡neas.
 
 Nunca debe inferirse:
 
@@ -581,12 +581,12 @@ Workshop Membership == Ownership
 
 ---
 
-# D-010 — Workshop Membership
+# D-010 â€” Workshop Membership
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Authorization
 
-### Decisión
+### DecisiÃ³n
 
 La pertenencia de un usuario a un workshop se representa mediante **Workshop Membership**.
 
@@ -594,67 +594,67 @@ Membership no debe mezclarse conceptualmente con:
 
 - ownership;
 - plataforma;
-- autenticación;
+- autenticaciÃ³n;
 - permisos globales.
 
 Los permisos efectivos dependen del contexto y del rol correspondiente.
 
 ---
 
-# D-011 — Timeline
+# D-011 â€” Timeline
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Read Model / UX
 
-### Decisión
+### DecisiÃ³n
 
-La Timeline se considera una **proyección de información histórica**.
+La Timeline se considera una **proyecciÃ³n de informaciÃ³n histÃ³rica**.
 
 No es la fuente primaria de verdad.
 
-Puede combinar información proveniente de:
+Puede combinar informaciÃ³n proveniente de:
 
 - CareEpisodes;
 - ServiceRecords;
 - WorkOrders;
 - Estimates;
-- otros eventos históricos relevantes.
+- otros eventos histÃ³ricos relevantes.
 
 La Timeline no debe convertirse en un aggregate o entidad transaccional central.
 
 ---
 
-# D-012 — Vehicle First
+# D-012 â€” Vehicle First
 
 **Estado:** `ACCEPTED`
 **Tipo:** Product
 
-### Decisión
+### DecisiÃ³n
 
-La experiencia del producto se organiza alrededor del vehículo.
+La experiencia del producto se organiza alrededor del vehÃ­culo.
 
-El vehículo constituye el eje principal de:
+El vehÃ­culo constituye el eje principal de:
 
 - historial;
 - mantenimiento;
-- atención;
+- atenciÃ³n;
 - documentos;
 - ownership;
 - acceso;
 - timeline.
 
-El usuario es importante como actor, pero la unidad funcional principal del producto es el vehículo.
+El usuario es importante como actor, pero la unidad funcional principal del producto es el vehÃ­culo.
 
 ---
 
-# D-013 — Identidad del vehículo
+# D-013 â€” Identidad del vehÃ­culo
 
 **Estado:** `ACCEPTED`
 **Tipo:** Domain / Product
 
-### Decisión
+### DecisiÃ³n
 
-El vehículo posee una identidad interna canónica.
+El vehÃ­culo posee una identidad interna canÃ³nica.
 
 Los identificadores externos, como:
 
@@ -662,20 +662,20 @@ Los identificadores externos, como:
 - VIN/chassis;
 - otros identificadores,
 
-son atributos/identificadores externos del vehículo y no deben convertirse automáticamente en la identidad primaria interna.
+son atributos/identificadores externos del vehÃ­culo y no deben convertirse automÃ¡ticamente en la identidad primaria interna.
 
-La patente puede utilizarse como mecanismo de búsqueda/identificación operativa, pero no debe asumirse que es la identidad inmutable del vehículo.
+La patente puede utilizarse como mecanismo de bÃºsqueda/identificaciÃ³n operativa, pero no debe asumirse que es la identidad inmutable del vehÃ­culo.
 
 ---
 
-# D-014 — Historical Data Protection
+# D-014 â€” Historical Data Protection
 
 **Estado:** `ACCEPTED`
 **Tipo:** Data / Domain
 
-### Decisión
+### DecisiÃ³n
 
-Los datos históricos deben preservarse incluso cuando cambien las relaciones actuales.
+Los datos histÃ³ricos deben preservarse incluso cuando cambien las relaciones actuales.
 
 Esto aplica especialmente a:
 
@@ -687,38 +687,38 @@ Esto aplica especialmente a:
 - Estimates;
 - ServiceRecords.
 
-Las relaciones históricas relevantes utilizarán `RESTRICT` cuando corresponda.
+Las relaciones histÃ³ricas relevantes utilizarÃ¡n `RESTRICT` cuando corresponda.
 
-No deben introducirse cascades que destruyan silenciosamente información histórica.
+No deben introducirse cascades que destruyan silenciosamente informaciÃ³n histÃ³rica.
 
 ---
 
-# D-015 — MVP como Modular Monolith
+# D-015 â€” MVP como Modular Monolith
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture
 
-### Decisión
+### DecisiÃ³n
 
-El backend del MVP será un modular monolith construido con NestJS.
+El backend del MVP serÃ¡ un modular monolith construido con NestJS.
 
-No se introducen microservicios como mecanismo de separación funcional.
+No se introducen microservicios como mecanismo de separaciÃ³n funcional.
 
-La modularidad debe lograrse mediante límites claros entre módulos.
+La modularidad debe lograrse mediante lÃ­mites claros entre mÃ³dulos.
 
 ---
 
-# D-016 — Refresh durante impersonation
+# D-016 â€” Refresh durante impersonation
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Architecture
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
-Durante una sesión de impersonation, el refresh automático **no debe prolongar indefinidamente la impersonation**.
+Durante una sesiÃ³n de impersonation, el refresh automÃ¡tico **no debe prolongar indefinidamente la impersonation**.
 
-La sesión impersonada tiene una duración limitada de:
+La sesiÃ³n impersonada tiene una duraciÃ³n limitada de:
 
 ```text
 1 hora
@@ -726,64 +726,64 @@ La sesión impersonada tiene una duración limitada de:
 
 Una vez expirada:
 
-- el token impersonado deja de ser válido;
-- no se genera automáticamente otro token impersonado;
+- el token impersonado deja de ser vÃ¡lido;
+- no se genera automÃ¡ticamente otro token impersonado;
 - el administrador debe iniciar nuevamente la impersonation si necesita continuar.
 
-### Razón
+### RazÃ³n
 
-Esto limita el tiempo de exposición de una sesión privilegiada y evita convertir el refresh mechanism en una extensión indefinida de privilegios.
+Esto limita el tiempo de exposiciÃ³n de una sesiÃ³n privilegiada y evita convertir el refresh mechanism en una extensiÃ³n indefinida de privilegios.
 
-El token/sesión original del administrador permanece almacenado según el mecanismo seguro existente para permitir `stop impersonation`.
+El token/sesiÃ³n original del administrador permanece almacenado segÃºn el mecanismo seguro existente para permitir `stop impersonation`.
 
-### Amendment 1 — Ventana absoluta y comportamiento de refresh (2026-09-04)
+### Amendment 1 â€” Ventana absoluta y comportamiento de refresh (2026-09-04)
 
-La impersonación posee una **ventana absoluta de 1 hora** (`impersonateAt + 1h`), enforced server-side contra la fila `impersonation_session` (no contra un simple JWT `exp`).
+La impersonaciÃ³n posee una **ventana absoluta de 1 hora** (`impersonateAt + 1h`), enforced server-side contra la fila `impersonation_session` (no contra un simple JWT `exp`).
 
 Comportamiento:
 
-| Evento | Acción |
+| Evento | AcciÃ³n |
 |---|---|
-| `impersonate` | Borra **todas** las filas previas del admin y crea una sola (máximo 1 impersonación activa por admin). Cookie access = token impersonado `expiresIn 1h`. |
+| `impersonate` | Borra **todas** las filas previas del admin y crea una sola (mÃ¡ximo 1 impersonaciÃ³n activa por admin). Cookie access = token impersonado `expiresIn 1h`. |
 | `refresh` dentro de la ventana | Re-emite token impersonado (`{sub: target, impersonated, impersonatedBy}`) con `exp = fin de la ventana absoluta`, **siempre** que `expiresAt > now` y el admin siga `active`. Rota el refresh session del admin (reuse-detection intacto). |
-| `refresh` fuera de la ventana | Re-issue de token admin (sin impersonación). El admin debe re-impersonar. |
-| `refresh` con admin no activo | `401`, sin re-issue, sin prolongación. |
-| `stop-impersonate` | Re-firma un access token admin **fresco** (nunca devuelve el token almacenado, que puede estar vencido). Busca la fila sin filtro temporal (funciona incluso post-expiración). Borra la fila. Requiere admin `active`. |
-| Expiración natural | La fila permanece hasta el próximo `impersonate` del admin (sin job de limpieza en MVP; limpieza oportunista). |
+| `refresh` fuera de la ventana | Re-issue de token admin (sin impersonaciÃ³n). El admin debe re-impersonar. |
+| `refresh` con admin no activo | `401`, sin re-issue, sin prolongaciÃ³n. |
+| `stop-impersonate` | Re-firma un access token admin **fresco** (nunca devuelve el token almacenado, que puede estar vencido). Busca la fila sin filtro temporal (funciona incluso post-expiraciÃ³n). Borra la fila. Requiere admin `active`. |
+| ExpiraciÃ³n natural | La fila permanece hasta el prÃ³ximo `impersonate` del admin (sin job de limpieza en MVP; limpieza oportunista). |
 
-La ventana de 1h **nunca** se supera, sin importar el comportamiento del cliente: el servidor no re-firma más allá de `expiresAt`.
+La ventana de 1h **nunca** se supera, sin importar el comportamiento del cliente: el servidor no re-firma mÃ¡s allÃ¡ de `expiresAt`.
 
 Frontend:
 
 - Snapshot de admin en `sessionStorage` incorpora `impersonatedAt` (mirror de UX, no autoridad).
-- Expiración → página explícita `/impersonation-expired` con "volver a sesión de administrador" y "cerrar sesión". Sin auto-restore.
-- El backend expone código estable de expiración: `401` + `IMPERSONATION_EXPIRED` (ver D-025).
+- ExpiraciÃ³n â†’ pÃ¡gina explÃ­cita `/impersonation-expired` con "volver a sesiÃ³n de administrador" y "cerrar sesiÃ³n". Sin auto-restore.
+- El backend expone cÃ³digo estable de expiraciÃ³n: `401` + `IMPERSONATION_EXPIRED` (ver D-025).
 
-Mobile futuro: la impersonación en MVP es cookie-only (browser). Los handlers devuelven tokens transport-agnostic; el soporte mobile Bearer se implementará cuando exista el cliente, sin cambios de diseño estructural (limitación documentada).
+Mobile futuro: la impersonaciÃ³n en MVP es cookie-only (browser). Los handlers devuelven tokens transport-agnostic; el soporte mobile Bearer se implementarÃ¡ cuando exista el cliente, sin cambios de diseÃ±o estructural (limitaciÃ³n documentada).
 
-### Amendment 2 — Flujo de recovery post-expiración (2026-09-04, Security Review)
+### Amendment 2 â€” Flujo de recovery post-expiraciÃ³n (2026-09-04, Security Review)
 
-La Security Review encontró un **P0 de recovery**: el viaje "impersonación expirada → volver a sesión de administrador" estaba roto porque el cliente **no refrescaba** ante `401 IMPERSONATION_EXPIRED` (tratándolo como ventana cerrada) y "volver a admin" dependía de `stop-impersonate`, inalcanzable con access expirado.
+La Security Review encontrÃ³ un **P0 de recovery**: el viaje "impersonaciÃ³n expirada â†’ volver a sesiÃ³n de administrador" estaba roto porque el cliente **no refrescaba** ante `401 IMPERSONATION_EXPIRED` (tratÃ¡ndolo como ventana cerrada) y "volver a admin" dependÃ­a de `stop-impersonate`, inalcanzable con access expirado.
 
-Regla de producto (corrige la interpretación):
+Regla de producto (corrige la interpretaciÃ³n):
 
-- El cliente refresca ante **cualquier `401`**, incluido `IMPERSONATION_EXPIRED`: dentro de la ventana el refresh es legítimo y re-emite token impersonado (`impersonated: true`, D-016 A1).
-- La ventana cerrada se detecta **por la respuesta del refresh**: `impersonated: false` + snapshot de admin vigente → mostra `/impersonation-expired`; `401` en refresh → login.
-- `/impersonation-expired` → "volver a sesión de administrador" = **refresh** (obtiene token admin si la ventana cerró) y navegar a `/admin/users`; logout = cerrar sesión. `stop-impersonate` queda para la terminación **dentro** de la ventana (access válido), no para recovery.
-- El código `IMPERSONATION_EXPIRED` se conserva para SSR y telemetría; no es el disparador del flujo de expiración.
+- El cliente refresca ante **cualquier `401`**, incluido `IMPERSONATION_EXPIRED`: dentro de la ventana el refresh es legÃ­timo y re-emite token impersonado (`impersonated: true`, D-016 A1).
+- La ventana cerrada se detecta **por la respuesta del refresh**: `impersonated: false` + snapshot de admin vigente â†’ mostra `/impersonation-expired`; `401` en refresh â†’ login.
+- `/impersonation-expired` â†’ "volver a sesiÃ³n de administrador" = **refresh** (obtiene token admin si la ventana cerrÃ³) y navegar a `/admin/users`; logout = cerrar sesiÃ³n. `stop-impersonate` queda para la terminaciÃ³n **dentro** de la ventana (access vÃ¡lido), no para recovery.
+- El cÃ³digo `IMPERSONATION_EXPIRED` se conserva para SSR y telemetrÃ­a; no es el disparador del flujo de expiraciÃ³n.
 
-Decisión de seguridad asociada (Security Review P1): **eliminar la persistencia del `adminToken` en claro** en `impersonation_sessions`. Desde D-016 A1 el `stop-impersonate` re-firma token fresco y nunca reutiliza el almacenado; la columna deja de ser necesaria (drop vía migración — coordina TL/Database). La ventana y rotación siguen enforced server-side por la fila.
+DecisiÃ³n de seguridad asociada (Security Review P1): **eliminar la persistencia del `adminToken` en claro** en `impersonation_sessions`. Desde D-016 A1 el `stop-impersonate` re-firma token fresco y nunca reutiliza el almacenado; la columna deja de ser necesaria (drop vÃ­a migraciÃ³n â€” coordina TL/Database). La ventana y rotaciÃ³n siguen enforced server-side por la fila.
 
 ---
 
-# D-017 — Bearer en producción
+# D-017 â€” Bearer en producciÃ³n
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Architecture
 
-### Decisión
+### DecisiÃ³n
 
-**No se deshabilita globalmente Bearer en producción.**
+**No se deshabilita globalmente Bearer en producciÃ³n.**
 
 La API puede necesitar Bearer para:
 
@@ -801,9 +801,9 @@ production => ignore Authorization header
 
 El frontend web oficial utiliza exclusivamente cookies.
 
-Bearer debe estar explícitamente asociado a clientes no-browser autorizados.
+Bearer debe estar explÃ­citamente asociado a clientes no-browser autorizados.
 
-Si en el futuro existe una necesidad fuerte de separar ambos mecanismos, se evaluará:
+Si en el futuro existe una necesidad fuerte de separar ambos mecanismos, se evaluarÃ¡:
 
 - audience;
 - client type;
@@ -811,24 +811,24 @@ Si en el futuro existe una necesidad fuerte de separar ambos mecanismos, se eval
 - scopes;
 - auth strategies independientes.
 
-La coexistencia no debe convertirse en una vía accidental de autenticación para el frontend browser.
+La coexistencia no debe convertirse en una vÃ­a accidental de autenticaciÃ³n para el frontend browser.
 
 ---
 
-# D-018 — Co-owner rights
+# D-018 â€” Co-owner rights
 
 **Estado:** `PENDING`
 **Tipo:** Product / Domain
 
 ### Problema
 
-VehicleOwnership permite representar ownership histórico, pero todavía no se ha definido completamente:
+VehicleOwnership permite representar ownership histÃ³rico, pero todavÃ­a no se ha definido completamente:
 
-- múltiples propietarios simultáneos;
+- mÃºltiples propietarios simultÃ¡neos;
 - derechos de co-owner;
 - diferencia entre owner principal y co-owner;
 - capacidad de transferir;
-- acceso automático derivado de ownership.
+- acceso automÃ¡tico derivado de ownership.
 
 ### Pendiente
 
@@ -845,14 +845,14 @@ antes de construir workflows avanzados de ownership.
 
 ---
 
-# D-019 — Semántica de vehículos en WORKSHOP context
+# D-019 â€” SemÃ¡ntica de vehÃ­culos en WORKSHOP context
 
 **Estado:** `PENDING`
 **Tipo:** Product / Domain
 
 ### Pregunta
 
-¿Qué significa:
+Â¿QuÃ© significa:
 
 ```text
 GET /vehicles
@@ -866,27 +866,27 @@ Active Context = WORKSHOP
 
 ### Opciones consideradas
 
-1. Vehículos que actualmente pertenecen explícitamente al workshop.
-2. Vehículos derivados de historial de atención del workshop.
-3. Una entidad explícita `WorkshopVehicle`.
-4. Una combinación de ownership/access/history.
+1. VehÃ­culos que actualmente pertenecen explÃ­citamente al workshop.
+2. VehÃ­culos derivados de historial de atenciÃ³n del workshop.
+3. Una entidad explÃ­cita `WorkshopVehicle`.
+4. Una combinaciÃ³n de ownership/access/history.
 
-### Recomendación provisional
+### RecomendaciÃ³n provisional
 
-Para el MVP se favorece una semántica derivada de la relación histórica con el workshop, evitando introducir prematuramente una entidad `WorkshopVehicle`.
+Para el MVP se favorece una semÃ¡ntica derivada de la relaciÃ³n histÃ³rica con el workshop, evitando introducir prematuramente una entidad `WorkshopVehicle`.
 
-Esta recomendación requiere aprobación antes de convertirse en contrato definitivo.
+Esta recomendaciÃ³n requiere aprobaciÃ³n antes de convertirse en contrato definitivo.
 
 ---
 
-# D-020 — Contexto inválido
+# D-020 â€” Contexto invÃ¡lido
 
 **Estado:** `ACCEPTED`
 **Tipo:** Architecture / Security
 
-### Decisión
+### DecisiÃ³n
 
-Un Active Context inválido, inexistente o no autorizado debe producir:
+Un Active Context invÃ¡lido, inexistente o no autorizado debe producir:
 
 ```text
 403 Forbidden
@@ -898,44 +898,44 @@ No se debe realizar fallback silencioso hacia:
 PERSONAL
 ```
 
-ni hacia ningún otro contexto.
+ni hacia ningÃºn otro contexto.
 
-### Razón
+### RazÃ³n
 
 El fallback puede provocar:
 
-- confusión funcional;
-- exposición accidental de información;
-- autorización incorrecta;
-- problemas difíciles de detectar.
+- confusiÃ³n funcional;
+- exposiciÃ³n accidental de informaciÃ³n;
+- autorizaciÃ³n incorrecta;
+- problemas difÃ­ciles de detectar.
 
-Un contexto inválido debe ser explícito y observable.
+Un contexto invÃ¡lido debe ser explÃ­cito y observable.
 
-### Amendment 1 — Implementación (2026-09-04)
+### Amendment 1 â€” ImplementaciÃ³n (2026-09-04)
 
-Implementación concreta en `ContextResolver`:
+ImplementaciÃ³n concreta en `ContextResolver`:
 
-- **Header `X-Context-Type` ausente** → default `PERSONAL` (no hay contexto explícito solicitado; permitido).
-- **Header presente e inválido** → `403 Forbidden` duro, sin fallback. Caminos: tipo desconocido; `WORKSHOP` sin `X-Context-Id`; workshop inexistente o sin membership activa; `PLATFORM` sin rol de plataforma; `PERSONAL` con `X-Context-Id` (contrato estricto).
-- **Se elimina el path-fallback** del `ContextResolver` (ninguna ruta con `ContextGuard` tiene un workshopId legítimo en `:id`; solo enmascaraba ambigüedad).
+- **Header `X-Context-Type` ausente** â†’ default `PERSONAL` (no hay contexto explÃ­cito solicitado; permitido).
+- **Header presente e invÃ¡lido** â†’ `403 Forbidden` duro, sin fallback. Caminos: tipo desconocido; `WORKSHOP` sin `X-Context-Id`; workshop inexistente o sin membership activa; `PLATFORM` sin rol de plataforma; `PERSONAL` con `X-Context-Id` (contrato estricto).
+- **Se elimina el path-fallback** del `ContextResolver` (ninguna ruta con `ContextGuard` tiene un workshopId legÃ­timo en `:id`; solo enmascaraba ambigÃ¼edad).
 - `PLATFORM` exige `systemRoleAssignment` con rol `(super_admin, admin, support)`. El rol de sistema `user` **no** califica.
-- Error estándar para el contrato: `ForbiddenException('Invalid or unauthorized active context')`.
+- Error estÃ¡ndar para el contrato: `ForbiddenException('Invalid or unauthorized active context')`.
 
-Coordinación de release (cambio breaking asociado):
+CoordinaciÃ³n de release (cambio breaking asociado):
 
-- Los flujos de taller que hoy "funcionan por accidente" (IDOR) dejarán de hacerlo. El frontend debe enviar `X-Context-Type: WORKSHOP` + `X-Context-Id` en los flujos de taller **a partir de este fix**, mediante propagación mínima basada en el taller actualmente seleccionado por la navegación (sin ContextSwitcher, sin queryKeys por contexto, sin persistencia — eso es parte de D-004/D-021).
+- Los flujos de taller que hoy "funcionan por accidente" (IDOR) dejarÃ¡n de hacerlo. El frontend debe enviar `X-Context-Type: WORKSHOP` + `X-Context-Id` en los flujos de taller **a partir de este fix**, mediante propagaciÃ³n mÃ­nima basada en el taller actualmente seleccionado por la navegaciÃ³n (sin ContextSwitcher, sin queryKeys por contexto, sin persistencia â€” eso es parte de D-004/D-021).
 - El despliegue del P0 de seguridad se coordina Backend + Frontend.
 
 ---
 
-# D-021 — Session-driven vs route-driven Active Context
+# D-021 â€” Session-driven vs route-driven Active Context
 
 **Estado:** `PENDING`
 **Tipo:** Product / Architecture
 
 ### Problema
 
-Debe definirse qué elemento representa la autoridad del contexto activo:
+Debe definirse quÃ© elemento representa la autoridad del contexto activo:
 
 ```text
 Session
@@ -947,19 +947,19 @@ Header
 
 ### Principio provisional
 
-La navegación puede reflejar el contexto mediante URL, pero la URL **no debe convertirse automáticamente en autoridad de autorización**.
+La navegaciÃ³n puede reflejar el contexto mediante URL, pero la URL **no debe convertirse automÃ¡ticamente en autoridad de autorizaciÃ³n**.
 
 La arquitectura favorece:
 
 ```text
 Session / explicit context
-        ↓
+        â†“
 API request
-        ↓
+        â†“
 Authorization
 ```
 
-La URL puede actuar como mecanismo de navegación/persistencia UX.
+La URL puede actuar como mecanismo de navegaciÃ³n/persistencia UX.
 
 ### Pendiente
 
@@ -970,12 +970,12 @@ Definir:
 - deep links;
 - cambio de workshop;
 - logout/login;
-- múltiples pestañas;
-- sincronización frontend/backend.
+- mÃºltiples pestaÃ±as;
+- sincronizaciÃ³n frontend/backend.
 
 ---
 
-# D-022 — MVP CareEpisode policies
+# D-022 â€” MVP CareEpisode policies
 
 **Estado:** `PENDING`
 **Tipo:** Product / Domain
@@ -984,46 +984,46 @@ Definir:
 
 Antes de implementar completamente CareEpisode se deben resolver:
 
-- quién puede crear un episodio;
-- cuándo exactamente nace;
+- quiÃ©n puede crear un episodio;
+- cuÃ¡ndo exactamente nace;
 - si siempre requiere Appointment;
 - walk-ins;
-- quién puede modificarlo;
-- qué significa `waiting_approval`;
-- qué eventos cambian su estado;
-- qué estados son obligatorios;
-- quién puede cerrar un episodio;
-- qué datos son obligatorios para cerrar;
+- quiÃ©n puede modificarlo;
+- quÃ© significa `waiting_approval`;
+- quÃ© eventos cambian su estado;
+- quÃ© estados son obligatorios;
+- quiÃ©n puede cerrar un episodio;
+- quÃ© datos son obligatorios para cerrar;
 - permisos por actor/contexto.
 
 ### Principio
 
-CareEpisode debe representar una atención real del vehículo y no convertirse en un simple wrapper técnico alrededor de las entidades existentes.
+CareEpisode debe representar una atenciÃ³n real del vehÃ­culo y no convertirse en un simple wrapper tÃ©cnico alrededor de las entidades existentes.
 
 ---
 
-# D-023 — Appointment cancelado después de iniciar CareEpisode
+# D-023 â€” Appointment cancelado despuÃ©s de iniciar CareEpisode
 
 **Estado:** `PENDING`
 **Tipo:** Product / Domain
 
 ### Problema
 
-Un Appointment puede ser cancelado después de que el vehículo ya haya ingresado.
+Un Appointment puede ser cancelado despuÃ©s de que el vehÃ­culo ya haya ingresado.
 
-La semántica correcta debe distinguir:
+La semÃ¡ntica correcta debe distinguir:
 
 ```text
 Appointment
     =
-reserva/intención de atención
+reserva/intenciÃ³n de atenciÃ³n
 
 CareEpisode
     =
-atención efectivamente iniciada
+atenciÃ³n efectivamente iniciada
 ```
 
-### Recomendación provisional
+### RecomendaciÃ³n provisional
 
 Una vez creado un CareEpisode:
 
@@ -1031,7 +1031,7 @@ Una vez creado un CareEpisode:
 Appointment.cancelled
 ```
 
-no debe destruir ni cancelar automáticamente:
+no debe destruir ni cancelar automÃ¡ticamente:
 
 ```text
 CareEpisode
@@ -1043,7 +1043,7 @@ El comportamiento exacto de los estados debe resolverse junto con D-022.
 
 ---
 
-# D-024 — Validación de acceso a recursos vehiculares (VehicleAccessService)
+# D-024 â€” ValidaciÃ³n de acceso a recursos vehiculares (VehicleAccessService)
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Architecture / Authorization
@@ -1051,18 +1051,18 @@ El comportamiento exacto de los estados debe resolverse junto con D-022.
 
 ### Contexto
 
-Verificación de seguridad (2026-09-04) confirmó IDORs activos:
+VerificaciÃ³n de seguridad (2026-09-04) confirmÃ³ IDORs activos:
 
-- `GET /maintenance/appointments/:id`, `work-orders/:id`, `estimates/:id`, `vehicles/:vehicleId/history` **no validan** ownership/access del llamador (causa raíz: path-fallback del ContextResolver, corregido en D-020).
-- `GET /maintenance/appointments` y `work-orders` (listados) en PERSONAL aceptan `?workshopId=` libre → listados también IDOR.
-- `POST /vehicles/:id/mileage` no valida acceso → IDOR de escritura.
-- `POST /maintenance/estimates/:id/convert` sin validación.
+- `GET /maintenance/appointments/:id`, `work-orders/:id`, `estimates/:id`, `vehicles/:vehicleId/history` **no validan** ownership/access del llamador (causa raÃ­z: path-fallback del ContextResolver, corregido en D-020).
+- `GET /maintenance/appointments` y `work-orders` (listados) en PERSONAL aceptan `?workshopId=` libre â†’ listados tambiÃ©n IDOR.
+- `POST /vehicles/:id/mileage` no valida acceso â†’ IDOR de escritura.
+- `POST /maintenance/estimates/:id/convert` sin validaciÃ³n.
 - `POST /maintenance/work-orders/:id/items` sin guard de permisos.
 - `GET /dashboard/super-admin` sin PermissionsGuard validado (P1).
 
-### Decisión
+### DecisiÃ³n
 
-Introducir **`VehicleAccessService`** en `src/common/authorization/` como validación reutilizable de acceso a un vehículo, con regla de evaluación (corto-circuito):
+Introducir **`VehicleAccessService`** en `src/common/authorization/` como validaciÃ³n reutilizable de acceso a un vehÃ­culo, con regla de evaluaciÃ³n (corto-circuito):
 
 ```text
 1. Ownership activo (vehicle_ownerships, endsAt: null)
@@ -1071,66 +1071,66 @@ Introducir **`VehicleAccessService`** en `src/common/authorization/` como valida
 4. Privilegio de plataforma (super_admin)
 ```
 
-Si ninguna aplica → `ForbiddenException`.
+Si ninguna aplica â†’ `ForbiddenException`.
 
 ### Implicaciones
 
 - Las rutas de lectura y escritura de maintenance validan acceso al `vehicleId` del recurso (13+ endpoints).
-- Listados en contexto PERSONAL exigen `vehicleId` validado o contexto WORKSHOP; el `workshopId` del contexto **gana** sobre el del query (mismatch → 403).
-- `POST /vehicles/:id/mileage` incorpora validación de acceso (P0).
+- Listados en contexto PERSONAL exigen `vehicleId` validado o contexto WORKSHOP; el `workshopId` del contexto **gana** sobre el del query (mismatch â†’ 403).
+- `POST /vehicles/:id/mileage` incorpora validaciÃ³n de acceso (P0).
 - `GET /vehicles/:id` (detalle) **permanece** con ownership/access/super_admin hasta D-019 (no se incorpora workshop-membership en este P0).
 - Deuda P1 registrada: `DELETE /vehicles/:id` y `POST /vehicles/:id/access` deben exigir **ownership** (hoy un usuario con solo access puede borrar/otorgar); `GET /dashboard/super-admin` requiere PermissionsGuard.
 - El P0 crea el primer scaffold de testing (jest existente; unit de ContextResolver + VehicleAccessService + integration Supertest por endpoint).
 
-### Amendment 1 — Alcance mínimo exacto y regla de taller verificada (2026-09-04, desglose técnico)
+### Amendment 1 â€” Alcance mÃ­nimo exacto y regla de taller verificada (2026-09-04, desglose tÃ©cnico)
 
-El desglose técnico verificó la lista real de endpoints (12, no 13+ — `GET /maintenance/estimates/:id` no existe). Se corrigen y complementan las implicaciones:
+El desglose tÃ©cnico verificÃ³ la lista real de endpoints (12, no 13+ â€” `GET /maintenance/estimates/:id` no existe). Se corrigen y complementan las implicaciones:
 
-1. **Regla 3 (workshop membership) requiere asociación de vehículo con el taller.** La membership activa del contexto WORKSHOP **no alcanza** para acceder a cualquier vehículo del sistema: el vehículo debe además tener **al menos un registro de mantenimiento del taller** (appointment, work-order, estimate o service-record con ese `workshopId`). Sin asociación → `ForbiddenException`. Evita sobre-exposición de lectura ("cualquier miembro puede leer cualquier vehículo del sistema"). Regla **provisional** sujeta a D-019; no reabre el IDOR de listados.
-2. **Los creates de maintenance entran al P0.** `POST /maintenance/appointments|work-orders|estimates|service-records` deben validar acceso al `vehicleId` del DTO: en PERSONAL, ownership/access/super_admin; en WORKSHOP, membership activa **+ asociación** con el taller. Sin esto, un usuario autenticado podría crear recursos sobre un vehículo ajeno y **contaminar el historial** (viola D-012/D-014). Extiende la lista de endpoints cubiertos (12 → 16).
+1. **Regla 3 (workshop membership) requiere asociaciÃ³n de vehÃ­culo con el taller.** La membership activa del contexto WORKSHOP **no alcanza** para acceder a cualquier vehÃ­culo del sistema: el vehÃ­culo debe ademÃ¡s tener **al menos un registro de mantenimiento del taller** (appointment, work-order, estimate o service-record con ese `workshopId`). Sin asociaciÃ³n â†’ `ForbiddenException`. Evita sobre-exposiciÃ³n de lectura ("cualquier miembro puede leer cualquier vehÃ­culo del sistema"). Regla **provisional** sujeta a D-019; no reabre el IDOR de listados.
+2. **Los creates de maintenance entran al P0.** `POST /maintenance/appointments|work-orders|estimates|service-records` deben validar acceso al `vehicleId` del DTO: en PERSONAL, ownership/access/super_admin; en WORKSHOP, membership activa **+ asociaciÃ³n** con el taller. Sin esto, un usuario autenticado podrÃ­a crear recursos sobre un vehÃ­culo ajeno y **contaminar el historial** (viola D-012/D-014). Extiende la lista de endpoints cubiertos (12 â†’ 16).
 3. **Hallazgo adicional confirmado:** `POST /maintenance/estimates/:id/convert` y `POST /maintenance/work-orders/:id/items` entran al P0 como escrituras validadas con `assertVehicleAccess` (el `PermissionsGuard` del items y del dashboard super-admin permanecen deuda P1).
-4. **`/vehicles/*`** (findOne, update, remove, photos, documents, history, grantAccess): reemplaza el `assertVehicleAccess` privado por el servicio en **modo estricto** (ownership/access/super_admin, sin membership), comportamiento idéntico al actual hasta D-019.
+4. **`/vehicles/*`** (findOne, update, remove, photos, documents, history, grantAccess): reemplaza el `assertVehicleAccess` privado por el servicio en **modo estricto** (ownership/access/super_admin, sin membership), comportamiento idÃ©ntico al actual hasta D-019.
 
-### Amendment 2 — Maintenance writes son exclusivos de taller (WORKSHOP-only) (2026-09-08, QA post-merge, decisión PM confirmada)
+### Amendment 2 â€” Maintenance writes son exclusivos de taller (WORKSHOP-only) (2026-09-08, QA post-merge, decisiÃ³n PM confirmada)
 
-**Amenda el punto 2 del Amendment 1** y resuelve la regresión detectada en el QA post-merge: los `@Permissions` de taller sobre los writes de maintenance hacían que un owner en contexto PERSONAL recibiera 403 sobre su propio vehículo, contradiciendo el punto 2 del Amendment 1 (que validaba los creates en PERSONAL por ownership/access/super_admin).
+**Amenda el punto 2 del Amendment 1** y resuelve la regresiÃ³n detectada en el QA post-merge: los `@Permissions` de taller sobre los writes de maintenance hacÃ­an que un owner en contexto PERSONAL recibiera 403 sobre su propio vehÃ­culo, contradiciendo el punto 2 del Amendment 1 (que validaba los creates en PERSONAL por ownership/access/super_admin).
 
-**Decisión (Opción A):**
+**DecisiÃ³n (OpciÃ³n A):**
 
 - El registro de atenciones/servicios (CareEpisode y sus derivados: appointments, work-orders, service-records, estimates, items, approve, convert) es actividad **del taller**. Los writes de maintenance **requieren contexto WORKSHOP** con permisos de taller (`appointment.*`, `workorder.*`, `service-record.*`, `estimate.*`).
-- En contexto **PERSONAL**, los writes de maintenance están **denegados por diseño**: el backend responde `403 PERMISSION_DENIED` sin depender de ownership/access. Aplica también a `super_admin` (debe operar desde un contexto WORKSHOP con permisos de taller registrados; no se concede privilegio de plataforma para writes de maintenance).
+- En contexto **PERSONAL**, los writes de maintenance estÃ¡n **denegados por diseÃ±o**: el backend responde `403 PERMISSION_DENIED` sin depender de ownership/access. Aplica tambiÃ©n a `super_admin` (debe operar desde un contexto WORKSHOP con permisos de taller registrados; no se concede privilegio de plataforma para writes de maintenance).
 - El owner en PERSONAL conserva: consultas de maintenance con ownership/access, `POST /vehicles/:id/mileage`, y las operaciones de `/vehicles/*` (strict mode). Puede **consultar** el historial, pero **no crear/cancelar/convertir** atenciones desde su contexto personal.
-- Frontend: en contexto PERSONAL, la UI de maintenance activo (crear, cancelar, convertir, agregar items, cambiar estado) se oculta o se presenta en modo solo-consulta, con aviso de que la gestión requiere operar desde un taller. Backend permanece estricto (nunca se confía en la UI).
-- El enforcement actual (`PermissionsGuard` + `@Permissions`) ya produce este comportamiento en la práctica; esta enmienda lo convierte en **decisión explícita de producto** y elimina la contradicción con el Amendment 1.
+- Frontend: en contexto PERSONAL, la UI de maintenance activo (crear, cancelar, convertir, agregar items, cambiar estado) se oculta o se presenta en modo solo-consulta, con aviso de que la gestiÃ³n requiere operar desde un taller. Backend permanece estricto (nunca se confÃ­a en la UI).
+- El enforcement actual (`PermissionsGuard` + `@Permissions`) ya produce este comportamiento en la prÃ¡ctica; esta enmienda lo convierte en **decisiÃ³n explÃ­cita de producto** y elimina la contradicciÃ³n con el Amendment 1.
 
-**Nota de implementación (2026-09-08, cierre de QA post-merge):**
+**Nota de implementaciÃ³n (2026-09-08, cierre de QA post-merge):**
 
-- **Escape de seguridad corregido:** el bypass incondicional de `super_admin` en `PermissionsGuard` (líneas 56-58) hacía que un `super_admin` en contexto PERSONAL pudiera escribir maintenance si ownership/access lo permitía (el bypass se dispara antes de cargar permisos de taller). Se introdujo `WorkshopOnlyGuard` (`src/common/guards/workshop-only.guard.ts`), aplicado **antes de** `PermissionsGuard` en los **10 endpoints write** de maintenance: exige `ctx.type === 'WORKSHOP'` y lanza `ForbiddenException` (403 → envelope `PERMISSION_DENIED` vía D-025) en PERSONAL/PLATFORM/contexto ausente. Los endpoints read de maintenance conservan validación por ownership/access.
-- **Cobertura de tests:** la matriz de la Opción A quedó cubierta en `maintenance.controller.spec.ts` (45 casos nuevos sobre esa spec; suite total 127 tests). Incluye: owner en PERSONAL → 403 en writes; `super_admin` en PERSONAL → 403 en writes; miembro en WORKSHOP con permiso → pasa; owner en PERSONAL → reads pasan.
-- **UI (frontend):** en contexto PERSONAL (usuario sin membresía de taller activa) la UI de maintenance queda **solo-consulta**: se ocultan controles de create/cancel/convert/item/status y las páginas `/new` muestran un aviso ("La gestión de mantenimiento requiere operar desde un taller"). La barra lateral conserva el vínculo "Mantenimiento" (decisión PM: el owner debe poder consultar su historial; se evita ocultar navegación), con las vistas read-only + aviso. Un usuario con ≥1 membresía mantiene el comportamiento previo (contexto WORKSHOP vía fallback `workshopMembers[0]`).
+- **Escape de seguridad corregido:** el bypass incondicional de `super_admin` en `PermissionsGuard` (lÃ­neas 56-58) hacÃ­a que un `super_admin` en contexto PERSONAL pudiera escribir maintenance si ownership/access lo permitÃ­a (el bypass se dispara antes de cargar permisos de taller). Se introdujo `WorkshopOnlyGuard` (`src/common/guards/workshop-only.guard.ts`), aplicado **antes de** `PermissionsGuard` en los **10 endpoints write** de maintenance: exige `ctx.type === 'WORKSHOP'` y lanza `ForbiddenException` (403 â†’ envelope `PERMISSION_DENIED` vÃ­a D-025) en PERSONAL/PLATFORM/contexto ausente. Los endpoints read de maintenance conservan validaciÃ³n por ownership/access.
+- **Cobertura de tests:** la matriz de la OpciÃ³n A quedÃ³ cubierta en `maintenance.controller.spec.ts` (45 casos nuevos sobre esa spec; suite total 127 tests). Incluye: owner en PERSONAL â†’ 403 en writes; `super_admin` en PERSONAL â†’ 403 en writes; miembro en WORKSHOP con permiso â†’ pasa; owner en PERSONAL â†’ reads pasan.
+- **UI (frontend):** en contexto PERSONAL (usuario sin membresÃ­a de taller activa) la UI de maintenance queda **solo-consulta**: se ocultan controles de create/cancel/convert/item/status y las pÃ¡ginas `/new` muestran un aviso ("La gestiÃ³n de mantenimiento requiere operar desde un taller"). La barra lateral conserva el vÃ­nculo "Mantenimiento" (decisiÃ³n PM: el owner debe poder consultar su historial; se evita ocultar navegaciÃ³n), con las vistas read-only + aviso. Un usuario con â‰¥1 membresÃ­a mantiene el comportamiento previo (contexto WORKSHOP vÃ­a fallback `workshopMembers[0]`).
 
 ---
 
-# D-025 — Contrato de errores estandarizado (Error envelope)
+# D-025 â€” Contrato de errores estandarizado (Error envelope)
 
 **Estado:** `ACCEPTED`
 **Tipo:** Backend Contract / Frontend / Security
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
 El backend estandariza el envelope de error:
 
 ```json
 {
   "statusCode": 403,
-  "message": "No tenés acceso a este recurso",
+  "message": "No tenÃ©s acceso a este recurso",
   "code": "PERMISSION_DENIED",
   "errors": {}
 }
 ```
 
-Conjunto mínimo de códigos estables:
+Conjunto mÃ­nimo de cÃ³digos estables:
 
 ```text
 INVALID_CREDENTIALS
@@ -1144,14 +1144,14 @@ CONFLICT
 INTERNAL_ERROR
 ```
 
-`INTERNAL_ERROR` (500) se agrega al set como código **de fallback genérico** (excepciones no capturadas: envelope sin stack, log interno). No se usa como código de negocio; el cliente lo trata como error de servidor rethrow al error boundary.
+`INTERNAL_ERROR` (500) se agrega al set como cÃ³digo **de fallback genÃ©rico** (excepciones no capturadas: envelope sin stack, log interno). No se usa como cÃ³digo de negocio; el cliente lo trata como error de servidor rethrow al error boundary.
 
 ### Reglas frontend
 
 - **`403` nunca implica logout**: sin refresh, sin redirect a `/login`. Renderiza estado de acceso denegado.
-- **`401`** es el único código que dispara refresh → retry → redirect.
-- SSR: `401` → redirect `/login`; `403` → `ForbiddenState`; `404` → `notFound()`; 5xx → error boundary.
-- `code === "INVALID_CONTEXT"` queda reservado para la UX de recuperación de contexto cuando D-004/D-021 aterricen (diseñado ahora, implementado después).
+- **`401`** es el Ãºnico cÃ³digo que dispara refresh â†’ retry â†’ redirect.
+- SSR: `401` â†’ redirect `/login`; `403` â†’ `ForbiddenState`; `404` â†’ `notFound()`; 5xx â†’ error boundary.
+- `code === "INVALID_CONTEXT"` queda reservado para la UX de recuperaciÃ³n de contexto cuando D-004/D-021 aterricen (diseÃ±ado ahora, implementado despuÃ©s).
 - `code === "IMPERSONATION_EXPIRED"` (401) dispara la flujo `/impersonation-expired` (ver D-016).
 
 ### Mobile futuro
@@ -1160,15 +1160,15 @@ El envelope es portable por transporte (cookies web / Bearer mobile): el cliente
 
 ---
 
-# D-026 — Password reset: token hashing
+# D-026 â€” Password reset: token hashing
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Data
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
-El token de password reset se almacena en base de datos únicamente como **hash SHA-256**, nunca en texto plano.
+El token de password reset se almacena en base de datos Ãºnicamente como **hash SHA-256**, nunca en texto plano.
 
 ```text
 Token en memoria/email: randomBytes(32).toString('hex')  (64 chars hex, 256 bits)
@@ -1177,43 +1177,43 @@ Token en BD:            SHA-256(token)                   (column token_hash)
 
 ### Reglas
 
-- `PasswordReset.tokenHash` es el único campo persistido (columna `token_hash`, unique).
+- `PasswordReset.tokenHash` es el Ãºnico campo persistido (columna `token_hash`, unique).
 - El token en claro solo existe transitoriamente en el handler y en el email enviado al usuario.
 - El hash se calcula con el mismo mecanismo que `refreshToken` (`hashPasswordResetToken`).
-- Aplica también como patrón obligatorio para cualquier token de verificación futuro (p. ej. `email_verifications`), evitando reintroducir texto plano.
+- Aplica tambiÃ©n como patrÃ³n obligatorio para cualquier token de verificaciÃ³n futuro (p. ej. `email_verifications`), evitando reintroducir texto plano.
 
 ### Implicaciones
 
 Database:
 
-- Migración `20260909000000_hash_password_reset_token`: agrega `token_hash`, migra datos existentes con `pgcrypto` (`encode(digest(token,'sha256'),'hex')`), índice único, drop de `token`.
+- MigraciÃ³n `20260909000000_hash_password_reset_token`: agrega `token_hash`, migra datos existentes con `pgcrypto` (`encode(digest(token,'sha256'),'hex')`), Ã­ndice Ãºnico, drop de `token`.
 
 Seguridad:
 
 - Un volcado de BD no permite usar tokens de reset.
-- No se requiere cifrado reversible; el hash es suficiente porque el token tiene 256 bits de entropía.
+- No se requiere cifrado reversible; el hash es suficiente porque el token tiene 256 bits de entropÃ­a.
 
 ---
 
-# D-027 — Password reset: flujo seguro (revocación, atomicidad, lockout)
+# D-027 â€” Password reset: flujo seguro (revocaciÃ³n, atomicidad, lockout)
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Product
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
 El flujo de password reset incorpora las siguientes reglas de seguridad:
 
 1. **Un solo token activo por usuario:** al crear un nuevo token de reset, se revocan (`usedAt = now`) todos los tokens previos no utilizados del usuario.
-2. **Atomicidad:** la actualización de la contraseña, el marcado del token como usado y la revocación de sesiones se ejecutan dentro de una única transacción (`prisma.$transaction`). No puede quedar un estado intermedio (token reutilizable o sesiones no revocadas).
-3. **Limpieza de lockout:** un reset exitoso reinicia `failedAttempts = 0` y `lockedUntil = null` junto con el cambio de contraseña.
-4. **Revocación de sesiones:** todas las sesiones activas del usuario (`revokedAt IS NULL`) se revocan al completar un reset.
-5. **Token de un solo uso:** el `usedAt` se establece dentro de la misma transacción; un token ya usado es rechazado.
+2. **Atomicidad:** la actualizaciÃ³n de la contraseÃ±a, el marcado del token como usado y la revocaciÃ³n de sesiones se ejecutan dentro de una Ãºnica transacciÃ³n (`prisma.$transaction`). No puede quedar un estado intermedio (token reutilizable o sesiones no revocadas).
+3. **Limpieza de lockout:** un reset exitoso reinicia `failedAttempts = 0` y `lockedUntil = null` junto con el cambio de contraseÃ±a.
+4. **RevocaciÃ³n de sesiones:** todas las sesiones activas del usuario (`revokedAt IS NULL`) se revocan al completar un reset.
+5. **Token de un solo uso:** el `usedAt` se establece dentro de la misma transacciÃ³n; un token ya usado es rechazado.
 
 ### Regla
 
-El reset de contraseña es un evento de alta seguridad: modifica credenciales, limpieza de bloqueo y sesiones de forma atómica. No puede degradarse ninguna de estas tres operaciones a un paso opcional.
+El reset de contraseÃ±a es un evento de alta seguridad: modifica credenciales, limpieza de bloqueo y sesiones de forma atÃ³mica. No puede degradarse ninguna de estas tres operaciones a un paso opcional.
 
 ### Implicaciones
 
@@ -1224,15 +1224,15 @@ Backend:
 
 ---
 
-# D-028 — Reset password: link del email apunta al frontend
+# D-028 â€” Reset password: link del email apunta al frontend
 
 **Estado:** `ACCEPTED`
 **Tipo:** Product / Architecture / Backend Contract
 **Prioridad:** P0
 
-### Decisión
+### DecisiÃ³n
 
-El email de password reset genera un link hacia la **aplicación frontend**, no hacia el backend API.
+El email de password reset genera un link hacia la **aplicaciÃ³n frontend**, no hacia el backend API.
 
 ```text
 Link en email: ${FRONTEND_URL}/reset-password?token=${token}
@@ -1242,7 +1242,7 @@ Link en email: ${FRONTEND_URL}/reset-password?token=${token}
 
 - Se introduce la variable de entorno `FRONTEND_URL` (URI, default `http://localhost:3000`), independiente de `API_URL`.
 - El frontend consume el token desde el query param y lo elimina de la URL (`history.replaceState`) tras leerlo.
-- `forgot-password` y `reset-password` son endpoints públicos (sin auth); el token es la autorización del reset.
+- `forgot-password` y `reset-password` son endpoints pÃºblicos (sin auth); el token es la autorizaciÃ³n del reset.
 
 ### Implicaciones
 
@@ -1252,43 +1252,43 @@ Backend:
 
 Frontend:
 
-- Ruta canónica de reset: `/reset-password?token=...` (ruta pública, grupo `(auth)`).
-- Página `forgot-password` implementa anti-enumeración: respuesta idéntica exista o no el email.
+- Ruta canÃ³nica de reset: `/reset-password?token=...` (ruta pÃºblica, grupo `(auth)`).
+- PÃ¡gina `forgot-password` implementa anti-enumeraciÃ³n: respuesta idÃ©ntica exista o no el email.
 
 ---
 
-# D-029 — Email de confirmación post-reset
+# D-029 â€” Email de confirmaciÃ³n post-reset
 
 **Estado:** `ACCEPTED`
 **Tipo:** Product / Security
 **Prioridad:** P1
 
-### Decisión
+### DecisiÃ³n
 
-Se envía un **email de confirmación** al usuario cuando su contraseña es restablecida exitosamente.
+Se envÃ­a un **email de confirmaciÃ³n** al usuario cuando su contraseÃ±a es restablecida exitosamente.
 
 ### Reglas
 
-- Se emite el evento `auth.password_reset.completed` después de la transacción exitosa.
-- El listener `SendPasswordResetCompletedEmailListener` busca al usuario y le envía el email de notificación.
+- Se emite el evento `auth.password_reset.completed` despuÃ©s de la transacciÃ³n exitosa.
+- El listener `SendPasswordResetCompletedEmailListener` busca al usuario y le envÃ­a el email de notificaciÃ³n.
 - Incluye advertencia de seguridad: "Si no realizaste este cambio, contacta al soporte inmediatamente".
-- Un usuario inexistente (borrado entre reset y envío) no produce error ni email.
+- Un usuario inexistente (borrado entre reset y envÃ­o) no produce error ni email.
 
-### Razón
+### RazÃ³n
 
-Permite que la víctima de un reset malicioso detecte el compromiso de su cuenta sin depender de otros canales.
+Permite que la vÃ­ctima de un reset malicioso detecte el compromiso de su cuenta sin depender de otros canales.
 
 ---
 
-# D-030 — Rate limiting diferenciado en auth público
+# D-030 â€” Rate limiting diferenciado en auth pÃºblico
 
 **Estado:** `ACCEPTED`
 **Tipo:** Security / Backend Contract
 **Prioridad:** P1
 
-### Decisión
+### DecisiÃ³n
 
-Los endpoints públicos de recuperación de contraseña tienen límites de throttling específicos, diferenciados del throttle global:
+Los endpoints pÃºblicos de recuperaciÃ³n de contraseÃ±a tienen lÃ­mites de throttling especÃ­ficos, diferenciados del throttle global:
 
 ```text
 POST /auth/forgot-password   3 requests / 10 minutos por IP
@@ -1297,9 +1297,9 @@ POST /auth/reset-password    5 requests /  5 minutos por IP
 
 `change-password` (autenticado) conserva el throttle global existente.
 
-### Observación QA registrada
+### ObservaciÃ³n QA registrada
 
-Queda como deuda menor agregar el código `RATE_LIMITED` para HTTP 429 al catálogo D-025 (`error-codes.ts` + `statusToCode`); hoy el 429 cae en `INTERNAL_ERROR` (funcional pero engañoso para el frontend).
+Queda como deuda menor agregar el cÃ³digo `RATE_LIMITED` para HTTP 429 al catÃ¡logo D-025 (`error-codes.ts` + `statusToCode`); hoy el 429 cae en `INTERNAL_ERROR` (funcional pero engaÃ±oso para el frontend).
 
 ---
 
@@ -1309,44 +1309,44 @@ Las decisiones tienen las siguientes dependencias principales:
 
 ```text
 D-001
- ├── D-016
- └── D-017
+ â”œâ”€â”€ D-016
+ â””â”€â”€ D-017
 
 
 D-003
- └── D-002
+ â””â”€â”€ D-002
 
 
 D-002
- └── D-004
-       ├── D-019
-       └── D-021
+ â””â”€â”€ D-004
+       â”œâ”€â”€ D-019
+       â””â”€â”€ D-021
 
 
 D-005
- ├── D-022
- └── D-023
+ â”œâ”€â”€ D-022
+ â””â”€â”€ D-023
 
 
 D-020
-  └── D-024
-        └── D-025
+  â””â”€â”€ D-024
+        â””â”€â”€ D-025
 
 
 D-026
-  └── D-027
-        └── D-029
+  â””â”€â”€ D-027
+        â””â”€â”€ D-029
 
 
 D-028
-  └── D-030
+  â””â”€â”€ D-030
 ```
 
 ---
 
-# 7. Orden recomendado de resolución
+# 7. Orden recomendado de resoluciÃ³n
 
-## Fase 0 — Corrección inmediata (P0)
+## Fase 0 â€” CorrecciÃ³n inmediata (P0)
 
 ### Build blocker
 
@@ -1362,27 +1362,27 @@ eliminando el import inexistente:
 getAuthHeaders
 ```
 
-Esta corrección no requiere una decisión arquitectónica.
+Esta correcciÃ³n no requiere una decisiÃ³n arquitectÃ³nica.
 
 ### Seguridad P0 (coordinado Backend + Frontend)
 
 Cerrar los hallazgos de seguridad verificados:
 
 ```text
-D-020  ContextResolver → 403 hard, eliminar path-fallback, PLATFORM con rol
-D-024  VehicleAccessService + validación en rutas de maintenance/record-mileage
+D-020  ContextResolver â†’ 403 hard, eliminar path-fallback, PLATFORM con rol
+D-024  VehicleAccessService + validaciÃ³n en rutas de maintenance/record-mileage
 D-025  Error envelope + 403 nunca = logout (frontend)
 D-016  Refresh mantenido dentro de ventana + stop-impersonate re-firma admin
-D-002  /auth/me expone isVehicleOwner (contrato de sesión)
+D-002  /auth/me expone isVehicleOwner (contrato de sesiÃ³n)
 ```
 
-Requisito de release coordinado: el frontend envía `X-Context-Type`/`X-Context-Id` en flujos de taller (propagación mínima, D-020 Amendment 1). Sin este requisito, el fix de contexto rompería flujos de taller existentes.
+Requisito de release coordinado: el frontend envÃ­a `X-Context-Type`/`X-Context-Id` en flujos de taller (propagaciÃ³n mÃ­nima, D-020 Amendment 1). Sin este requisito, el fix de contexto romperÃ­a flujos de taller existentes.
 
 ---
 
-## Fase 1 — Auth
+## Fase 1 â€” Auth
 
-Resolver implementación/documentación de:
+Resolver implementaciÃ³n/documentaciÃ³n de:
 
 ```text
 D-001
@@ -1390,11 +1390,11 @@ D-016
 D-017
 ```
 
-Prioridad máxima por impacto transversal y seguridad.
+Prioridad mÃ¡xima por impacto transversal y seguridad.
 
 ---
 
-## Fase 2 — Actor / Ownership
+## Fase 2 â€” Actor / Ownership
 
 Consolidar:
 
@@ -1404,11 +1404,11 @@ D-002
 D-018
 ```
 
-D-018 puede mantenerse pendiente si el MVP no requiere co-ownership explícito.
+D-018 puede mantenerse pendiente si el MVP no requiere co-ownership explÃ­cito.
 
 ---
 
-## Fase 3 — Active Context
+## Fase 3 â€” Active Context
 
 Resolver:
 
@@ -1424,11 +1424,11 @@ D-004
 D-020
 ```
 
-D-020 ya está aceptada y debe respetarse desde el comienzo.
+D-020 ya estÃ¡ aceptada y debe respetarse desde el comienzo.
 
 ---
 
-## Fase 4 — CareEpisode
+## Fase 4 â€” CareEpisode
 
 Resolver:
 
@@ -1437,7 +1437,7 @@ D-022
 D-023
 ```
 
-y posteriormente cerrar la implementación derivada de:
+y posteriormente cerrar la implementaciÃ³n derivada de:
 
 ```text
 D-005
@@ -1451,37 +1451,37 @@ Todos los agentes del proyecto deben seguir estas reglas.
 
 ### 8.1 No sobrescribir decisiones aceptadas
 
-Un agente no puede modificar el comportamiento definido por una decisión `ACCEPTED` sin:
+Un agente no puede modificar el comportamiento definido por una decisiÃ³n `ACCEPTED` sin:
 
-1. registrar una nueva decisión;
+1. registrar una nueva decisiÃ³n;
 2. marcar la anterior como `SUPERSEDED` cuando corresponda;
-3. documentar la razón del cambio.
+3. documentar la razÃ³n del cambio.
 
 ---
 
 ### 8.2 No resolver silenciosamente decisiones pendientes
 
-Una decisión `PENDING` no debe ser convertida implícitamente en una decisión técnica mediante código.
+Una decisiÃ³n `PENDING` no debe ser convertida implÃ­citamente en una decisiÃ³n tÃ©cnica mediante cÃ³digo.
 
 ---
 
 ### 8.3 Diferenciar legacy de target architecture
 
-El código existente puede no coincidir con la arquitectura objetivo.
+El cÃ³digo existente puede no coincidir con la arquitectura objetivo.
 
-Cuando exista contradicción:
+Cuando exista contradicciÃ³n:
 
 ```text
 Accepted Decision
-        ↓
+        â†“
 Target Architecture
-        ↓
+        â†“
 Migration Plan
-        ↓
+        â†“
 Legacy Code
 ```
 
-No se debe adaptar la arquitectura objetivo al legacy automáticamente.
+No se debe adaptar la arquitectura objetivo al legacy automÃ¡ticamente.
 
 ---
 
@@ -1492,7 +1492,7 @@ El frontend puede ocultar:
 - botones;
 - rutas;
 - acciones;
-- elementos de navegación.
+- elementos de navegaciÃ³n.
 
 Pero nunca reemplaza las verificaciones backend.
 
@@ -1509,18 +1509,18 @@ No crear:
 - CQRS framework;
 - aggregates formales;
 
-solo porque podrían ser necesarios en el futuro.
+solo porque podrÃ­an ser necesarios en el futuro.
 
-Deben existir necesidades concretas y una decisión explícita.
+Deben existir necesidades concretas y una decisiÃ³n explÃ­cita.
 
 ---
 
 # 9. Template para nuevas decisiones
 
-Las nuevas decisiones deben utilizar como mínimo:
+Las nuevas decisiones deben utilizar como mÃ­nimo:
 
 ```markdown
-# D-XXX — Nombre
+# D-XXX â€” Nombre
 
 **Estado:** `PROPOSED`
 **Tipo:** Product / Domain / Architecture / Security / Data / UX
@@ -1528,23 +1528,23 @@ Las nuevas decisiones deben utilizar como mínimo:
 
 ## Problema
 
-¿Qué problema necesita resolverse?
+Â¿QuÃ© problema necesita resolverse?
 
 ## Contexto
 
-¿Qué información relevante existe?
+Â¿QuÃ© informaciÃ³n relevante existe?
 
 ## Opciones
 
-### Opción A
+### OpciÃ³n A
 
 ...
 
-### Opción B
+### OpciÃ³n B
 
 ...
 
-## Decisión
+## DecisiÃ³n
 
 ...
 
@@ -1601,14 +1601,14 @@ D-014  Historical data protection
 D-015  Modular Monolith
 D-016  Impersonation refresh policy
 D-017  Bearer production policy
-D-020  Invalid Active Context → 403
+D-020  Invalid Active Context â†’ 403
 D-024  VehicleAccessService / access validation (P0)
 D-025  Error envelope contract
 D-026  Password reset token hashing
-D-027  Password reset flow seguro (revocación, atomicidad, lockout)
-D-028  Reset password link → FRONTEND_URL
-D-029  Email de confirmación post-reset
-D-030  Rate limiting diferenciado en auth público
+D-027  Password reset flow seguro (revocaciÃ³n, atomicidad, lockout)
+D-028  Reset password link â†’ FRONTEND_URL
+D-029  Email de confirmaciÃ³n post-reset
+D-030  Rate limiting diferenciado en auth pÃºblico
 ```
 
 ### Pending
@@ -1631,105 +1631,105 @@ El MVP queda alineado alrededor de los siguientes principios:
 
 ```text
                     HCDV
-                     │
+                     â”‚
                  Vehicle First
-                     │
-              ┌──────┴──────┐
-              │             │
+                     â”‚
+              â”Œâ”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”
+              â”‚             â”‚
          Ownership        Access
-              │             │
-              └──────┬──────┘
-                     │
+              â”‚             â”‚
+              â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”˜
+                     â”‚
               Active Context
-                     │
-             ┌───────┴───────┐
-             │               │
+                     â”‚
+             â”Œâ”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”
+             â”‚               â”‚
          PERSONAL         WORKSHOP
-             │               │
-             └───────┬───────┘
-                     │
+             â”‚               â”‚
+             â””â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”˜
+                     â”‚
                  CareEpisode
-                     │
-          ┌──────────┼──────────┐
-          │          │          │
+                     â”‚
+          â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+          â”‚          â”‚          â”‚
       Diagnosis   Estimate   WorkOrder
-                                  │
+                                  â”‚
                             ServiceRecord
-                                  │
+                                  â”‚
                                Timeline
 ```
 
-Y en términos de arquitectura:
+Y en tÃ©rminos de arquitectura:
 
 ```text
 Browser
-  │
-  │ HttpOnly Cookies
-  ▼
+  â”‚
+  â”‚ HttpOnly Cookies
+  â–¼
 NestJS Modular Monolith
-  │
-  ├── Authentication
-  ├── Authorization
-  ├── Active Context
-  ├── Vehicles
-  ├── Ownership
-  ├── Workshops
-  ├── Appointments
-  └── Maintenance
-          │
-          └── CareEpisode
-                ├── Diagnosis
-                ├── Estimate
-                ├── WorkOrder
-                └── ServiceRecord
-  │
-  ▼
+  â”‚
+  â”œâ”€â”€ Authentication
+  â”œâ”€â”€ Authorization
+  â”œâ”€â”€ Active Context
+  â”œâ”€â”€ Vehicles
+  â”œâ”€â”€ Ownership
+  â”œâ”€â”€ Workshops
+  â”œâ”€â”€ Appointments
+  â””â”€â”€ Maintenance
+          â”‚
+          â””â”€â”€ CareEpisode
+                â”œâ”€â”€ Diagnosis
+                â”œâ”€â”€ Estimate
+                â”œâ”€â”€ WorkOrder
+                â””â”€â”€ ServiceRecord
+  â”‚
+  â–¼
 PostgreSQL + Prisma
 ```
 
-El registro debe permanecer deliberadamente pequeño y orientado a decisiones. Las decisiones de implementación menores no deben convertirse automáticamente en entradas del Decision Register.
+El registro debe permanecer deliberadamente pequeÃ±o y orientado a decisiones. Las decisiones de implementaciÃ³n menores no deben convertirse automÃ¡ticamente en entradas del Decision Register.
 
 ---
 
-# 12. Wave P2 — Implementación registrada (2026-09-08)
+# 12. Wave P2 â€” ImplementaciÃ³n registrada (2026-09-08)
 
 ## Implementado (QA post-onda: APROBADO CON OBSERVACIONES; 0 defectos corregibles)
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
-| D-016 A2 completado | Drop de `adminToken` en claro: migración `prisma/migrations/20260908000000_drop_admin_token_from_impersonation_sessions` (DROP COLUMN) + schema + `impersonate.handler` ya no persiste token. `stop-impersonate` sigue re-firmando token fresco (D-016 A1). Cero lecturas residuales de DB (verificado por QA). |
-| exp explícita | `login`, `refresh` (normal), `impersonate` y `stop-impersonate` firman con exp determinada; impersonación usa exp absoluta de la ventana de 1h. |
+| D-016 A2 completado | Drop de `adminToken` en claro: migraciÃ³n `prisma/migrations/20260908000000_drop_admin_token_from_impersonation_sessions` (DROP COLUMN) + schema + `impersonate.handler` ya no persiste token. `stop-impersonate` sigue re-firmando token fresco (D-016 A1). Cero lecturas residuales de DB (verificado por QA). |
+| exp explÃ­cita | `login`, `refresh` (normal), `impersonate` y `stop-impersonate` firman con exp determinada; impersonaciÃ³n usa exp absoluta de la ventana de 1h. |
 | Throttler | `ThrottlerModule` habilitado (envs `THROTTLE_TTL`/`THROTTLE_LIMIT` con defaults) en login, refresh, forgot/reset-password e impersonate. Sin APP_GUARD global (SPA). Sin dependencias nuevas. |
 | B2 | `status` tipado a `AppointmentStatus`/`WorkOrderStatus` en maintenance. Sin cambio de contrato runtime. |
-| B3 | `fileFilter` MIME en fotos (jpeg/png/webp/avif) y documentos (+pdf), consistente con `isImage` de storage. 400 → envelope D-025. |
-| B5 | `jwt.strategy.spec.ts` instancia la estrategia real (elimina `validatePayload` que replicaba lógica). |
-| Asociación vehículo-taller | Appointments con `status = 'cancelled'` ya NO generan asociación (SQL en `assertWorkshopVehicleAccess`). |
+| B3 | `fileFilter` MIME en fotos (jpeg/png/webp/avif) y documentos (+pdf), consistente con `isImage` de storage. 400 â†’ envelope D-025. |
+| B5 | `jwt.strategy.spec.ts` instancia la estrategia real (elimina `validatePayload` que replicaba lÃ³gica). |
+| AsociaciÃ³n vehÃ­culo-taller | Appointments con `status = 'cancelled'` ya NO generan asociaciÃ³n (SQL en `assertWorkshopVehicleAccess`). |
 | Dead code | Eliminado `src/common/exceptions/domain.exception.ts` (sin imports). |
 
-Verificación: `tsc --noEmit` exit 0 · `npm test` 132 PASS · `npm run build` exit 0 (backend y frontend).
+VerificaciÃ³n: `tsc --noEmit` exit 0 Â· `npm test` 132 PASS Â· `npm run build` exit 0 (backend y frontend).
 
-## Decisión de producto aplicada
+## DecisiÃ³n de producto aplicada
 
-- **D-024 A1 regla 3 (asociación, enmienda parcial):** los appointments **cancelados no constituyen atención real** y por lo tanto no generan asociación vehículo-taller para acceso WORKSHOP.
+- **D-024 A1 regla 3 (asociaciÃ³n, enmienda parcial):** los appointments **cancelados no constituyen atenciÃ³n real** y por lo tanto no generan asociaciÃ³n vehÃ­culo-taller para acceso WORKSHOP.
 
-## DECISIÓN DE PRODUCTO PENDIENTE — RESUELTA (2026-09-09, PM)
+## DECISIÃ“N DE PRODUCTO PENDIENTE â€” RESUELTA (2026-09-09, PM)
 
-- **D-024 A1 regla 3, Amendment 3 (ACCEPTED):** los **work-orders con `status = 'cancelled'` NO generan asociación** vehículo-taller (mismo criterio que citas canceladas: no hubo atención real). Los **estimates SÍ mantienen la asociación de forma provisional**: representan la puerta de entrada comercial del taller con un vehículo nuevo; excluirlos rompería el journey de primer contacto (sin asociación previa no se puede crear el primer registro). Sujeto a revisión con D-019 (semántica de WORKSHOP y "parque de clientes").
-- Implementación: añadir `status <> 'cancelled'` al leg de `work_orders` en `assertWorkshopVehicleAccess` (Wave P3).
+- **D-024 A1 regla 3, Amendment 3 (ACCEPTED):** los **work-orders con `status = 'cancelled'` NO generan asociaciÃ³n** vehÃ­culo-taller (mismo criterio que citas canceladas: no hubo atenciÃ³n real). Los **estimates SÃ mantienen la asociaciÃ³n de forma provisional**: representan la puerta de entrada comercial del taller con un vehÃ­culo nuevo; excluirlos romperÃ­a el journey de primer contacto (sin asociaciÃ³n previa no se puede crear el primer registro). Sujeto a revisiÃ³n con D-019 (semÃ¡ntica de WORKSHOP y "parque de clientes").
+- ImplementaciÃ³n: aÃ±adir `status <> 'cancelled'` al leg de `work_orders` en `assertWorkshopVehicleAccess` (Wave P3).
 
 ## Observaciones QA post-wave (deuda menor)
 
-- **D-025:** agregar código `RATE_LIMITED` para HTTP 429 (throttler) al catálogo `error-codes.ts` + `statusToCode`; hoy cae en `INTERNAL_ERROR` (funcional pero engañoso).
-- **Tests faltantes:** `fileTypeFilter()`/MIME (B3) y verificación explícita del leg `estimates` en el test B6.
+- **D-025:** agregar cÃ³digo `RATE_LIMITED` para HTTP 429 (throttler) al catÃ¡logo `error-codes.ts` + `statusToCode`; hoy cae en `INTERNAL_ERROR` (funcional pero engaÃ±oso).
+- **Tests faltantes:** `fileTypeFilter()`/MIME (B3) y verificaciÃ³n explÃ­cita del leg `estimates` en el test B6.
 - **Entorno:** `.env` local sin `JWT_REFRESH_SECRET` (solo vive en shell del dev); recomendar agregarla a `.env`/`.env.example`.
 
-## Migración requerida
+## MigraciÃ³n requerida
 
 - Aplicar `npm run db:deploy` en el entorno correspondiente (DROP COLUMN `admin_token`; no destructivo, no se lee desde D-016 A1).
 
 ---
 
-# 13. Iteración registrada (2026-09-09): Flujo completo de Reset Password (D-026 a D-030)
+# 13. IteraciÃ³n registrada (2026-09-09): Flujo completo de Reset Password (D-026 a D-030)
 
 ## Objetivo
 
@@ -1737,448 +1737,513 @@ Completar el flujo de reset password de extremo a extremo: seguridad del token, 
 
 ## Implementado
 
-### Backend — Seguridad
+### Backend â€” Seguridad
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
-| D-026 | `PasswordReset.token` (texto plano) → `tokenHash` (SHA-256). Migración `20260909000000_hash_password_reset_token` (add `token_hash`, `pgcrypto`, migrar datos, índice único, drop `token`). Aplicada en dev. |
-| D-027 | `reset-password.handler` con `prisma.$transaction`: update credential (`passwordHash`, `passwordChangedAt`, `failedAttempts=0`, `lockedUntil=null`) + mark token used + revoke sesiones activas. Error unificado `401 'Enlace inválido o expirado'`. |
+| D-026 | `PasswordReset.token` (texto plano) â†’ `tokenHash` (SHA-256). MigraciÃ³n `20260909000000_hash_password_reset_token` (add `token_hash`, `pgcrypto`, migrar datos, Ã­ndice Ãºnico, drop `token`). Aplicada en dev. |
+| D-027 | `reset-password.handler` con `prisma.$transaction`: update credential (`passwordHash`, `passwordChangedAt`, `failedAttempts=0`, `lockedUntil=null`) + mark token used + revoke sesiones activas. Error unificado `401 'Enlace invÃ¡lido o expirado'`. |
 | D-027 | `request-password-reset.handler` revoca tokens previos no usados antes de crear el nuevo; token generado con `randomBytes(32).toString('hex')`. |
 | D-030 | Throttling diferenciado: `forgot-password` `@Throttle` 3/10min, `reset-password` 5/5min. |
 
-### Backend — Funcional
+### Backend â€” Funcional
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
 | D-028 | `FRONTEND_URL` en `envs` (URI, default `http://localhost:3000`). `mail.service.sendPasswordResetEmail` construye link `FRONTEND_URL/reset-password?token=...` en lugar de apuntar al backend. |
-| D-029 | Nuevo evento `PasswordResetCompletedEvent` (`auth.password_reset.completed`) emitido tras transacción exitosa + listener que envía email de confirmación. |
-| Contratos | `forgotPassword`/`resetPassword`/`changePassword` retornan `{ message }`. `ResetPasswordDto` con `@MaxLength(100)` (consistente con change/register). Mensajes de error unificados en español para el flujo de reset. |
+| D-029 | Nuevo evento `PasswordResetCompletedEvent` (`auth.password_reset.completed`) emitido tras transacciÃ³n exitosa + listener que envÃ­a email de confirmaciÃ³n. |
+| Contratos | `forgotPassword`/`resetPassword`/`changePassword` retornan `{ message }`. `ResetPasswordDto` con `@MaxLength(100)` (consistente con change/register). Mensajes de error unificados en espaÃ±ol para el flujo de reset. |
 
 ### Frontend (creado desde cero en `frontend/`)
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
 | Stack | Next.js 15+ (App Router) + TypeScript strict + Tailwind CSS 4 + shadcn/ui (Base UI) + ky + React Hook Form + Zod + TanStack Query. |
-| Página | `/forgot-password` — email + Zod; estado success siempre idéntico (anti-enumeración); maneja 429. |
-| Página | `/reset-password` — token desde query param, eliminado de la URL con `replaceState`; password + confirmación; 401 → enlace expirado; success → auto-redirect 3s a `/login`. |
-| Página | `/login` (stub funcional) y `/profile` (change-password: current + new + confirm, validaciones Zod, 401 → contraseña actual incorrecta). |
+| PÃ¡gina | `/forgot-password` â€” email + Zod; estado success siempre idÃ©ntico (anti-enumeraciÃ³n); maneja 429. |
+| PÃ¡gina | `/reset-password` â€” token desde query param, eliminado de la URL con `replaceState`; password + confirmaciÃ³n; 401 â†’ enlace expirado; success â†’ auto-redirect 3s a `/login`. |
+| PÃ¡gina | `/login` (stub funcional) y `/profile` (change-password: current + new + confirm, validaciones Zod, 401 â†’ contraseÃ±a actual incorrecta). |
 | Componentes | `PasswordInput` (toggle mostrar/ocultar), Card/Button/Input/Label (shadcn). `authApi` (ky) + hooks `useForgotPassword`/`useResetPassword`/`useChangePassword`. |
 
 ### Tests (backend)
 
 | Suite | Resultado |
 | ----- | --------- |
-| `request-password-reset.handler.spec.ts` | 6 tests (email inexistente, revocación previa, token 64 hex, evento, expiración 1h) |
-| `reset-password.handler.spec.ts` | 9 tests (inválido/usado/expirado, transacción, failedAttempts reset, evento, bcrypt rounds) |
+| `request-password-reset.handler.spec.ts` | 6 tests (email inexistente, revocaciÃ³n previa, token 64 hex, evento, expiraciÃ³n 1h) |
+| `reset-password.handler.spec.ts` | 9 tests (invÃ¡lido/usado/expirado, transacciÃ³n, failedAttempts reset, evento, bcrypt rounds) |
 | `send-password-reset-completed-email.listener.spec.ts` | 2 tests (usuario existe/no existe) |
 
-Verificación global: `npm test` → **17 suites / 165 tests PASS** · `tsc --noEmit` exit 0 · backend `npm run build` exit 0 · frontend `npm run build` exit 0 (6 rutas generadas).
+VerificaciÃ³n global: `npm test` â†’ **17 suites / 165 tests PASS** Â· `tsc --noEmit` exit 0 Â· backend `npm run build` exit 0 Â· frontend `npm run build` exit 0 (6 rutas generadas).
 
 ## Decisiones de producto aplicadas
 
-- **Ruta canónica frontend de reset:** `/reset-password?token=...` (grupo público `(auth)`).
-- **Comportamiento post-reset:** revocación total de sesiones + email de confirmación + limpieza de lockout (regla D-027).
-- **Idioma:** mensajes de error del flujo en español (consistente con el email).
+- **Ruta canÃ³nica frontend de reset:** `/reset-password?token=...` (grupo pÃºblico `(auth)`).
+- **Comportamiento post-reset:** revocaciÃ³n total de sesiones + email de confirmaciÃ³n + limpieza de lockout (regla D-027).
+- **Idioma:** mensajes de error del flujo en espaÃ±ol (consistente con el email).
 
 ## Observaciones / deuda registrada
 
-- **D-025 (deuda previa):** agregar código `RATE_LIMITED` para 429 al catálogo `error-codes.ts` + `statusToCode` (hoy cae en `INTERNAL_ERROR`).
-- **Limpieza de tokens expirados/usados:** no se introdujo cron en MVP (requeriría `@nestjs/schedule`). Mitigación actual: cada nuevo request revoca tokens previos (D-027). Se recomienda revisar cuando la tabla crezca o con decisión de arquitectura explícita.
-- **Filas huérfanas en `_prisma_migrations`:** 2 entradas fallidas de `20260904000000_remove_refresh_token_field_from_user_session` (finished_at NULL) detectadas por Database agent; inofensivas, pueden causar prompt de reset en `prisma migrate dev`. Limpieza opcional documentada: DELETE de esas filas.
-- **Login stub y auth real:** ~~el frontend tiene login stub funcional (guarda `access_token` en `localStorage`)~~ **RESUELTO en iteración Sección 14** (2026-09-09): el stub fue reemplazado por auth real con cookies HttpOnly (D-001), AuthProvider, refresh automático y protección de rutas vía `proxy.ts` (Next.js 16).
-- **Coordinación backend/frontend pendiente:** el frontend debe exigir `FRONTEND_URL`/`NEXT_PUBLIC_API_URL` en cada entorno; documentado en `frontend/.env.example`.
+- **D-025 (deuda previa):** agregar cÃ³digo `RATE_LIMITED` para 429 al catÃ¡logo `error-codes.ts` + `statusToCode` (hoy cae en `INTERNAL_ERROR`).
+- **Limpieza de tokens expirados/usados:** no se introdujo cron en MVP (requerirÃ­a `@nestjs/schedule`). MitigaciÃ³n actual: cada nuevo request revoca tokens previos (D-027). Se recomienda revisar cuando la tabla crezca o con decisiÃ³n de arquitectura explÃ­cita.
+- **Filas huÃ©rfanas en `_prisma_migrations`:** 2 entradas fallidas de `20260904000000_remove_refresh_token_field_from_user_session` (finished_at NULL) detectadas por Database agent; inofensivas, pueden causar prompt de reset en `prisma migrate dev`. Limpieza opcional documentada: DELETE de esas filas.
+- **Login stub y auth real:** ~~el frontend tiene login stub funcional (guarda `access_token` en `localStorage`)~~ **RESUELTO en iteraciÃ³n SecciÃ³n 14** (2026-09-09): el stub fue reemplazado por auth real con cookies HttpOnly (D-001), AuthProvider, refresh automÃ¡tico y protecciÃ³n de rutas vÃ­a `proxy.ts` (Next.js 16).
+- **CoordinaciÃ³n backend/frontend pendiente:** el frontend debe exigir `FRONTEND_URL`/`NEXT_PUBLIC_API_URL` en cada entorno; documentado en `frontend/.env.example`.
 
 ---
 
-# 14. Iteración registrada (2026-09-09): Auth real del frontend (D-001 sin violaciones)
+# 14. IteraciÃ³n registrada (2026-09-09): Auth real del frontend (D-001 sin violaciones)
 
 ## Objetivo
 
-Eliminar el login stub del frontend (que violaba D-001 guardando `access_token` en `localStorage`) e implementar autenticación real de extremo a extremo: login/registro/verificación de email funcionales, sesión persistente vía cookies HttpOnly, refresh automático del access token, logout y protección de rutas.
+Eliminar el login stub del frontend (que violaba D-001 guardando `access_token` en `localStorage`) e implementar autenticaciÃ³n real de extremo a extremo: login/registro/verificaciÃ³n de email funcionales, sesiÃ³n persistente vÃ­a cookies HttpOnly, refresh automÃ¡tico del access token, logout y protecciÃ³n de rutas.
 
 ## Spec
 
-- `docs/specs/frontend-auth-flow.md` — aprobada por PM (RF-1 a RF-10).
+- `docs/specs/frontend-auth-flow.md` â€” aprobada por PM (RF-1 a RF-10).
 
 ## Implementado (frontend)
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
-| D-001 | `src/providers/auth-provider.tsx` — AuthProvider con `status: loading/authenticated/unauthenticated`, `user: SessionUser`, `refreshSession`, `clearSession`. Bootstrap con `GET /auth/me` al montar. |
-| D-001 | `src/lib/api.ts` — `authApi.login/logout/me/register/verifyEmail` + estrategia de refresh automático: ky `beforeRetry` (401 → `POST /auth/refresh` → reintento máx. 1; refrescos concurrentes coordinados; endpoints públicos excluidos del refresh). |
-| D-001 | `src/app/(auth)/login/page.tsx` — reescrito: **sin localStorage**, cookies HttpOnly, redirect respeta `?next=` con protección anti open-redirect. |
-| Registro | `src/app/(auth)/register/page.tsx` — firstName/lastName/email/password/confirm, Zod, success → pantalla "Revisa tu email". |
-| Verificación | `src/app/(auth)/verify-email/page.tsx` — `GET /auth/verify-email?token=...`, estados loading/success/error. |
-| Rutas | `src/proxy.ts` (convención Next.js 16: middleware → proxy) — protección `/dashboard` y `/profile` (sin cookie `access_token` → `/login?next=`); `/login` y `/register` con cookie → `/dashboard`. Matcher excluye API/static/favicon. |
-| Layout | `src/app/(dashboard)/layout.tsx` — header HCDV con UserNav (avatar inicial + logout); si sesión expira → redirect `/login?next=`. |
-| Dashboard | `src/app/(dashboard)/dashboard/page.tsx` — home mínima: saludo, email, roles, propietario, talleres. |
-| Tipos | `src/types/auth.ts` — `SessionUser` (contrato `GET /auth/me`). |
+| D-001 | `src/providers/auth-provider.tsx` â€” AuthProvider con `status: loading/authenticated/unauthenticated`, `user: SessionUser`, `refreshSession`, `clearSession`. Bootstrap con `GET /auth/me` al montar. |
+| D-001 | `src/lib/api.ts` â€” `authApi.login/logout/me/register/verifyEmail` + estrategia de refresh automÃ¡tico: ky `beforeRetry` (401 â†’ `POST /auth/refresh` â†’ reintento mÃ¡x. 1; refrescos concurrentes coordinados; endpoints pÃºblicos excluidos del refresh). |
+| D-001 | `src/app/(auth)/login/page.tsx` â€” reescrito: **sin localStorage**, cookies HttpOnly, redirect respeta `?next=` con protecciÃ³n anti open-redirect. |
+| Registro | `src/app/(auth)/register/page.tsx` â€” firstName/lastName/email/password/confirm, Zod, success â†’ pantalla "Revisa tu email". |
+| VerificaciÃ³n | `src/app/(auth)/verify-email/page.tsx` â€” `GET /auth/verify-email?token=...`, estados loading/success/error. |
+| Rutas | `src/proxy.ts` (convenciÃ³n Next.js 16: middleware â†’ proxy) â€” protecciÃ³n `/dashboard` y `/profile` (sin cookie `access_token` â†’ `/login?next=`); `/login` y `/register` con cookie â†’ `/dashboard`. Matcher excluye API/static/favicon. |
+| Layout | `src/app/(dashboard)/layout.tsx` â€” header HCDV con UserNav (avatar inicial + logout); si sesiÃ³n expira â†’ redirect `/login?next=`. |
+| Dashboard | `src/app/(dashboard)/dashboard/page.tsx` â€” home mÃ­nima: saludo, email, roles, propietario, talleres. |
+| Tipos | `src/types/auth.ts` â€” `SessionUser` (contrato `GET /auth/me`). |
 
-## Decisions técnicas del Tech Lead
+## Decisions tÃ©cnicas del Tech Lead
 
-- **Next.js 16**: `middleware.ts` renombrado a `proxy.ts` (convención oficial de la versión instalada, verificada en `node_modules/next/dist/docs`).
-- **Sin next-auth**: con D-001 (cookies HttpOnly del backend) un AuthProvider ligero + ky es suficiente; next-auth agregaría complejidad sin valor (decisión de implementación dentro de la autoridad del Tech Lead; alineada con `frontend-auth-flow.md` sección 9).
-- **Refresh**: ky `beforeRetry` con flag global para no duplicar refrescos concurrentes y exclusión de endpoints públicos.
+- **Next.js 16**: `middleware.ts` renombrado a `proxy.ts` (convenciÃ³n oficial de la versiÃ³n instalada, verificada en `node_modules/next/dist/docs`).
+- **Sin next-auth**: con D-001 (cookies HttpOnly del backend) un AuthProvider ligero + ky es suficiente; next-auth agregarÃ­a complejidad sin valor (decisiÃ³n de implementaciÃ³n dentro de la autoridad del Tech Lead; alineada con `frontend-auth-flow.md` secciÃ³n 9).
+- **Refresh**: ky `beforeRetry` con flag global para no duplicar refrescos concurrentes y exclusiÃ³n de endpoints pÃºblicos.
 
-## Verificación
+## VerificaciÃ³n
 
-- `npm run build` → exit 0 (Next.js 16.3.4, Turbopack): 9 rutas generadas + `ƒ Proxy (Middleware)`.
+- `npm run build` â†’ exit 0 (Next.js 16.3.4, Turbopack): 9 rutas generadas + `Æ’ Proxy (Middleware)`.
 - Rutas: `/`, `/_not-found`, `/dashboard`, `/forgot-password`, `/login`, `/profile`, `/register`, `/reset-password`, `/verify-email`.
 
 ## Observaciones / deuda registrada
 
-- **Pruebas E2E pendientes:** no hay test runner de frontend configurado (deuda conocida). El flujo completo (login con cookies en dev localhost:3000 ↔ backend:3001) requiere verificación manual o script E2E; CORS + credentials ya están habilitados en backend.
-- **Contrato `/auth/me` a confirmar:** el campo `workshopMemberships` y `roles` fueron tipados en `SessionUser` según el handler backend; confirmar con Backend Tech Lead antes de construir UI dependiente (p. ej. `/profile` avanzado).
-- **Splash global:** AuthProvider muestra splash de carga en toda la app mientras resuelve sesión; correcto para evitar flash en páginas autenticadas.
+- **Pruebas E2E pendientes:** no hay test runner de frontend configurado (deuda conocida). El flujo completo (login con cookies en dev localhost:3000 â†” backend:3001) requiere verificaciÃ³n manual o script E2E; CORS + credentials ya estÃ¡n habilitados en backend.
+- **Contrato `/auth/me` a confirmar:** el campo `workshopMemberships` y `roles` fueron tipados en `SessionUser` segÃºn el handler backend; confirmar con Backend Tech Lead antes de construir UI dependiente (p. ej. `/profile` avanzado).
+- **Splash global:** AuthProvider muestra splash de carga en toda la app mientras resuelve sesiÃ³n; correcto para evitar flash en pÃ¡ginas autenticadas.
 - **Registro no auto-login:** deliberado (verificar email primero); coherente con backend.
-- **Deuda previa sin cambios:** RATE_LIMITED para 429 (`error-codes.ts`), cron limpieza de tokens, filas huérfanas en `_prisma_migrations`, evidente en Sección 13.
+- **Deuda previa sin cambios:** RATE_LIMITED para 429 (`error-codes.ts`), cron limpieza de tokens, filas huÃ©rfanas en `_prisma_migrations`, evidente en SecciÃ³n 13.
 
 ---
 
-# 15. Registro (2026-09-09): Backend E2E auth + config CORS/FRONTEND_URL (cierre de iteración D-001)
+# 15. Registro (2026-09-09): Backend E2E auth + config CORS/FRONTEND_URL (cierre de iteraciÃ³n D-001)
 
 ## Objetivo
 
-Cerrar la iteración de auth real del frontend (Sección 14) validando el backend de extremo a extremo y documentando la configuración de orígenes. Sin cambios de producto.
+Cerrar la iteraciÃ³n de auth real del frontend (SecciÃ³n 14) validando el backend de extremo a extremo y documentando la configuraciÃ³n de orÃ­genes. Sin cambios de producto.
 
-## Decisión de configuración (Tech Lead)
+## DecisiÃ³n de configuraciÃ³n (Tech Lead)
 
 - **`CORS_ORIGIN`** en `.env.example` pasa de `*` a `http://localhost:3000`. Con `cors.credentials: true` (cookies HttpOnly, D-001) el browser rechaza `*` + credentials; el origen debe ser el real (lista separada por comas permitida). Resuelve el hardening pendiente anotado en `DECISION-PROPOSALS.md` (D-001).
-- **`FRONTEND_URL`** agregado a `.env.example` (`http://localhost:3000`, URI validada por Joi). Ya existía en `src/config/envs.ts` (D-028); el ejemplo del entorno no lo reflejaba. El `.env` local ya tenía `CORS_ORIGIN=http://localhost:3000` (verificado, sin cambios).
-- Implementación: `.env.example` — 2 líneas de comentario + 1 valor cambiado + bloque nuevo `FRONTEND_URL`. Sin secretos.
+- **`FRONTEND_URL`** agregado a `.env.example` (`http://localhost:3000`, URI validada por Joi). Ya existÃ­a en `src/config/envs.ts` (D-028); el ejemplo del entorno no lo reflejaba. El `.env` local ya tenÃ­a `CORS_ORIGIN=http://localhost:3000` (verificado, sin cambios).
+- ImplementaciÃ³n: `.env.example` â€” 2 lÃ­neas de comentario + 1 valor cambiado + bloque nuevo `FRONTEND_URL`. Sin secretos.
 
-## Verificación E2E backend (evidencia registrada)
+## VerificaciÃ³n E2E backend (evidencia registrada)
 
-Backend build + start (`node dist/main.js`, `npm run build` exit 0) sobre PostgreSQL local (50 usuarios seed). Matriz completa en el reporte de cierre del Backend Tech Lead (este ítem). Resumen:
+Backend build + start (`node dist/main.js`, `npm run build` exit 0) sobre PostgreSQL local (50 usuarios seed). Matriz completa en el reporte de cierre del Backend Tech Lead (este Ã­tem). Resumen:
 
-- `POST /api/auth/register` → 201 `{ user }`, sin Set-Cookie (no auto-login). Duplicado → 401 `SESSION_EXPIRED` (no 409 — comportamiento existente, ver observaciones).
-- `POST /api/auth/login` → 201 + `Set-Cookie access_token` (HttpOnly, SameSite=Lax, Max-Age=1500) + `refresh_token` (HttpOnly, SameSite=Strict, Max-Age=604800); body `{ user }` sin tokens. CORS verificado: `Access-Control-Allow-Origin: http://localhost:3000` + `Access-Control-Allow-Credentials: true`.
-- `GET /api/auth/me` → 200 con `{ id, email, firstName, lastName, avatarUrl, language, status, isVehicleOwner, roles[], workshopMemberships[] }` — payload coincide con `SessionUser` del frontend (excepto `roles[].type` vs `roles[].code`, ver observaciones).
-- `POST /api/auth/refresh` → 201, cookies rotadas (nuevo `refresh_token`), body `{ success: true, impersonated: false }`.
-- `POST /api/auth/logout` → 201 `{ message }`, cookies limpiadas (`Max-Age=0`); `/auth/me` posterior → 401 `SESSION_EXPIRED`.
-- `POST /api/auth/forgot-password` (email desconocido) → 201 con mensaje fijo anti-enumeración; 4º intento → 429 `RATE_LIMITED` (mapeo D-025 confirmado).
-- `POST /api/auth/reset-password` (token inválido) → 401 `'Enlace inválido o expirado'`.
-- `GET /api/auth/verify-email?token=...` → 400 `VALIDATION_ERROR` (token no UUID) / 404 `NOT_FOUND 'Token inválido'` (UUID inexistente).
+- `POST /api/auth/register` â†’ 201 `{ user }`, sin Set-Cookie (no auto-login). Duplicado â†’ 401 `SESSION_EXPIRED` (no 409 â€” comportamiento existente, ver observaciones).
+- `POST /api/auth/login` â†’ 201 + `Set-Cookie access_token` (HttpOnly, SameSite=Lax, Max-Age=1500) + `refresh_token` (HttpOnly, SameSite=Strict, Max-Age=604800); body `{ user }` sin tokens. CORS verificado: `Access-Control-Allow-Origin: http://localhost:3000` + `Access-Control-Allow-Credentials: true`.
+- `GET /api/auth/me` â†’ 200 con `{ id, email, firstName, lastName, avatarUrl, language, status, isVehicleOwner, roles[], workshopMemberships[] }` â€” payload coincide con `SessionUser` del frontend (excepto `roles[].type` vs `roles[].code`, ver observaciones).
+- `POST /api/auth/refresh` â†’ 201, cookies rotadas (nuevo `refresh_token`), body `{ success: true, impersonated: false }`.
+- `POST /api/auth/logout` â†’ 201 `{ message }`, cookies limpiadas (`Max-Age=0`); `/auth/me` posterior â†’ 401 `SESSION_EXPIRED`.
+- `POST /api/auth/forgot-password` (email desconocido) â†’ 201 con mensaje fijo anti-enumeraciÃ³n; 4Âº intento â†’ 429 `RATE_LIMITED` (mapeo D-025 confirmado).
+- `POST /api/auth/reset-password` (token invÃ¡lido) â†’ 401 `'Enlace invÃ¡lido o expirado'`.
+- `GET /api/auth/verify-email?token=...` â†’ 400 `VALIDATION_ERROR` (token no UUID) / 404 `NOT_FOUND 'Token invÃ¡lido'` (UUID inexistente).
 - Tests unitarios auth: 6 suites / 37 tests PASS.
 
 ## Decisiones de producto aceptadas en el cierre (2026-09-09)
 
-> **Estado: TODAS IMPLEMENTADAS Y VERIFICADAS** (2026-09-09) — ver "Cierre de implementación" al final de esta sección.
+> **Estado: TODAS IMPLEMENTADAS Y VERIFICADAS** (2026-09-09) â€” ver "Cierre de implementaciÃ³n" al final de esta secciÃ³n.
 
-### D-031 — Contrato `roles` en `/auth/me`: el backend es la fuente de verdad
+### D-031 â€” Contrato `roles` en `/auth/me`: el backend es la fuente de verdad
 
-- **Decisión:** `GET /auth/me` devuelve `roles[]: { id, type, name, permissions[] }`. El frontend `SessionUser.roles[]` se corrige a ese contrato (`type` en lugar de `code`, + `permissions` opcional).
-- **Razón:** el handler y `RoleDto` del backend usan `type` en toda la aplicación; no hay contrato anterior que defina `code`. Frontend debe tipar el payload real.
+- **DecisiÃ³n:** `GET /auth/me` devuelve `roles[]: { id, type, name, permissions[] }`. El frontend `SessionUser.roles[]` se corrige a ese contrato (`type` en lugar de `code`, + `permissions` opcional).
+- **RazÃ³n:** el handler y `RoleDto` del backend usan `type` en toda la aplicaciÃ³n; no hay contrato anterior que defina `code`. Frontend debe tipar el payload real.
 - **Impacto:** cambio localizado en `frontend/src/types/auth.ts`. Runtime actualmente OK (solo se consume `name`).
 - **Alternativas descartadas:** renombrar el campo backend a `code` (cambio breaking sin necesidad real).
 
-### D-032 — Register duplicado → 409 `CONFLICT`
+### D-032 â€” Register duplicado â†’ 409 `CONFLICT`
 
-- **Decisión:** `POST /auth/register` con email ya registrado debe responder **409** con código `CONFLICT` y mensaje claro ("Ya existe una cuenta con este email").
-- **Razón:** 401 `SESSION_EXPIRED` es semánticamente incorrecto para un registro duplicado (no es un problema de credenciales); la UI de register ya mapea 409 (código D-025).
+- **DecisiÃ³n:** `POST /auth/register` con email ya registrado debe responder **409** con cÃ³digo `CONFLICT` y mensaje claro ("Ya existe una cuenta con este email").
+- **RazÃ³n:** 401 `SESSION_EXPIRED` es semÃ¡nticamente incorrecto para un registro duplicado (no es un problema de credenciales); la UI de register ya mapea 409 (cÃ³digo D-025).
 - **Impacto:** cambio en el handler de register + tests. Revisar que no rompa el flujo de login.
-- **Alternativas descartadas:** mantener 401 (contradice semántica y la UI existente); usar 400 (confunde validación).
+- **Alternativas descartadas:** mantener 401 (contradice semÃ¡ntica y la UI existente); usar 400 (confunde validaciÃ³n).
 
-### D-033 — Limpieza oportunista de tokens de reset expirados/usados (Opción A)
+### D-033 â€” Limpieza oportunista de tokens de reset expirados/usados (OpciÃ³n A)
 
-- **Decisión:** en `request-password-reset`, además de la revocación previa (D-027), ejecutar `DELETE` oportunista de tokens `usedAt IS NOT NULL OR expiresAt < now` del mismo usuario.
-- **Razón:** mantiene la higiene de `password_resets` sin introducir cron ni dependencia nueva (`@nestjs/schedule`); el endpoint ya está throttled (3/10min), volumen acotado.
-- **Impacto:** ~3 líneas en handler/repository + tests. Cero impacto en contratos.
-- **Alternativas descartadas:** `@nestjs/schedule` + cron (dependencia nueva sin necesidad real en MVP — rechazada por ahora; revisar cuando la tabla crezca o en staging pre-producción); no limpiar (aceptable a corto plazo pero deja la deuda).
+- **DecisiÃ³n:** en `request-password-reset`, ademÃ¡s de la revocaciÃ³n previa (D-027), ejecutar `DELETE` oportunista de tokens `usedAt IS NOT NULL OR expiresAt < now` del mismo usuario.
+- **RazÃ³n:** mantiene la higiene de `password_resets` sin introducir cron ni dependencia nueva (`@nestjs/schedule`); el endpoint ya estÃ¡ throttled (3/10min), volumen acotado.
+- **Impacto:** ~3 lÃ­neas en handler/repository + tests. Cero impacto en contratos.
+- **Alternativas descartadas:** `@nestjs/schedule` + cron (dependencia nueva sin necesidad real en MVP â€” rechazada por ahora; revisar cuando la tabla crezca o en staging pre-producciÃ³n); no limpiar (aceptable a corto plazo pero deja la deuda).
 
-### D-034 — Email de verificación de cuenta → journey frontend
+### D-034 â€” Email de verificaciÃ³n de cuenta â†’ journey frontend
 
-- **Decisión:** el email de verificación de cuenta debe apuntar a `FRONTEND_URL/verify-email?token=...` (página frontend), no directamente al endpoint backend.
-- **Razón:** consistencia con D-028 (reset ya usa `FRONTEND_URL`); el frontend ya tiene la página `/verify-email` con UX completa; evitar mostrar texto/JSON del backend al usuario.
-- **Impacto:** cambio en `mail.service` (build link con `FRONTEND_URL`) + tests. El endpoint `GET /auth/verify-email` permanece como API consumida por la página.
+- **DecisiÃ³n:** el email de verificaciÃ³n de cuenta debe apuntar a `FRONTEND_URL/verify-email?token=...` (pÃ¡gina frontend), no directamente al endpoint backend.
+- **RazÃ³n:** consistencia con D-028 (reset ya usa `FRONTEND_URL`); el frontend ya tiene la pÃ¡gina `/verify-email` con UX completa; evitar mostrar texto/JSON del backend al usuario.
+- **Impacto:** cambio en `mail.service` (build link con `FRONTEND_URL`) + tests. El endpoint `GET /auth/verify-email` permanece como API consumida por la pÃ¡gina.
 
-### Decisiones menores (aceptadas, sin cambio de código)
+### Decisiones menores (aceptadas, sin cambio de cÃ³digo)
 
-- **Status 201 vs 200 en POST:** se documenta en specs que los POST responden 201 (default NestJS). No se agrega `@HttpCode(200)` — el frontend maneja cualquier 2xx y el costo de alinear no aporta valor.
-- **Mensaje 429 crudo** (`"ThrottlerException: Too Many Requests"`): cosmético; el frontend mapea por `code: RATE_LIMITED`, no por mensaje. Se acepta como deuda menor.
-- **Drift seed→DB (roles/permissions):** el rol `user` en DB tiene 13 permissions vs `systemRolePermissions.user = []` en seed. Deuda de mantenimiento de seed, fuera del scope de auth.
+- **Status 201 vs 200 en POST:** se documenta en specs que los POST responden 201 (default NestJS). No se agrega `@HttpCode(200)` â€” el frontend maneja cualquier 2xx y el costo de alinear no aporta valor.
+- **Mensaje 429 crudo** (`"ThrottlerException: Too Many Requests"`): cosmÃ©tico; el frontend mapea por `code: RATE_LIMITED`, no por mensaje. Se acepta como deuda menor.
+- **Drift seedâ†’DB (roles/permissions):** el rol `user` en DB tiene 13 permissions vs `systemRolePermissions.user = []` en seed. Deuda de mantenimiento de seed, fuera del scope de auth.
 - **`verify-email` exige token UUID:** comportamiento razonable y ya documentado en el journey.
 
-## Cierre de implementación (2026-09-09)
+## Cierre de implementaciÃ³n (2026-09-09)
 
-| Decisión | Estado | Implementación |
+| DecisiÃ³n | Estado | ImplementaciÃ³n |
 | -------- | ------ | -------------- |
-| D-031 | ✅ Implementada | `frontend/src/types/auth.ts` → `roles: Array<{ id; type; name; permissions? }>`. Sin referencias residuales a `roles.code`. Frontend build exit 0 + 19 tests PASS. |
-| D-032 | ✅ Implementada | `register.handler.ts` → `ConflictException('Ya existe una cuenta con este email')`. `statusToCode` ya mapeaba 409→CONFLICT. Nuevo spec: `register.handler.spec.ts` (3 tests). Login intacto (401 INVALID_CREDENTIALS). |
-| D-033 | ✅ Implementada | `AuthRepository.deleteCleanupPasswordResets(userId)` + `prisma-auth.repository` (DELETE `usedAt != null OR expiresAt < now`). Orden en handler: revoke → delete → create. Spec actualizado (+2 tests). Sin `@nestjs/schedule`. |
-| D-034 | ✅ Implementada | `mail.service.sendVerificationEmail` → link `${FRONTEND_URL}/verify-email?token=...`. Cubre register y resend-verification (mismo evento). Nuevo spec: `mail.service.spec.ts` (3 tests; protege también D-028). |
-| Menores | ✅ Aceptadas | Spec `frontend-auth-flow.md` documenta 201 (POST), D-032 (409), D-031 (roles.type). Mensaje 429 crudo y drift seed→DB registrados como deuda menor. |
+| D-031 | âœ… Implementada | `frontend/src/types/auth.ts` â†’ `roles: Array<{ id; type; name; permissions? }>`. Sin referencias residuales a `roles.code`. Frontend build exit 0 + 19 tests PASS. |
+| D-032 | âœ… Implementada | `register.handler.ts` â†’ `ConflictException('Ya existe una cuenta con este email')`. `statusToCode` ya mapeaba 409â†’CONFLICT. Nuevo spec: `register.handler.spec.ts` (3 tests). Login intacto (401 INVALID_CREDENTIALS). |
+| D-033 | âœ… Implementada | `AuthRepository.deleteCleanupPasswordResets(userId)` + `prisma-auth.repository` (DELETE `usedAt != null OR expiresAt < now`). Orden en handler: revoke â†’ delete â†’ create. Spec actualizado (+2 tests). Sin `@nestjs/schedule`. |
+| D-034 | âœ… Implementada | `mail.service.sendVerificationEmail` â†’ link `${FRONTEND_URL}/verify-email?token=...`. Cubre register y resend-verification (mismo evento). Nuevo spec: `mail.service.spec.ts` (3 tests; protege tambiÃ©n D-028). |
+| Menores | âœ… Aceptadas | Spec `frontend-auth-flow.md` documenta 201 (POST), D-032 (409), D-031 (roles.type). Mensaje 429 crudo y drift seedâ†’DB registrados como deuda menor. |
 
-Verificación global: `npm test` → **19 suites / 173 tests PASS** (165 previos + 8 nuevos) · backend `npm run build` exit 0 · frontend `npm run build` exit 0 + `npm test` 19 tests PASS · limpieza de migraciones huérfanas ejecutada (Database) · E2E backend con backend real verificado (Backend Tech Lead).
+VerificaciÃ³n global: `npm test` â†’ **19 suites / 173 tests PASS** (165 previos + 8 nuevos) Â· backend `npm run build` exit 0 Â· frontend `npm run build` exit 0 + `npm test` 19 tests PASS Â· limpieza de migraciones huÃ©rfanas ejecutada (Database) Â· E2E backend con backend real verificado (Backend Tech Lead).
 
 ---
 
-# 16. Registro (2026-09-09): F-010 Registrar Vehículo end-to-end (D-035..D-038)
+# 16. Registro (2026-09-09): F-010 Registrar VehÃ­culo end-to-end (D-035..D-038)
 
 ## Objetivo
 
-Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propietario registra su vehículo desde el frontend, el vehículo queda asociado como owner (VehicleOwnership) y aparece en "Mis vehículos". El backend ya exponía el alta; el trabajo real fue el journey frontend + ajustes menores de robustez backend.
+Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propietario registra su vehÃ­culo desde el frontend, el vehÃ­culo queda asociado como owner (VehicleOwnership) y aparece en "Mis vehÃ­culos". El backend ya exponÃ­a el alta; el trabajo real fue el journey frontend + ajustes menores de robustez backend.
 
 ## Spec
 
-- `docs/specs/vehicle-register-flow.md` — aprobada por PM con las 4 decisiones confirmadas.
+- `docs/specs/vehicle-register-flow.md` â€” aprobada por PM con las 4 decisiones confirmadas.
 
 ## Decisiones de producto aceptadas en el cierre (2026-09-09)
 
-> **Estado: TODAS APROBADAS POR PM; IMPLEMENTADAS** — ver "Cierre de implementación" al final de esta sección.
+> **Estado: TODAS APROBADAS POR PM; IMPLEMENTADAS** â€” ver "Cierre de implementaciÃ³n" al final de esta secciÃ³n.
 
-### D-035 — Registro de vehículo solo en contexto PERSONAL (MVP)
+### D-035 â€” Registro de vehÃ­culo solo en contexto PERSONAL (MVP)
 
-- **Decisión:** el alta de vehículo se asocia al `user.id` autenticado como owner; solo aplica en contexto PERSONAL en MVP. Los miembros de taller (WORKSHOP) **no** registran vehículos en esta iteración (post-MVP). El frontend no envía `X-Context-Type` en estas llamadas (default PERSONAL, D-020 A1).
-- **Razón:** "el taller no es propietario del vehículo por registrar una atención"; el alta es un acto de propiedad. Evita abrir la semántica WORKSHOP sin una decisión explícita (D-004/D-021).
-- **Impacto:** ningún cambio de código requerido en el guard de contexto (el default PERSONAL ya aplica); solo documentación de journey y ausencia del header en el cliente.
-- **Alternativas descartadas:** alta en WORKSHOP (requiere Ownership por taller/miembro y semántica de contexto no resuelta — post-MVP).
+- **DecisiÃ³n:** el alta de vehÃ­culo se asocia al `user.id` autenticado como owner; solo aplica en contexto PERSONAL en MVP. Los miembros de taller (WORKSHOP) **no** registran vehÃ­culos en esta iteraciÃ³n (post-MVP). El frontend no envÃ­a `X-Context-Type` en estas llamadas (default PERSONAL, D-020 A1).
+- **RazÃ³n:** "el taller no es propietario del vehÃ­culo por registrar una atenciÃ³n"; el alta es un acto de propiedad. Evita abrir la semÃ¡ntica WORKSHOP sin una decisiÃ³n explÃ­cita (D-004/D-021).
+- **Impacto:** ningÃºn cambio de cÃ³digo requerido en el guard de contexto (el default PERSONAL ya aplica); solo documentaciÃ³n de journey y ausencia del header en el cliente.
+- **Alternativas descartadas:** alta en WORKSHOP (requiere Ownership por taller/miembro y semÃ¡ntica de contexto no resuelta â€” post-MVP).
 
-### D-036 — VIN opcional en MVP
+### D-036 â€” VIN opcional en MVP
 
-- **Decisión:** `vin` es opcional al crear vehículo. La UI informa que completarlo mejora la trazabilidad, pero no bloquea el registro. `vin` duplicado → 409 CONFLICT con mensaje específico.
-- **Razón:** obligar VIN aumenta fricción de alta sin valor probado en MVP; la trazabilidad mejora si se completa, pero el registro con placa es válido.
-- **Impacto:** backend — capturar P2002 de `vin`/`engine_number` en `create()` y mapearlo a 409 (antes 500). Frontend — campo VIN opcional con nota.
-- **Alternativas descartadas:** VIN obligatorio (fricción); texto libre de VIN (rompe unicidad/trazabilidad).
+- **DecisiÃ³n:** `vin` es opcional al crear vehÃ­culo. La UI informa que completarlo mejora la trazabilidad, pero no bloquea el registro. `vin` duplicado â†’ 409 CONFLICT con mensaje especÃ­fico.
+- **RazÃ³n:** obligar VIN aumenta fricciÃ³n de alta sin valor probado en MVP; la trazabilidad mejora si se completa, pero el registro con placa es vÃ¡lido.
+- **Impacto:** backend â€” capturar P2002 de `vin`/`engine_number` en `create()` y mapearlo a 409 (antes 500). Frontend â€” campo VIN opcional con nota.
+- **Alternativas descartadas:** VIN obligatorio (fricciÃ³n); texto libre de VIN (rompe unicidad/trazabilidad).
 
-### D-037 — Placa: formato libre + normalización a mayúsculas
+### D-037 â€” Placa: formato libre + normalizaciÃ³n a mayÃºsculas
 
-- **Decisión:** placa alfanumérica de 2–10 caracteres. El backend normaliza `trim().toUpperCase()` tanto al buscar como al guardar, impidiendo duplicados "abc123" vs "ABC123". Sin regex por país en MVP.
-- **Razón:** el producto no define un formato nacional único; la normalización canonical evita duplicados case-insensitive con costo mínimo.
-- **Impacto:** validación DTO (`@Matches(/^[A-Za-z0-9]{2,10}$/)`), normalización en handler (armoniza busca+guarda) y en `findByLicensePlate` (red de seguridad).
-- **Alternativas descartadas:** regex por país (MVP multi-país sin decisión); solo trim (no resuelve case-insensitive).
+- **DecisiÃ³n:** placa alfanumÃ©rica de 2â€“10 caracteres. El backend normaliza `trim().toUpperCase()` tanto al buscar como al guardar, impidiendo duplicados "abc123" vs "ABC123". Sin regex por paÃ­s en MVP.
+- **RazÃ³n:** el producto no define un formato nacional Ãºnico; la normalizaciÃ³n canonical evita duplicados case-insensitive con costo mÃ­nimo.
+- **Impacto:** validaciÃ³n DTO (`@Matches(/^[A-Za-z0-9]{2,10}$/)`), normalizaciÃ³n en handler (armoniza busca+guarda) y en `findByLicensePlate` (red de seguridad).
+- **Alternativas descartadas:** regex por paÃ­s (MVP multi-paÃ­s sin decisiÃ³n); solo trim (no resuelve case-insensitive).
 
-### D-038 — Catálogo opcional, sin texto libre
+### D-038 â€” CatÃ¡logo opcional, sin texto libre
 
-- **Decisión:** el selector marca → modelo → versión (catálogo) es opcional. Si no se selecciona versión, el vehículo se guarda con `versionId: null` y la UI muestra marca/modelo/versión como "—". No hay campos de texto libre para marca/modelo/versión en esta iteración.
-- **Razón:** el catálogo ya existe; el texto libre degradaría la consistencia de datos y complicaría el timeline futuro (F-013).
-- **Impacto:** frontend — cascada brands/models/versions on-demand; si el catálogo falla, el registro sigue sin versionId. Backend — sin cambios (versionId ya es opcional).
-- **Alternativas descartadas:** texto libre (deuda de normalización de datos); catálogo obligatorio (bloquea registros cuando el catálogo está incompleto).
+- **DecisiÃ³n:** el selector marca â†’ modelo â†’ versiÃ³n (catÃ¡logo) es opcional. Si no se selecciona versiÃ³n, el vehÃ­culo se guarda con `versionId: null` y la UI muestra marca/modelo/versiÃ³n como "â€”". No hay campos de texto libre para marca/modelo/versiÃ³n en esta iteraciÃ³n.
+- **RazÃ³n:** el catÃ¡logo ya existe; el texto libre degradarÃ­a la consistencia de datos y complicarÃ­a el timeline futuro (F-013).
+- **Impacto:** frontend â€” cascada brands/models/versions on-demand; si el catÃ¡logo falla, el registro sigue sin versionId. Backend â€” sin cambios (versionId ya es opcional).
+- **Alternativas descartadas:** texto libre (deuda de normalizaciÃ³n de datos); catÃ¡logo obligatorio (bloquea registros cuando el catÃ¡logo estÃ¡ incompleto).
 
 ## Implementado
 
-### Backend (robustez, sin migración — el schema no cambió)
+### Backend (robustez, sin migraciÃ³n â€” el schema no cambiÃ³)
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
-| D-037 | `register-vehicle.dto.ts` — `@Matches(/^[A-Za-z0-9]{2,10}$/)` (mensaje español). |
-| D-037 | `register-vehicle.handler.ts` — `trim().toUpperCase()` antes de `findByLicensePlate` y `create`; pre-check placa → 409 conservado. |
-| D-037 | `prisma-vehicle.repository.ts` — `findByLicensePlate()` normaliza su input (red de seguridad). |
-| D-036 | `prisma-vehicle.repository.ts` `create()` — captura `PrismaClientKnownRequestError` P2002, inspecciona `meta.target` (`license_plate`/`vin`/`engine_number`) y relanza `ConflictException` con mensaje específico en español; fallback genérico. |
-| Contrato | `list-vehicles.handler.ts` — `GET /api/vehicles` devuelve ítems con shape `VehicleResponseDto` (brand/model/version desnormalizados vía include) + ownerships activas + foto primaria + `meta` (antes raw Prisma). |
+| D-037 | `register-vehicle.dto.ts` â€” `@Matches(/^[A-Za-z0-9]{2,10}$/)` (mensaje espaÃ±ol). |
+| D-037 | `register-vehicle.handler.ts` â€” `trim().toUpperCase()` antes de `findByLicensePlate` y `create`; pre-check placa â†’ 409 conservado. |
+| D-037 | `prisma-vehicle.repository.ts` â€” `findByLicensePlate()` normaliza su input (red de seguridad). |
+| D-036 | `prisma-vehicle.repository.ts` `create()` â€” captura `PrismaClientKnownRequestError` P2002, inspecciona `meta.target` (`license_plate`/`vin`/`engine_number`) y relanza `ConflictException` con mensaje especÃ­fico en espaÃ±ol; fallback genÃ©rico. |
+| Contrato | `list-vehicles.handler.ts` â€” `GET /api/vehicles` devuelve Ã­tems con shape `VehicleResponseDto` (brand/model/version desnormalizados vÃ­a include) + ownerships activas + foto primaria + `meta` (antes raw Prisma). |
 
 ### Frontend (journey completo)
 
-| Ítem | Detalle |
+| Ãtem | Detalle |
 | ---- | ------- |
-| API | `src/lib/api.ts` — `toApiError` + `vehicleApi` (listVehicles, registerVehicle, listBrands, listModels, listVersions) sobre el cliente ky existente (refresh 401 ya integrado); sin `X-Context-Type` (D-035). |
-| Tipos | `src/types/vehicle.ts` — `Vehicle`, `VehicleListResponse/Meta`, `VehicleBrand/Model/Version`, `RegisterVehicleInput` (brand/model/version opcionales por tolerancia). |
-| Listado | `src/app/(dashboard)/vehicles/page.tsx` — listado con estados loading/error/vacío; CTA "Registrar vehículo"; paginación con `meta`. |
-| Formulario | `src/app/(dashboard)/vehicles/new/page.tsx` — RHF + zod (placa 2–10 alfanumérica normalizada; VIN opcional con nota D-036; cascada catálogo on-demand D-038); 409 mapeado por campo (licensePlate/vin) o general (engineNumber); valores preservados en error; post-201 → invalidate + refreshSession + redirect `/vehicles`. |
-| UI | `src/components/ui/select.tsx` + `textarea.tsx` (primitivas nativas, patrón shadcn existente). |
-| Navegación | `src/app/(dashboard)/dashboard/page.tsx` — card "Mis vehículos"; `src/proxy.ts` — `/vehicles` en `protectedRoutes`. |
+| API | `src/lib/api.ts` â€” `toApiError` + `vehicleApi` (listVehicles, registerVehicle, listBrands, listModels, listVersions) sobre el cliente ky existente (refresh 401 ya integrado); sin `X-Context-Type` (D-035). |
+| Tipos | `src/types/vehicle.ts` â€” `Vehicle`, `VehicleListResponse/Meta`, `VehicleBrand/Model/Version`, `RegisterVehicleInput` (brand/model/version opcionales por tolerancia). |
+| Listado | `src/app/(dashboard)/vehicles/page.tsx` â€” listado con estados loading/error/vacÃ­o; CTA "Registrar vehÃ­culo"; paginaciÃ³n con `meta`. |
+| Formulario | `src/app/(dashboard)/vehicles/new/page.tsx` â€” RHF + zod (placa 2â€“10 alfanumÃ©rica normalizada; VIN opcional con nota D-036; cascada catÃ¡logo on-demand D-038); 409 mapeado por campo (licensePlate/vin) o general (engineNumber); valores preservados en error; post-201 â†’ invalidate + refreshSession + redirect `/vehicles`. |
+| UI | `src/components/ui/select.tsx` + `textarea.tsx` (primitivas nativas, patrÃ³n shadcn existente). |
+| NavegaciÃ³n | `src/app/(dashboard)/dashboard/page.tsx` â€” card "Mis vehÃ­culos"; `src/proxy.ts` â€” `/vehicles` en `protectedRoutes`. |
 
-## Decisions técnicas del Tech Lead (divergencias a validar)
+## Decisions tÃ©cnicas del Tech Lead (divergencias a validar)
 
-El Tech Lead emitió `DESIGN-F-010` con 7 decisiones (D1 contrato uniforme, D2 normalización, D3 validación, D4 P2002, D5 sin migración, D6 tests, D7 contrato frontend). Estado de seguimiento:
+El Tech Lead emitiÃ³ `DESIGN-F-010` con 7 decisiones (D1 contrato uniforme, D2 normalizaciÃ³n, D3 validaciÃ³n, D4 P2002, D5 sin migraciÃ³n, D6 tests, D7 contrato frontend). Estado de seguimiento:
 
 | Directiva | Estado | Nota |
 | --------- | ------ | ---- |
-| D1 list vs detail con `VehicleResponseDto` + `meta` | ✅ Implementada | `list-vehicles.handler.ts`. **Validación TL (2026-09-09):** la sub-instrucción `?? []` se descarta deliberadamente — el listado NO incluye `documents` en su query de forma intencional (no hay consumidor en MVP; `?? []` mentiría al consumidor "no tiene documentos" cuando la realidad es "no se consultaron"). Registrada como deuda P2: fix = agregar `documents` al include del list-vehicles handler cuando aparezca un consumidor. |
-| D2 normalización en handler (autoritativa) | ✅ Implementada | + red de seguridad en `findByLicensePlate`. |
-| D3 validación DTO | ✅ Decisión técnica cerrada | **Validación TL (2026-09-09):** se acepta la normalización en handler/repository (implementación actual) en lugar de `@Transform` en el DTO. Razones: resultado funcional idéntico (D-037 satisfecho); más explícito y testeable; red de seguridad en repository (defensa en profundidad que `@Transform` no brindaría a llamadas directas al repository); no depende de `transform: true` del ValidationPipe. Sin deuda. |
-| D4 P2002 → 409 | ⚠️ Deuda P1 aceptada (MVP) | **Validación TL (2026-09-09):** se acepta `ConflictException` (envelope CONFLICT sin `errors.field`) para MVP con un único consumidor controlado. El frontend mapea por texto (`conflictField`) — frágil pero contenido. **Trigger de corrección:** segundo consumidor de `POST /api/vehicles` (mobile/API pública) → bloquear y aplicar fix (~30 líneas, 5 archivos): `CodedHttpException` + `errors.field` en repository y handler, `expectConflictWithMessage` verifica shape, frontend lee `errors.field` en vez de texto. Inconsistencia con patrón `record-mileage` (que sí usa `CodedHttpException` + `errors`) = cosmética. |
-| D5 sin migración | ✅ Cumplida | Schema intacto; constraints unique ya existían. |
-| D6 tests | ✅ Implementada | 3 specs nuevos (handler, repository, list handler). |
-| D7 contrato frontend | ✅ Implementada | Según D1/D7; el frontend tolera shape opcional de brand/model/version. |
+| D1 list vs detail con `VehicleResponseDto` + `meta` | âœ… Implementada | `list-vehicles.handler.ts`. **ValidaciÃ³n TL (2026-09-09):** la sub-instrucciÃ³n `?? []` se descarta deliberadamente â€” el listado NO incluye `documents` en su query de forma intencional (no hay consumidor en MVP; `?? []` mentirÃ­a al consumidor "no tiene documentos" cuando la realidad es "no se consultaron"). Registrada como deuda P2: fix = agregar `documents` al include del list-vehicles handler cuando aparezca un consumidor. |
+| D2 normalizaciÃ³n en handler (autoritativa) | âœ… Implementada | + red de seguridad en `findByLicensePlate`. |
+| D3 validaciÃ³n DTO | âœ… DecisiÃ³n tÃ©cnica cerrada | **ValidaciÃ³n TL (2026-09-09):** se acepta la normalizaciÃ³n en handler/repository (implementaciÃ³n actual) en lugar de `@Transform` en el DTO. Razones: resultado funcional idÃ©ntico (D-037 satisfecho); mÃ¡s explÃ­cito y testeable; red de seguridad en repository (defensa en profundidad que `@Transform` no brindarÃ­a a llamadas directas al repository); no depende de `transform: true` del ValidationPipe. Sin deuda. |
+| D4 P2002 â†’ 409 | âš ï¸ Deuda P1 aceptada (MVP) | **ValidaciÃ³n TL (2026-09-09):** se acepta `ConflictException` (envelope CONFLICT sin `errors.field`) para MVP con un Ãºnico consumidor controlado. El frontend mapea por texto (`conflictField`) â€” frÃ¡gil pero contenido. **Trigger de correcciÃ³n:** segundo consumidor de `POST /api/vehicles` (mobile/API pÃºblica) â†’ bloquear y aplicar fix (~30 lÃ­neas, 5 archivos): `CodedHttpException` + `errors.field` en repository y handler, `expectConflictWithMessage` verifica shape, frontend lee `errors.field` en vez de texto. Inconsistencia con patrÃ³n `record-mileage` (que sÃ­ usa `CodedHttpException` + `errors`) = cosmÃ©tica. |
+| D5 sin migraciÃ³n | âœ… Cumplida | Schema intacto; constraints unique ya existÃ­an. |
+| D6 tests | âœ… Implementada | 3 specs nuevos (handler, repository, list handler). |
+| D7 contrato frontend | âœ… Implementada | SegÃºn D1/D7; el frontend tolera shape opcional de brand/model/version. |
 
-**Resultado del escalamiento al Tech Lead (2026-09-09):** los 3 puntos (D1-DTO, D3, D4) fueron validados y aceptados como están — 2 decisiones técnicas cerradas sin deuda (D3) o con deuda P2 condicional (D1), y 1 deuda P1 con trigger explícito (D4). **No se requirió implementación adicional del backend-engineer.**
+**Resultado del escalamiento al Tech Lead (2026-09-09):** los 3 puntos (D1-DTO, D3, D4) fueron validados y aceptados como estÃ¡n â€” 2 decisiones tÃ©cnicas cerradas sin deuda (D3) o con deuda P2 condicional (D1), y 1 deuda P1 con trigger explÃ­cito (D4). **No se requiriÃ³ implementaciÃ³n adicional del backend-engineer.**
 
-## Verificación
+## VerificaciÃ³n
 
-- Backend: `npm test` → **22 suites / 185 tests PASS** (19/173 previos + 3 suites/12 tests nuevos: register-vehicle.handler, prisma-vehicle.repository, list-vehicles.handler) · `npm run build` exit 0.
-- Frontend: `npm test` → **34/34 PASS** (4 suites nuevas: vehicles list 4, register form 5, proxy +3, api +3) · `npm run build` exit 0 (rutas `/vehicles` y `/vehicles/new` prerenderizadas; proxy activo).
+- Backend: `npm test` â†’ **22 suites / 185 tests PASS** (19/173 previos + 3 suites/12 tests nuevos: register-vehicle.handler, prisma-vehicle.repository, list-vehicles.handler) Â· `npm run build` exit 0.
+- Frontend: `npm test` â†’ **34/34 PASS** (4 suites nuevas: vehicles list 4, register form 5, proxy +3, api +3) Â· `npm run build` exit 0 (rutas `/vehicles` y `/vehicles/new` prerenderizadas; proxy activo).
 - Sin cambios de schema; sin migraciones; sin nuevas dependencias (RHF + zod ya estaban en el proyecto).
 
 ## Observaciones / deuda registrada
 
 - **Puntos del Tech Lead a validar** (escalados el 2026-09-09; no los resuelve el PM):
-  1. `vehicle-response.dto.ts` `?? []` no aplicado → key-drifting list vs detail persiste en `documents`.
+  1. `vehicle-response.dto.ts` `?? []` no aplicado â†’ key-drifting list vs detail persiste en `documents`.
   2. `@Transform` del DTO omitido por el engineer (divergencia deliberada documentada).
   3. Envelope 409 sin `errors.field` tipado (usa `ConflictException` en vez de `CodedHttpException`).
-- **Mensajes de error en español:** el pre-check de placa ahora responde en español (el snapshot de la spec §5 lo tenía en inglés — el AC §10 y el journey 6.2 exigen español). Sin consumidores previos del mensaje en inglés; el `code` (`CONFLICT`) no cambia.
-- **`engineNumber` no está en el formulario MVP:** su 409 se muestra como error general de submit (no es campo del form).
-- **E2E pendiente:** el journey completo aún no se verificó contra el backend real con base de datos (tests unitarios + build verdes). QA debe correr el flujo completo (registro → listado → dashboard isVehicleOwner) antes del cierre formal.
+- **Mensajes de error en espaÃ±ol:** el pre-check de placa ahora responde en espaÃ±ol (el snapshot de la spec Â§5 lo tenÃ­a en inglÃ©s â€” el AC Â§10 y el journey 6.2 exigen espaÃ±ol). Sin consumidores previos del mensaje en inglÃ©s; el `code` (`CONFLICT`) no cambia.
+- **`engineNumber` no estÃ¡ en el formulario MVP:** su 409 se muestra como error general de submit (no es campo del form).
+- **E2E pendiente:** el journey completo aÃºn no se verificÃ³ contra el backend real con base de datos (tests unitarios + build verdes). QA debe correr el flujo completo (registro â†’ listado â†’ dashboard isVehicleOwner) antes del cierre formal.
 
-## Cierre de implementación (2026-09-09)
+## Cierre de implementaciÃ³n (2026-09-09)
 
-| Decisión | Estado | Implementación |
+| DecisiÃ³n | Estado | ImplementaciÃ³n |
 | -------- | ------ | -------------- |
-| D-035 | ✅ Aprobada e implementada | Frontend sin `X-Context-Type`; ownership automático por el repository existente. |
-| D-036 | ✅ Aprobada e implementada | VIN opcional en formulario (nota de trazabilidad); P2002 vin/engine → 409. |
-| D-037 | ✅ Aprobada e implementada | `@Matches` 2–10 + normalización trim/UPPER en handler y `findByLicensePlate`. |
-| D-038 | ✅ Aprobada e implementada | Cascada catálogo on-demand; registro sin versionId funciona; UI "—" ante ausencia. |
-| Contrato list | ✅ Implementada (validación TL pendiente) | `GET /vehicles` con shape `VehicleResponseDto` + `meta`; divergencias D1-DTO/D3/D4 registradas arriba. |
+| D-035 | âœ… Aprobada e implementada | Frontend sin `X-Context-Type`; ownership automÃ¡tico por el repository existente. |
+| D-036 | âœ… Aprobada e implementada | VIN opcional en formulario (nota de trazabilidad); P2002 vin/engine â†’ 409. |
+| D-037 | âœ… Aprobada e implementada | `@Matches` 2â€“10 + normalizaciÃ³n trim/UPPER en handler y `findByLicensePlate`. |
+| D-038 | âœ… Aprobada e implementada | Cascada catÃ¡logo on-demand; registro sin versionId funciona; UI "â€”" ante ausencia. |
+| Contrato list | âœ… Implementada (validaciÃ³n TL pendiente) | `GET /vehicles` con shape `VehicleResponseDto` + `meta`; divergencias D1-DTO/D3/D4 registradas arriba. |
 
-Verificación global: backend `npm test` 22 suites / 185 PASS · backend `npm run build` exit 0 · frontend `npm test` 34/34 PASS · frontend `npm run build` exit 0.
+VerificaciÃ³n global: backend `npm test` 22 suites / 185 PASS Â· backend `npm run build` exit 0 Â· frontend `npm test` 34/34 PASS Â· frontend `npm run build` exit 0.
 
 ---
 
-# 17. Registro (2026-09-09): QA E2E F-010 + mini-iteración de corrección (F-1/F-2)
+# 17. Registro (2026-09-09): QA E2E F-010 + mini-iteraciÃ³n de correcciÃ³n (F-1/F-2)
 
 ## Objetivo
 
-Ejecutar el plan de QA E2E de F-010 (Registrar Vehículo) contra backend real + BD local, verificar el journey UI, y corregir los hallazgos detectados antes de dar por cerrada la iteración.
+Ejecutar el plan de QA E2E de F-010 (Registrar VehÃ­culo) contra backend real + BD local, verificar el journey UI, y corregir los hallazgos detectados antes de dar por cerrada la iteraciÃ³n.
 
 ## Cobertura QA (ejecutada 2026-09-09)
 
-### API / BD (backend-engineer) — 12 casos en primera pasada
+### API / BD (backend-engineer) â€” 12 casos en primera pasada
 | Resultado | Casos |
 |---|---|
-| **PASS** (10) | Login seed 201+cookies; ownership en BD correcta; placa duplicada lowercase→409 (D-037); VIN→409 sin 500; engineNumber→409 sin 500; sin sesión→401; `GET /vehicles` con `meta` + shape desnormalizado; `GET /:id` 200/403/404; catálogo cascada 200; POST sin versionId→201 `versionId:null` (D-038); listado con ownerships activas. |
-| **FAIL parcial** (1) | **F-1:** `POST /api/vehicles` con `versionId` válido → 201 pero `brand/model/version: null` (AC §10 no cumplido; `create()` sin include). |
-| **FAIL integración** (1) | **F-2:** 9/10 versiones del catálogo seed con IDs `00000000-...-0001..009` rechazadas con 400 por `@IsUUID()` (seed, no DTO). En UI real, elegir la mayoría de las versiones del catálogo → 400. |
+| **PASS** (10) | Login seed 201+cookies; ownership en BD correcta; placa duplicada lowercaseâ†’409 (D-037); VINâ†’409 sin 500; engineNumberâ†’409 sin 500; sin sesiÃ³nâ†’401; `GET /vehicles` con `meta` + shape desnormalizado; `GET /:id` 200/403/404; catÃ¡logo cascada 200; POST sin versionIdâ†’201 `versionId:null` (D-038); listado con ownerships activas. |
+| **FAIL parcial** (1) | **F-1:** `POST /api/vehicles` con `versionId` vÃ¡lido â†’ 201 pero `brand/model/version: null` (AC Â§10 no cumplido; `create()` sin include). |
+| **FAIL integraciÃ³n** (1) | **F-2:** 9/10 versiones del catÃ¡logo seed con IDs `00000000-...-0001..009` rechazadas con 400 por `@IsUUID()` (seed, no DTO). En UI real, elegir la mayorÃ­a de las versiones del catÃ¡logo â†’ 400. |
 
-### UI (frontend-tech-lead) — 10 casos
-8 PASS · 1 PARTIAL (QA-U5: manejo 409 engineNumber/fallback correcto en código, sin tests — LOW) · 0 FAIL.
-4 vacíos de cobertura LOW: test 409 engineNumber, test 409 fallback, test dashboard card "Mis vehículos", edge cases zod (min/max placa, rango años). 34/34 tests PASS + build OK (rutas `/vehicles` y `/vehicles/new` generadas).
+### UI (frontend-tech-lead) â€” 10 casos
+8 PASS Â· 1 PARTIAL (QA-U5: manejo 409 engineNumber/fallback correcto en cÃ³digo, sin tests â€” LOW) Â· 0 FAIL.
+4 vacÃ­os de cobertura LOW: test 409 engineNumber, test 409 fallback, test dashboard card "Mis vehÃ­culos", edge cases zod (min/max placa, rango aÃ±os). 34/34 tests PASS + build OK (rutas `/vehicles` y `/vehicles/new` generadas).
 
-## Validación técnica (Tech Lead)
+## ValidaciÃ³n tÃ©cnica (Tech Lead)
 
-- **F-1:** causa raíz confirmada (`vehicle.create` sin include; el patrón ya existía en list/get). Decisión: agregar `include: { version: { include: { model: { include: { brand: true } } } } }` en `create()` (único round-trip, consistente con list/detail). Descartado refetch tras create (ventana de carrera) y handler-lectura (viola patrón).
-- **F-2:** `@IsUUID()` en class-validator 0.15.1 delega a `validator` con `version='all'` — verificado empíricamente: **`@IsUUID('all')` NO acepta los IDs del seed** (fallan por dígito de versión `0`; solo `'loose'` los aceptaría). El DTO es correcto; el defecto es del **seed**. Opciones: A) re-seed con v4 deterministas (recomendada), B) re-seed sin id explícito (rompe idempotencia), C) `@IsUUID('loose')` (deuda fallback, degrada contrato), D) `'all'` (no resuelve).
+- **F-1:** causa raÃ­z confirmada (`vehicle.create` sin include; el patrÃ³n ya existÃ­a en list/get). DecisiÃ³n: agregar `include: { version: { include: { model: { include: { brand: true } } } } }` en `create()` (Ãºnico round-trip, consistente con list/detail). Descartado refetch tras create (ventana de carrera) y handler-lectura (viola patrÃ³n).
+- **F-2:** `@IsUUID()` en class-validator 0.15.1 delega a `validator` con `version='all'` â€” verificado empÃ­ricamente: **`@IsUUID('all')` NO acepta los IDs del seed** (fallan por dÃ­gito de versiÃ³n `0`; solo `'loose'` los aceptarÃ­a). El DTO es correcto; el defecto es del **seed**. Opciones: A) re-seed con v4 deterministas (recomendada), B) re-seed sin id explÃ­cito (rompe idempotencia), C) `@IsUUID('loose')` (deuda fallback, degrada contrato), D) `'all'` (no resuelve).
 
 ## Correcciones aplicadas y verificadas (10/10 PASS en re-QA)
 
-### F-1 (commit `f8d6654`) — hidratación en create
-- `prisma-vehicle.repository.ts` `create()`: + include de `version.model.brand` (idéntico a list/get).
-- `vehicle.repository.ts`: tipo de retorno con relación hidratada (sin mover al DTO para evitar dependencia repositorio→DTO).
-- Tests: +1 en `prisma-vehicle.repository.spec.ts` (assert include) + nuevo `vehicle-response.dto.spec.ts` (2 casos: con rama poblada → nombres; sin versión → `null`, no rompe).
-- Verificación: 23 suites / 188 tests PASS + build OK + e2e 201 con `brand:"Toyota", model:"Corolla", version:"1.8 XLI"`.
+### F-1 (commit `f8d6654`) â€” hidrataciÃ³n en create
+- `prisma-vehicle.repository.ts` `create()`: + include de `version.model.brand` (idÃ©ntico a list/get).
+- `vehicle.repository.ts`: tipo de retorno con relaciÃ³n hidratada (sin mover al DTO para evitar dependencia repositorioâ†’DTO).
+- Tests: +1 en `prisma-vehicle.repository.spec.ts` (assert include) + nuevo `vehicle-response.dto.spec.ts` (2 casos: con rama poblada â†’ nombres; sin versiÃ³n â†’ `null`, no rompe).
+- VerificaciÃ³n: 23 suites / 188 tests PASS + build OK + e2e 201 con `brand:"Toyota", model:"Corolla", version:"1.8 XLI"`.
 
-### F-2 (commit `e07cf9b`) — IDs de catálogo v4 deterministas
-- **Estrategia (Database):** migración de datos versionada (no re-seed directo) porque 2 vehículos reales referenciaban `...007`/`...008`. Re-key en sitio (`UPDATE vehicle_versions SET id = <v4> WHERE id = <v0>` × 9) aprovechando `ON UPDATE CASCADE` de la FK (actualiza automáticamente los vehículos referenciantes; atómico; no-op en BD frescas).
-- Migración: `prisma/migrations/20260909000001_fix_catalog_version_ids/migration.sql` (SQL puro, sin cambios de schema).
-- `prisma/seed.ts`: 9 IDs `00000000-0000-0000-...-0001..009` → `00000000-0000-4000-8000-...-0001..009` (v4 deterministas; `crypto.randomUUID()` descartado por idempotencia).
-- Verificación: seed idempotente (doble `db:seed`, sin duplicados), catálogo expone solo v4, POST 201 con versión del catálogo (antes 400).
-- **Regla para el futuro:** el patrón `00000000-...` determinista es correcto para catálogo semilla vía upsert, pero **no debe usarse para entidades de usuario** (vehicles/users).
+### F-2 (commit `e07cf9b`) â€” IDs de catÃ¡logo v4 deterministas
+- **Estrategia (Database):** migraciÃ³n de datos versionada (no re-seed directo) porque 2 vehÃ­culos reales referenciaban `...007`/`...008`. Re-key en sitio (`UPDATE vehicle_versions SET id = <v4> WHERE id = <v0>` Ã— 9) aprovechando `ON UPDATE CASCADE` de la FK (actualiza automÃ¡ticamente los vehÃ­culos referenciantes; atÃ³mico; no-op en BD frescas).
+- MigraciÃ³n: `prisma/migrations/20260909000001_fix_catalog_version_ids/migration.sql` (SQL puro, sin cambios de schema).
+- `prisma/seed.ts`: 9 IDs `00000000-0000-0000-...-0001..009` â†’ `00000000-0000-4000-8000-...-0001..009` (v4 deterministas; `crypto.randomUUID()` descartado por idempotencia).
+- VerificaciÃ³n: seed idempotente (doble `db:seed`, sin duplicados), catÃ¡logo expone solo v4, POST 201 con versiÃ³n del catÃ¡logo (antes 400).
+- **Regla para el futuro:** el patrÃ³n `00000000-...` determinista es correcto para catÃ¡logo semilla vÃ­a upsert, pero **no debe usarse para entidades de usuario** (vehicles/users).
 
-## Re-QA de cierre (backend-engineer) — 10/10 PASS
+## Re-QA de cierre (backend-engineer) â€” 10/10 PASS
 
-QA-2 (registro con versión → brand/model/version no-null; sin versión → null, D-038) · QA-5 (placa/VIN/engine duplicados → 409, no 500) · QA-6 (listado/detalle desnormalizados, 403/404, catálogo sin IDs v0). BD restaurada a estado previo (4 vehículos, 10 versiones; registros de prueba eliminados en transacción).
+QA-2 (registro con versiÃ³n â†’ brand/model/version no-null; sin versiÃ³n â†’ null, D-038) Â· QA-5 (placa/VIN/engine duplicados â†’ 409, no 500) Â· QA-6 (listado/detalle desnormalizados, 403/404, catÃ¡logo sin IDs v0). BD restaurada a estado previo (4 vehÃ­culos, 10 versiones; registros de prueba eliminados en transacciÃ³n).
 
 ## Deuda / decisiones pendientes detectadas en el cierre
 
-1. **Bug pre-existente `DELETE /api/vehicles/:id` → 500** (descubierto por Database, NO introducido por F-2): el handler borra físicamente cuando no hay historial, pero `VehicleOwnership.vehicle` es `onDelete: Restrict` → `prisma.vehicle.delete` falla con P2003 para todo vehículo creado vía API. Decisión del TL recomendada: **ticket separado** (probablemente ampliar `hasHistory` a ownerships y/o borrar ownerships sin historial en la misma transacción). **No bloquea** la iteración F-010; se agenda para F-011 o próxima iteración de vehículos.
-2. **Baseline QA con datos de prueba previos:** `QA2ZZZ9` y `QA11PLACA` (owner user2) permanecen como vehículos de desarrollo. Decisión de depuración: Database/Tech Lead pueden limpiarlos en una pasada dedicada.
-3. **Proceso backend en 3001:** quedó corriendo el `dist` nuevo con F-1 (PID 25180 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
-4. **Datos QA primera pasada vs baseline:** los criterios del QA asumieron baseline "4 vehículos"; los registros QA previos forman parte de ese conteo. Documentado para no volver a contar como pérdida.
+1. **Bug pre-existente `DELETE /api/vehicles/:id` â†’ 500** (descubierto por Database, NO introducido por F-2): el handler borra fÃ­sicamente cuando no hay historial, pero `VehicleOwnership.vehicle` es `onDelete: Restrict` â†’ `prisma.vehicle.delete` falla con P2003 para todo vehÃ­culo creado vÃ­a API. DecisiÃ³n del TL recomendada: **ticket separado** (probablemente ampliar `hasHistory` a ownerships y/o borrar ownerships sin historial en la misma transacciÃ³n). **No bloquea** la iteraciÃ³n F-010; se agenda para F-011 o prÃ³xima iteraciÃ³n de vehÃ­culos.
+2. **Baseline QA con datos de prueba previos:** `QA2ZZZ9` y `QA11PLACA` (owner user2) permanecen como vehÃ­culos de desarrollo. DecisiÃ³n de depuraciÃ³n: Database/Tech Lead pueden limpiarlos en una pasada dedicada.
+3. **Proceso backend en 3001:** quedÃ³ corriendo el `dist` nuevo con F-1 (PID 25180 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
+4. **Datos QA primera pasada vs baseline:** los criterios del QA asumieron baseline "4 vehÃ­culos"; los registros QA previos forman parte de ese conteo. Documentado para no volver a contar como pÃ©rdida.
 
-# 18. Registro (2026-09-11): F-011 Editar Veh�culo end-to-end (D-039..D-043)
+# 18. Registro (2026-09-11): F-011 Editar Vehï¿½culo end-to-end (D-039..D-043)
 
 ## Objetivo
 
-Completar el journey de edici�n de veh�culo (F-011) de extremo a extremo: el owner edita sus veh�culos desde "Mis veh�culos" con PATCH parcial, duplicados a 409, normalizaci�n de placa, y persistencia de null al vaciar campos opcionales.
+Completar el journey de ediciï¿½n de vehï¿½culo (F-011) de extremo a extremo: el owner edita sus vehï¿½culos desde "Mis vehï¿½culos" con PATCH parcial, duplicados a 409, normalizaciï¿½n de placa, y persistencia de null al vaciar campos opcionales.
 
 ## Decisiones de producto confirmadas (2026-09-11)
 
-### D-039 � Solo el owner puede editar
+### D-039 ï¿½ Solo el owner puede editar
 - `PATCH /api/vehicles/:id` usa `assertVehicleOwned` (no `assertVehicleAccess`). Usuarios con acceso compartido consultan (GET) pero no editan en MVP.
 - La UI solo muestra "Editar" cuando `ownerships` tiene `type: 'owner'` activa (verificado por `o.userId === user.id && o.type === 'owner' && !o.endsAt`).
-- Alternativas descartadas: permitir edici�n a co-owners (equivaldr�a a transferencia informal, fuera de MVP); mantener `assertVehicleAccess` (habilitar�a edici�n a cualquier acceso compartido).
+- Alternativas descartadas: permitir ediciï¿½n a co-owners (equivaldrï¿½a a transferencia informal, fuera de MVP); mantener `assertVehicleAccess` (habilitarï¿½a ediciï¿½n a cualquier acceso compartido).
 
-### D-040 � Campos editables = todos los del alta, en PATCH parcial
-- Mismos campos de `RegisterVehicleDto`, solo los enviados. Corregir el VIN mal registrado es leg�timo: el `id` y el historial permanecen.
+### D-040 ï¿½ Campos editables = todos los del alta, en PATCH parcial
+- Mismos campos de `RegisterVehicleDto`, solo los enviados. Corregir el VIN mal registrado es legï¿½timo: el `id` y el historial permanecen.
 
-### D-041 � Duplicados al editar ? 409, no 500
-- `P2002` (placa/VIN/engine) en `update()` se traduce igual que en register (mensaje espec�fico; reuso de `mapUniqueViolation`).
+### D-041 ï¿½ Duplicados al editar ? 409, no 500
+- `P2002` (placa/VIN/engine) en `update()` se traduce igual que en register (mensaje especï¿½fico; reuso de `mapUniqueViolation`).
 
-### D-042 � Normalizaci�n de placa tambi�n al editar
+### D-042 ï¿½ Normalizaciï¿½n de placa tambiï¿½n al editar
 - `trim().toUpperCase()` antes de buscar/guardar en el update (igual que D-037).
 - Solo condicional: si `licensePlate` no viene en el PATCH, no se toca (guard `typeof === 'string'`; nunca `undefined`?`null`).
 
-### D-043 � Vaciar campos opcionales en edici�n persiste null
-- Campo opcional de texto/n�mero vaciado por el usuario (`vin`, `engineNumber`, `color`, `notes`, `manufactureYear`, `modelYear`) se env�a como `null` expl�cito ? backend persiste NULL.
-- **El cat�logo (`versionId`) NUNCA viaja `null`:** si no cambia, se omite (`undefined`) para no borrar la rama (RF-2). `licensePlate` es obligatoria y no se vac�a.
-- Comprobado emp�ricamente por backend: `class-validator 0.15.1` con `@IsOptional()` acepta `null`; `null` en Prisma = SET NULL (vs `undefined` = no tocar); columnas opcionales son nullable en schema. Sin cambios de producci�n backend necesarios para D-043 � solo tests (6 nuevos).
+### D-043 ï¿½ Vaciar campos opcionales en ediciï¿½n persiste null
+- Campo opcional de texto/nï¿½mero vaciado por el usuario (`vin`, `engineNumber`, `color`, `notes`, `manufactureYear`, `modelYear`) se envï¿½a como `null` explï¿½cito ? backend persiste NULL.
+- **El catï¿½logo (`versionId`) NUNCA viaja `null`:** si no cambia, se omite (`undefined`) para no borrar la rama (RF-2). `licensePlate` es obligatoria y no se vacï¿½a.
+- Comprobado empï¿½ricamente por backend: `class-validator 0.15.1` con `@IsOptional()` acepta `null`; `null` en Prisma = SET NULL (vs `undefined` = no tocar); columnas opcionales son nullable en schema. Sin cambios de producciï¿½n backend necesarios para D-043 ï¿½ solo tests (6 nuevos).
 
-## Decisiones t�cnicas validadas por el Tech Lead (2026-09-11)
+## Decisiones tï¿½cnicas validadas por el Tech Lead (2026-09-11)
 
-1. **Controller PATCH**: `assertVehicleOwned` (D-039) + el 200 DEBE devolver `VehicleResponseDto.from(vehicle)` (mismo patr�n que `create()`/`findOne()`; sin esto el 200 respond�a raw Prisma anidado). Verificado en c�digo y smoke e2e.
-2. **P2025 (registro no encontrado en `update()`) ? NO se mapea.** El engineer verific� con docs oficiales que `prisma.model.update` con `where` inexistente lanza P2025 (no P2001). TL acept� el no-mapeo: coherente con el proyecto (0 mapeos P2025 existentes; 404 v�a `findById` pre-operaci�n; race window �nfimo y solo con hard-delete de veh�culo sin historial).
-3. **No-op PATCH `{}` sin hidratar ? aceptado como deuda.** Edge case solo alcanzable con body literal `{}` (el frontend siempre env�a el form completo). Hidratar exigir�a cambiar la interfaz `VehicleRepository.findById`: costo desproporcionado. Deuda registrada.
-4. **`brandId`/`modelId` agregados a `VehicleResponseDto` (cambio exigido por el TL).** Riesgo ~0 verificado (specs usan asserts por propiedad, no `toEqual` completo). Elimina el workaround de preselecci�n de cat�logo por nombre en el frontend (colisiones de nombres; edge case del no-op). Reemplazo del workaround por IDs en la cascada = follow-up de frontend.
+1. **Controller PATCH**: `assertVehicleOwned` (D-039) + el 200 DEBE devolver `VehicleResponseDto.from(vehicle)` (mismo patrï¿½n que `create()`/`findOne()`; sin esto el 200 respondï¿½a raw Prisma anidado). Verificado en cï¿½digo y smoke e2e.
+2. **P2025 (registro no encontrado en `update()`) ? NO se mapea.** El engineer verificï¿½ con docs oficiales que `prisma.model.update` con `where` inexistente lanza P2025 (no P2001). TL aceptï¿½ el no-mapeo: coherente con el proyecto (0 mapeos P2025 existentes; 404 vï¿½a `findById` pre-operaciï¿½n; race window ï¿½nfimo y solo con hard-delete de vehï¿½culo sin historial).
+3. **No-op PATCH `{}` sin hidratar ? aceptado como deuda.** Edge case solo alcanzable con body literal `{}` (el frontend siempre envï¿½a el form completo). Hidratar exigirï¿½a cambiar la interfaz `VehicleRepository.findById`: costo desproporcionado. Deuda registrada.
+4. **`brandId`/`modelId` agregados a `VehicleResponseDto` (cambio exigido por el TL).** Riesgo ~0 verificado (specs usan asserts por propiedad, no `toEqual` completo). Elimina el workaround de preselecciï¿½n de catï¿½logo por nombre en el frontend (colisiones de nombres; edge case del no-op). Reemplazo del workaround por IDs en la cascada = follow-up de frontend.
 
-## Cambios t�cnicos aplicados
+## Cambios tï¿½cnicos aplicados
 
 ### Backend (commit `78c2619`)
 - `vehicles.controller.ts` PATCH `:id`: `assertVehicleOwned` + `VehicleResponseDto.from` (shape aplanado en 200).
-- `update-vehicle.handler.ts`: guard PATCH `{}` ? no-op 200 sin llamar a `update()`; normalizaci�n placa D-042 condicional; sin eventos nuevos.
-- `prisma-vehicle.repository.ts` `update()`: include `version.model.brand` (id�ntico a create/list/get), P2002?409 reusando `mapUniqueViolation`, red de seguridad D-042 condicional (`typeof licensePlate === 'string'`).
-- `vehicle.repository.ts`: tipo de retorno `update` ? `HydratedVehicle` id�ntico a `create()`.
-- `vehicle-response.dto.ts`: + `brandId`/`modelId` (aditivo, desde relaci�n ya hidratada).
+- `update-vehicle.handler.ts`: guard PATCH `{}` ? no-op 200 sin llamar a `update()`; normalizaciï¿½n placa D-042 condicional; sin eventos nuevos.
+- `prisma-vehicle.repository.ts` `update()`: include `version.model.brand` (idï¿½ntico a create/list/get), P2002?409 reusando `mapUniqueViolation`, red de seguridad D-042 condicional (`typeof licensePlate === 'string'`).
+- `vehicle.repository.ts`: tipo de retorno `update` ? `HydratedVehicle` idï¿½ntico a `create()`.
+- `vehicle-response.dto.ts`: + `brandId`/`modelId` (aditivo, desde relaciï¿½n ya hidratada).
 - Tests: 24 suites / 206 tests (handler update 8, repository update 17, DTO 2; +6 por D-043).
-- Smoke e2e (backend 3001): 200 aplanado con brand/model/version � 409 placa duplicada � 403 no-owner � 404 inexistente � PATCH `{}` 200 no-op � `{ color: null }` persiste NULL. Registros QA limpiados en transacci�n.
+- Smoke e2e (backend 3001): 200 aplanado con brand/model/version ï¿½ 409 placa duplicada ï¿½ 403 no-owner ï¿½ 404 inexistente ï¿½ PATCH `{}` 200 no-op ï¿½ `{ color: null }` persiste NULL. Registros QA limpiados en transacciï¿½n.
 
 ### Frontend (commit `8f518c1`)
 - `api.ts`: + `getVehicle`/`updateVehicle`; `types/vehicle.ts`: `UpdateVehicleInput` con opcionales `string | null`.
-- P�gina `/vehicles/[id]/edit`: precarga GET /:id, cascada con preselecci�n, PATCH parcial, manejo 409/403/404/401, invalidate + redirect.
-- `vehicle-form-schema.ts` (m�dulo compartido): `vehicleFormSchema` extra�do de `new/page.tsx` (alta y edici�n no divergen) + `toEditVehicleInput` (regla D-043: vac�o con prefill contenido ? `null`; vac�o sin prefill ? omitido; `versionId` cambia solo si se modific�).
-- Listado: bot�n "Editar" solo owner (D-039).
-- Tests: 6 files / 51 tests (+4 D-043: `color: null`, omitir vac�os, `manufactureYear: null` no `0`, `versionId` omitido si no cambia) + build OK (ruta din�mica `/vehicles/[id]/edit`).
+- Pï¿½gina `/vehicles/[id]/edit`: precarga GET /:id, cascada con preselecciï¿½n, PATCH parcial, manejo 409/403/404/401, invalidate + redirect.
+- `vehicle-form-schema.ts` (mï¿½dulo compartido): `vehicleFormSchema` extraï¿½do de `new/page.tsx` (alta y ediciï¿½n no divergen) + `toEditVehicleInput` (regla D-043: vacï¿½o con prefill contenido ? `null`; vacï¿½o sin prefill ? omitido; `versionId` cambia solo si se modificï¿½).
+- Listado: botï¿½n "Editar" solo owner (D-039).
+- Tests: 6 files / 51 tests (+4 D-043: `color: null`, omitir vacï¿½os, `manufactureYear: null` no `0`, `versionId` omitido si no cambia) + build OK (ruta dinï¿½mica `/vehicles/[id]/edit`).
 
 ## Deuda / decisiones pendientes detectadas en el cierre
 
 1. **Deuda de contrato: no-op PATCH `{}`** ? 200 con `versionId` poblado pero `brand/model/version: null` (fix = hidratar retorno del no-op, follow-up barato; no alcanzable por consumidor MVP).
-2. **Deuda preexistente (nueva, TL): `findById` no filtra `deletedAt`** ? PATCH sobre veh�culo soft-deleted (ADR-005) editar�a el registro. Backlog; NO accionar en la misma iteraci�n.
-3. **Deuda de validaci�n (backend-engineer, escalada): `PartialType()` agrega `@IsOptional()` a TODOS los campos, incluido `licensePlate`** ? `PATCH` con `{ licensePlate: null }` pasar�a validaci�n y reventar�a en `null.trim()` ? 500 (deber�a ser 400). El frontend nunca lo env�a (zod bloquea vac�o; D-043 no aplica a placa). Fix sugerido (fuera de alcance): rechazar null en `licensePlate` en `UpdateVehicleDto` (ej. `@ValidateIf` + `@IsNotEmpty()`) + test de validaci�n. Backlog.
-4. **Detecci�n de owner en frontend por `ownerships`** (`userId` + `type` + `!endsAt`): depende del shape real del listado; verificado en tests. Si el contrato del listado cambia, revisitar.
-5. **Bug pre-existente `DELETE /api/vehicles/:id` ? 500** (Secci�n 17): sigue como ticket separado, NO tocado en F-011.
-6. **Proceso backend en 3001:** qued� corriendo el `dist` nuevo (PID 10364 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
+2. **Deuda preexistente (nueva, TL): `findById` no filtra `deletedAt`** ? PATCH sobre vehï¿½culo soft-deleted (ADR-005) editarï¿½a el registro. Backlog; NO accionar en la misma iteraciï¿½n.
+3. **Deuda de validaciï¿½n (backend-engineer, escalada): `PartialType()` agrega `@IsOptional()` a TODOS los campos, incluido `licensePlate`** ? `PATCH` con `{ licensePlate: null }` pasarï¿½a validaciï¿½n y reventarï¿½a en `null.trim()` ? 500 (deberï¿½a ser 400). El frontend nunca lo envï¿½a (zod bloquea vacï¿½o; D-043 no aplica a placa). Fix sugerido (fuera de alcance): rechazar null en `licensePlate` en `UpdateVehicleDto` (ej. `@ValidateIf` + `@IsNotEmpty()`) + test de validaciï¿½n. Backlog.
+4. **Detecciï¿½n de owner en frontend por `ownerships`** (`userId` + `type` + `!endsAt`): depende del shape real del listado; verificado en tests. Si el contrato del listado cambia, revisitar.
+5. **Bug pre-existente `DELETE /api/vehicles/:id` ? 500** (Secciï¿½n 17): sigue como ticket separado, NO tocado en F-011.
+6. **Proceso backend en 3001:** quedï¿½ corriendo el `dist` nuevo (PID 10364 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
 
-# 19. Registro (2026-09-11): F-012 Buscar Veh�culo end-to-end (D-044..D-045)
+# 19. Registro (2026-09-11): F-012 Buscar Vehï¿½culo end-to-end (D-044..D-045)
 
 ## Objetivo
 
-Permitir al propietario encontrar un veh�culo dentro de su lista escribiendo parte de la placa (b�squeda en vivo con debounce), manteniendo el shape y contrato existentes del listado.
+Permitir al propietario encontrar un vehï¿½culo dentro de su lista escribiendo parte de la placa (bï¿½squeda en vivo con debounce), manteniendo el shape y contrato existentes del listado.
 
 ## Decisiones de producto confirmadas (2026-09-11)
 
-### D-044 � B�squeda por placa parcial en la lista del propietario
+### D-044 ï¿½ Bï¿½squeda por placa parcial en la lista del propietario
 - `GET /api/vehicles?q=` filtra por `licensePlate` con `contains` + `mode: 'insensitive'` (case-insensitive), combinado con AND al scope de ownership existente.
-- `q` se normaliza con `trim()`; m�nimo 2 caracteres tras trim para filtrar; con menos, se comporta como sin `q`.
-- Param aditivo en la ruta existente (NO se cre� `/vehicles/search`: `@Get(':id')` ya registrado en `vehicles.controller.ts` L356 har�a que una ruta `/vehicles/search` mal ordenada fuera capturada por `:id` ? 404/400).
+- `q` se normaliza con `trim()`; mï¿½nimo 2 caracteres tras trim para filtrar; con menos, se comporta como sin `q`.
+- Param aditivo en la ruta existente (NO se creï¿½ `/vehicles/search`: `@Get(':id')` ya registrado en `vehicles.controller.ts` L356 harï¿½a que una ruta `/vehicles/search` mal ordenada fuera capturada por `:id` ? 404/400).
 - Sin permiso nuevo: el listado es ownership-scoped, no permission-gated (verificado).
-- Alternativas descartadas: b�squeda por VIN/n�mero de motor (no son datos que el due�o recuerde de memoria); filtros marca/modelo/a�o (navegaci�n de cat�logo, no "encontrar mi veh�culo"); ruta separada; query-DTO en esta feature.
+- Alternativas descartadas: bï¿½squeda por VIN/nï¿½mero de motor (no son datos que el dueï¿½o recuerde de memoria); filtros marca/modelo/aï¿½o (navegaciï¿½n de catï¿½logo, no "encontrar mi vehï¿½culo"); ruta separada; query-DTO en esta feature.
 
-### D-045 � Filtros de cat�logo post-MVP
-- Filtros por marca/modelo/a�o quedan post-MVP (el owner busca por placa, dato que ya conoce). Cuando lleguen, es el momento coordinado de introducir `ListVehiclesQueryDto` (hoy params crudos + interfaz interna, decisi�n TL).
+### D-045 ï¿½ Filtros de catï¿½logo post-MVP
+- Filtros por marca/modelo/aï¿½o quedan post-MVP (el owner busca por placa, dato que ya conoce). Cuando lleguen, es el momento coordinado de introducir `ListVehiclesQueryDto` (hoy params crudos + interfaz interna, decisiï¿½n TL).
 
-## Decisiones t�cnicas validadas por el Tech Lead (2026-09-11)
+## Decisiones tï¿½cnicas validadas por el Tech Lead (2026-09-11)
 
-1. **Param aditivo en `GET /api/vehicles?q=`** (no ruta separada) � evita foot-gun de `@Get(':id')`.
-2. **Donde: `licensePlate: { contains, mode: 'insensitive' }` combinado con AND con `ownerships.some(userId, endsAt: null)`** � preserva la frontera IDOR (solo se busca dentro de la lista del owner). `meta.total` filtrado autom�ticamente (`count({ where })` reusa la misma variable).
-3. **Mantener params crudos + interfaz interna** (`q?: string` en `ListVehiclesQuery`). NO crear query-DTO: ser�a el primero del codebase, sumar�a casos 400 nuevos (rompiendo "sin 4xx nuevos") y crear�a patr�n nuevo a mitad de feature. Cu�ndo s�: con filtros marca/modelo (D-045).
-4. **Guard `typeof query.q === 'string'`** obligatorio: `?q=a&q=b` entrega array y `.trim()` explotar�a. Normalizaci�n en el handler (testeable sin HTTP). Hardening `slice(0, 20)` (placa VarChar(20)).
-5. **Frontend: `placeholderData: keepPreviousData` OBLIGATORIO** (React Query v5): con queryKey din�mico cada cambio de `q` crea una query sin cach�; sin el placeholder, `isLoading` desmontar�a la lista en cada tipeo (regresi�n UX). Hook `useDebounce` propio en `frontend/src/hooks/` (sin dependencias).
-6. **`contains` (`%q%`) no usa el �ndice B-tree** (ni `@unique` ni `@@index([licensePlate])` � ese �ndice es redundante con el unique y no da soporte de b�squeda). Riesgo Baja en MVP: volumen post-ownership es de docenas de filas. Trigram/full-text = decisi�n aparte si crece.
-7. **Quirk LIKE wildcards** (`%`/`_` en la entrada act�an como wildcards; `q="A_B"` matchea "AXB"): sem�ntica inesperada, no es issue de seguridad (parametrizado), aceptada y documentada en spec �12.
+1. **Param aditivo en `GET /api/vehicles?q=`** (no ruta separada) ï¿½ evita foot-gun de `@Get(':id')`.
+2. **Donde: `licensePlate: { contains, mode: 'insensitive' }` combinado con AND con `ownerships.some(userId, endsAt: null)`** ï¿½ preserva la frontera IDOR (solo se busca dentro de la lista del owner). `meta.total` filtrado automï¿½ticamente (`count({ where })` reusa la misma variable).
+3. **Mantener params crudos + interfaz interna** (`q?: string` en `ListVehiclesQuery`). NO crear query-DTO: serï¿½a el primero del codebase, sumarï¿½a casos 400 nuevos (rompiendo "sin 4xx nuevos") y crearï¿½a patrï¿½n nuevo a mitad de feature. Cuï¿½ndo sï¿½: con filtros marca/modelo (D-045).
+4. **Guard `typeof query.q === 'string'`** obligatorio: `?q=a&q=b` entrega array y `.trim()` explotarï¿½a. Normalizaciï¿½n en el handler (testeable sin HTTP). Hardening `slice(0, 20)` (placa VarChar(20)).
+5. **Frontend: `placeholderData: keepPreviousData` OBLIGATORIO** (React Query v5): con queryKey dinï¿½mico cada cambio de `q` crea una query sin cachï¿½; sin el placeholder, `isLoading` desmontarï¿½a la lista en cada tipeo (regresiï¿½n UX). Hook `useDebounce` propio en `frontend/src/hooks/` (sin dependencias).
+6. **`contains` (`%q%`) no usa el ï¿½ndice B-tree** (ni `@unique` ni `@@index([licensePlate])` ï¿½ ese ï¿½ndice es redundante con el unique y no da soporte de bï¿½squeda). Riesgo Baja en MVP: volumen post-ownership es de docenas de filas. Trigram/full-text = decisiï¿½n aparte si crece.
+7. **Quirk LIKE wildcards** (`%`/`_` en la entrada actï¿½an como wildcards; `q="A_B"` matchea "AXB"): semï¿½ntica inesperada, no es issue de seguridad (parametrizado), aceptada y documentada en spec ï¿½12.
 
-## Cambios t�cnicos aplicados
+## Cambios tï¿½cnicos aplicados
 
 ### Backend (commit `f9c6917`)
 - `vehicles.controller.ts` `findAll`: + `@Query('q') q?: string` ? handler.
-- `list-vehicles.handler.ts`: `q?: string` en `ListVehiclesQuery`; normalizaci�n (guard `typeof` + `trim()` + m�nimo 2 + `slice(0,20)`); `where` tipado `Prisma.VehicleWhereInput` combinando ownership AND `licensePlate contains/insensitive`; orden/include/paginaci�n intactos. Import `Vehicle` sin uso limpiado.
-- Tests: 24 suites / 214 tests (6 nuevos: composici�n AND, insensitive, trim, <2 chars, no-string sin crash, sin match ? data [] + meta.total 0). Los 3 tests de regresi�n F-010 del listado pasan sin modificaci�n (RF-2).
+- `list-vehicles.handler.ts`: `q?: string` en `ListVehiclesQuery`; normalizaciï¿½n (guard `typeof` + `trim()` + mï¿½nimo 2 + `slice(0,20)`); `where` tipado `Prisma.VehicleWhereInput` combinando ownership AND `licensePlate contains/insensitive`; orden/include/paginaciï¿½n intactos. Import `Vehicle` sin uso limpiado.
+- Tests: 24 suites / 214 tests (6 nuevos: composiciï¿½n AND, insensitive, trim, <2 chars, no-string sin crash, sin match ? data [] + meta.total 0). Los 3 tests de regresiï¿½n F-010 del listado pasan sin modificaciï¿½n (RF-2).
 
 ### Frontend (commit `ae6dae8`)
-- `frontend/src/hooks/use-debounce.ts` (nuevo): debounce gen�rico ~300ms, sin dependencias.
-- `api.ts` `listVehicles`: firma `{ page?, limit?, q? }`; `searchParams` con `q` solo si est� presente (no enviar `q=""`).
-- `/vehicles/page.tsx`: input controlado (label sr-only, placeholder "Buscar por placa�", `maxLength={20}`, bot�n limpiar con aria-label), `useDebounce` ? `effectiveQ` (trim >= 2), queryKey din�mico `["vehicles", PAGE, LIMIT, effectiveQ]`, `placeholderData: keepPreviousData`, estados vac�os ramificados por `effectiveQ` ("No se encontraron veh�culos con esa placa" + CTA limpiar vs. vac�o real). Invalidaci�n de F-011 intacta (match por prefijo).
-- Tests: 6 files / 56 tests (p�gina +3 con fake timers y `settle()` 4-pass; api +2 con/sin q). `/vehicles` sigue est�tica en build.
+- `frontend/src/hooks/use-debounce.ts` (nuevo): debounce genï¿½rico ~300ms, sin dependencias.
+- `api.ts` `listVehicles`: firma `{ page?, limit?, q? }`; `searchParams` con `q` solo si estï¿½ presente (no enviar `q=""`).
+- `/vehicles/page.tsx`: input controlado (label sr-only, placeholder "Buscar por placaï¿½", `maxLength={20}`, botï¿½n limpiar con aria-label), `useDebounce` ? `effectiveQ` (trim >= 2), queryKey dinï¿½mico `["vehicles", PAGE, LIMIT, effectiveQ]`, `placeholderData: keepPreviousData`, estados vacï¿½os ramificados por `effectiveQ` ("No se encontraron vehï¿½culos con esa placa" + CTA limpiar vs. vacï¿½o real). Invalidaciï¿½n de F-011 intacta (match por prefijo).
+- Tests: 6 files / 56 tests (pï¿½gina +3 con fake timers y `settle()` 4-pass; api +2 con/sin q). `/vehicles` sigue estï¿½tica en build.
 
 ## Deuda / decisiones pendientes detectadas en el cierre
 
-1. **Soft-deleted en listado/b�squeda** sigue abierto: ticket follow-up sist�mico de soft-delete filtering (Secci�n 18, �tem 2). La b�squeda hace los veh�culos retirados levemente m�s "descubribles" (un owner puede buscar una placa dada de baja); mismo defecto que el listado, no es nuevo. Decisiones de producto pendientes: archivo/retirados, reactivaci�n, 404 vs 410.
-2. **`?page=abc` ? NaN** en el listado (deuda preexistente): se arreglar� con el query-DTO cuando lleguen los filtros marca/modelo (D-045 post-MVP). NO se toc� en F-012.
-3. **Import `Vehicle` limpiado** en `list-vehicles.handler.ts` (deja `import { Prisma }`), tras el escaneo del engineer � sin cambio funcional.
+1. **Soft-deleted en listado/bï¿½squeda** sigue abierto: ticket follow-up sistï¿½mico de soft-delete filtering (Secciï¿½n 18, ï¿½tem 2). La bï¿½squeda hace los vehï¿½culos retirados levemente mï¿½s "descubribles" (un owner puede buscar una placa dada de baja); mismo defecto que el listado, no es nuevo. Decisiones de producto pendientes: archivo/retirados, reactivaciï¿½n, 404 vs 410.
+2. **`?page=abc` ? NaN** en el listado (deuda preexistente): se arreglarï¿½ con el query-DTO cuando lleguen los filtros marca/modelo (D-045 post-MVP). NO se tocï¿½ en F-012.
+3. **Import `Vehicle` limpiado** en `list-vehicles.handler.ts` (deja `import { Prisma }`), tras el escaneo del engineer ï¿½ sin cambio funcional.
+
+# 20. Registro (2026-09-11): F-013 Vista de Detalle del Vehículo end-to-end (D-046..D-049)
+
+## Objetivo
+
+Completar el journey de visualización y gestión de la información del vehículo: el usuario abre el detalle desde "Mis vehículos" (click en la card), ve ficha + galería de fotos + documentos + últimos kilometrajes, y (si es owner) gestiona fotos/documentos/km. El backend de fotos/documentos/mileage ya existía; F-013 consumió ese contrato, ajustó autorización y agregó URLs firmadas en batch.
+
+## Decisiones de producto confirmadas (2026-09-11)
+
+### D-046 — La vista de detalle es accesible a owner y usuarios con acceso compartido (lectura)
+
+- `GET /api/vehicles/:id` mantiene `assertVehicleAccess` (owner OR shared OR super_admin). Toda la card del listado es cliqueable → `/vehicles/:id`.
+- El botón "Editar" sigue solo para owners (D-039).
+
+### D-047 — La vista de detalle MVP muestra: ficha + galería de fotos + documentos + últimos 5 kilometrajes
+
+- Los últimos 5 km vienen en GET /:id (sin llamada extra). El timeline/historia completa (transfers, mileages completos, ownerships) es F-014 (`GET :id/history` ya existe, sin consumir en la UI).
+
+### D-048 — Escritura de fotos/documentos/mileage desde la vista: solo el owner
+
+- Writes (`POST`/`PATCH`/`DELETE` de photos y documents, `POST mileage`) pasan de `assertVehicleAccess` a `assertVehicleOwned`; los reads se mantienen con `assertVehicleAccess`.
+- Consistente con D-039 (el acceso compartido es solo lectura en MVP). Alternativa descartada: mantener el comportamiento actual (shared escribe) — contradice el principio de que solo el propietario modifica su vehículo en el MVP.
+- **Matiz confirmado por el usuario (2026-09-11):** las fotos del vehículo las carga el dueño en el MVP. El flujo "el mecánico sube fotos del antes/después de un servicio" es **post-MVP**: requiere contexto workshop + vínculo foto ↔ service record + autorización por membresía + posible campo de actor en `VehiclePhoto`. D-048 NO lo bloquea (ver spec §8).
+
+### D-049 — Limpiar el vencimiento de un documento al editarlo borra el vencimiento (NULL en BD)
+
+- `expiresAt: null` en `PATCH :id/documents/:docId` → `expiresAt: null` en BD (three-way `undefined` = no tocar / `null` = borrar / string = `new Date`). Coherente con D-043.
+- Corrige bug real verificado: `new Date(null)` = epoch 1970 (el DTO con `@IsOptional()` dejaba pasar `null`).
+
+## Decisiones técnicas validadas por el Tech Lead (2026-09-11)
+
+1. **D-048 es EXCLUSIVAMENTE del controller.** Los handlers de photos/documents/mileage no contienen lógica de autorización interna ni acceden a `VehicleAccess`; `recordedByUserId` se persiste tal cual. No se modifican handlers. No se rompe ningún test existente (no había tests de autorización; se crearon — obligatorio).
+2. **Batch signed URLs con query param `?signed=true` en los listados** (backward compatible): `GET :id/photos?signed=true` → `+url +expiresAt`; `GET :id/documents?signed=true` → `+url +urlExpiresAt` (nombre `urlExpiresAt` para no chocar con `expiresAt` del documento). Sin el param, el contrato queda intacto. **NO se modifica `VehicleResponseDto`** (el listado no necesita URLs firmadas; no pagar costo de firmado).
+3. **La vista de detalle hace 3 llamadas:** `GET /:id` (ficha + ownerships + km 5 + photos/documents crudos) + `GET photos?signed=true` + `GET documents?signed=true` (estas dos en paralelo). URLs firmadas expiran (`SIGNED_URL_EXPIRES_SECONDS`, default 3600s).
+4. **Navegación sin `<Link>` anidado** (Next.js no lo soporta): card como `div role="link"` + `router.push`, botón "Editar" con `e.stopPropagation()`.
+5. **NO se agrega `PermissionsGuard`** en esta iteración: los códigos `vehicle.photos.*`, `vehicle.documents.*`, `vehicle.history.*` existen en seed pero no se verifican en ninguna ruta; la autorización sigue ownership-scoped. Los permisos granulares se activarán con el contexto workshop (post-MVP).
+6. **Tests de autorización como blocker de cierre** (§12 spec): no existían; se crearon para las 7 rutas de escritura (403 shared / 200 owner / handler NO ejecutado tras 403) + signed URLs (presencia/ausencia de `url`, `?signed=false` tratado como unsigned).
+
+## Cambios técnicos aplicados
+
+### Backend (commit `ccfba59`)
+
+- `vehicles.controller.ts`: 7 rutas de escritura → `assertVehicleOwned`; `listPhotos`/`listDocuments` con `?signed=true` (url + expiresAt/urlExpiresAt, patrón exacto de `getPhoto`/`getDocument`).
+- `update-document.dto.ts`: `expiresAt?: string | null`; `update-document.handler.ts`: three-way `undefined|null|string`.
+- Tests: `vehicles.controller.spec.ts` (29 tests: D-048 por ruta, reads intactos, signed URLs) + `update-document.handler.spec.ts` (4 tests: NotFound, omitido, null→null, fecha→Date). **26 suites / 247 tests PASS**, build OK.
+
+### Frontend (commit `c5aed5a`)
+
+- Página `/vehicles/[id]` (nueva): ficha + titular actual (ownership activo, sin PII extra), galería de fotos (grid, primary destacada, upload con progress, set-primary, delete con confirmación), documentos (upload con metadata, edición inline, delete, thumbnail imagen o icono PDF), kilometraje (últimos 5 + registrar km con manejo de monotonicidad). Controles de escritura SOLO owner (D-048); badge "Acceso compartido" para non-owners; errores 404/403/401/4xx con retry; 3 queries en paralelo con progressive rendering; sin dependencias nuevas.
+- `api.ts`: +9 funciones (listPhotos/uploadPhoto/setPrimaryPhoto/deletePhoto, listDocuments/uploadDocument/updateDocument/deleteDocument, recordMileage) con multipart + signed URLs + `onUploadProgress`.
+- `types/vehicle.ts`: + `VehiclePhoto`, `VehicleDocument`, `VehicleMileage` + `MileageSource`; `photos` tipado (ya no `unknown[]`).
+- Listado: cards cliqueables al detalle (sin `<Link>` anidado). Edición: post-guardado redirige a `/vehicles/:id` (antes `/vehicles`).
+- Tests: 7 files / 80 tests PASS (detalle 11, api +13, listado +2 navegación, edit redirect) + build OK (ruta dinámica `/vehicles/[id]` registrada).
+
+### Spec (commit `2d1806f`)
+
+- `docs/specs/vehicle-detail-flow.md` (nueva): problema, objetivos, actores, D-046..D-048 + matiz taller post-MVP, contrato backend, journeys owner/shared, RF-1..RF-7, alcance dentro/fuera, decisiones técnicas, criterios de aceptación (11), dependencias, riesgos (incluye blocker de tests de autorización).
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Fotos de taller (mecánico) antes/después del servicio — post-MVP (decisión del usuario 2026-09-11):** requiere contexto workshop + vínculo foto ↔ service record/work order + autorización por membresía + posible campo de actor/origen en `VehiclePhoto` (hoy solo `key`/`caption`/`isPrimary`). No bloquea D-048; se habilita cuando exista el flujo de taller.
+2. **Soft-deleted en `GET /:id` sigue abierto** (ticket follow-up sistémico de soft-delete filtering, Sección 18 ítem 2). F-013 NO lo empeora: los guards validan ownership/access, no el estado del vehículo. Decisiones de producto pendientes: archivo/retirados, reactivación, 404 vs 410.
+3. **Lint del controller (pre-existente):** `ForbiddenException` importado sin uso (presente en HEAD) y patrón `this.storage.getSignedUrl!(key)` con `no-unnecessary-type-assertion` replicado del código original (L221/L294). Ticket cosmético de limpieza aparte; no se ejecutó lint global (`--fix`) fuera de scope.
+4. **URLs firmadas expiran (3600s):** el frontend degrada a placeholder si la URL venció; refresh planificado con `expiresAt`/`urlExpiresAt` (futuro).
+5. **`?page=abc` → NaN** (deuda preexistente): se arreglará con el query-DTO cuando lleguen los filtros marca/modelo (D-045 post-MVP). NO se tocó.
