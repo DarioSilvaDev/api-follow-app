@@ -46,7 +46,36 @@ export class PrismaVehicleRepository implements VehicleRepository {
   }
 
   async update(id: string, data: UpdateVehicleDto) {
-    return this.prisma.vehicle.update({ where: { id }, data });
+    // D-042 (red de seguridad, mismo criterio que findByLicensePlate / D-037):
+    // si un caller no normalizó la placa, la normalizamos acá para impedir
+    // duplicados case-insensitive ("abc123" vs "ABC123") que un constraint
+    // unique case-sensitive no detectaría → P2002 no se dispararía.
+    const normalizedData =
+      typeof data.licensePlate === 'string'
+        ? { ...data, licensePlate: data.licensePlate.trim().toUpperCase() }
+        : data;
+
+    try {
+      return await this.prisma.vehicle.update({
+        where: { id },
+        data: normalizedData,
+        include: {
+          // F-010 (§10): hidratar version.model.brand para que la respuesta
+          // 200 sea consistente con create()/list/get (contrato unificado).
+          version: { include: { model: { include: { brand: true } } } },
+        },
+      });
+    } catch (error) {
+      // D-041: los campos únicos (license_plate/vin/engine_number) pueden
+      // colisionar al editar → 409 con mensaje específico (como register, D-036).
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw this.mapUniqueViolation(error);
+      }
+      throw error;
+    }
   }
 
   async delete(id: string) {

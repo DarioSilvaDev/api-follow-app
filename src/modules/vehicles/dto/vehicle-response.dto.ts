@@ -27,6 +27,8 @@ export class VehicleResponseDto {
   vin!: string | null;
   engineNumber!: string | null;
   versionId!: string | null;
+  brandId!: string | null;
+  modelId!: string | null;
   brand!: string | null;
   model!: string | null;
   version!: string | null;
@@ -47,6 +49,8 @@ export class VehicleResponseDto {
       vin: vehicle.vin,
       engineNumber: vehicle.engineNumber,
       versionId: vehicle.versionId,
+      brandId: vehicle.version?.model?.brand?.id ?? null,
+      modelId: vehicle.version?.model?.id ?? null,
       brand: vehicle.version?.model?.brand?.name ?? null,
       model: vehicle.version?.model?.name ?? null,
       version: vehicle.version?.name ?? null,

@@ -31,6 +31,8 @@ describe('VehicleResponseDto.from — F-010 §10 (brand/model/version)', () => {
 
     const dto = VehicleResponseDto.from(vehicle as any);
 
+    expect(dto.brandId).toBe('brand-1');
+    expect(dto.modelId).toBe('model-1');
     expect(dto.brand).toBe('Honda');
     expect(dto.model).toBe('Civic');
     expect(dto.version).toBe('1.6 LX');
@@ -45,6 +47,8 @@ describe('VehicleResponseDto.from — F-010 §10 (brand/model/version)', () => {
 
     const dto = VehicleResponseDto.from(vehicle as any);
 
+    expect(dto.brandId).toBeNull();
+    expect(dto.modelId).toBeNull();
     expect(dto.brand).toBeNull();
     expect(dto.model).toBeNull();
     expect(dto.version).toBeNull();

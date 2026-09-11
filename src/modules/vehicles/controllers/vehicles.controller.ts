@@ -369,8 +369,16 @@ export class VehiclesController {
     @Body() dto: UpdateVehicleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
-    return this.updateVehicleHandler.execute(new UpdateVehicleCommand(id, dto));
+    // D-039: solo el owner puede editar en MVP (el acceso compartido es solo
+    // lectura). Mismo criterio que delete/grant-access (assertVehicleOwned).
+    await this.assertVehicleOwned(id, user);
+    const vehicle = await this.updateVehicleHandler.execute(
+      new UpdateVehicleCommand(id, dto),
+    );
+    // F-011: mismo patrón que create()/findOne() — VehicleResponseDto.from()
+    // aplana la relación version.model.brand (brand/model/version) y evita
+    // responder raw Prisma en el 200.
+    return VehicleResponseDto.from(vehicle);
   }
 
   @Delete(':id')
