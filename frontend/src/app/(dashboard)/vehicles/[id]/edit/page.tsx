@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,34 +17,60 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/hooks/use-auth";
 import { vehicleApi } from "@/lib/api";
 import {
   CONFLICT_MESSAGES,
   conflictField,
-  toVehicleInput,
+  toEditVehicleInput,
   vehicleFormSchema,
+  vehicleToFormValues,
   type VehicleFormValues,
 } from "@/app/(dashboard)/vehicles/vehicle-form-schema";
 
-export default function NewVehiclePage() {
+/** Read the API error status (apiClient throws { status, message, code }). */
+function errorStatus(error: unknown): number | undefined {
+  return (error as { status?: number }).status;
+}
+
+export default function EditVehiclePage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { refreshSession } = useAuth();
 
   const [selectedBrandId, setSelectedBrandId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // RF-5: once the prefilled catalog cascade is resolved, user edits take over.
+  const prefillDoneRef = useRef(false);
+
+  // ---------------------------------------------------------------------------
+  // Pre-carga (RF-5): GET /api/vehicles/:id → VehicleResponseDto desnormalizado.
+  // retry:false — un 404/403 nunca se resuelve reejecutando la query.
+  // ---------------------------------------------------------------------------
+  const vehicleQuery = useQuery({
+    queryKey: ["vehicle", id],
+    queryFn: () => vehicleApi.getVehicle(id),
+    retry: false,
+  });
+
   const {
     register,
     handleSubmit,
+    reset,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleFormSchema),
   });
+
+  // Prefill text fields once the vehicle is loaded (RF-5).
+  useEffect(() => {
+    if (vehicleQuery.data) {
+      reset(vehicleToFormValues(vehicleQuery.data));
+    }
+  }, [vehicleQuery.data, reset]);
 
   // Catalog cascade (D-038): brands on mount; models/versions on demand (RF-4).
   const brandsQuery = useQuery({
@@ -64,6 +90,52 @@ export default function NewVehiclePage() {
     enabled: selectedModelId !== "",
   });
 
+  // ---------------------------------------------------------------------------
+  // Pre-selección de la cascada a partir del detalle desnormalizado (RF-5).
+  // El backend NO expone brandId/modelId en VehicleResponseDto, solo los nombres
+  // (brand/model/version) + versionId. Por eso emparejamos por nombre, con
+  // fallback a "Seleccionar" si el catálogo cambió y ya no matchea.
+  // ---------------------------------------------------------------------------
+  const vehicle = vehicleQuery.data;
+
+  useEffect(() => {
+    if (!vehicle || prefillDoneRef.current) return;
+    // Sin catálogo → no hay nada que preseleccionar (D-038).
+    if (vehicle.versionId == null) {
+      prefillDoneRef.current = true;
+      return;
+    }
+    if (!selectedBrandId && brandsQuery.data) {
+      const brand = brandsQuery.data.find(
+        (b) => b.name.toLowerCase() === vehicle.brand?.toLowerCase(),
+      );
+      if (brand) setSelectedBrandId(brand.id);
+    }
+  }, [vehicle, brandsQuery.data, selectedBrandId]);
+
+  useEffect(() => {
+    if (!vehicle || prefillDoneRef.current) return;
+    if (!selectedBrandId || selectedModelId || !modelsQuery.data) return;
+    const model = modelsQuery.data.find(
+      (m) => m.name.toLowerCase() === vehicle.model?.toLowerCase(),
+    );
+    if (model) setSelectedModelId(model.id);
+  }, [vehicle, selectedBrandId, modelsQuery.data, selectedModelId]);
+
+  useEffect(() => {
+    if (!vehicle || prefillDoneRef.current) return;
+    if (!selectedModelId || selectedVersionId || !versionsQuery.data) return;
+    const version =
+      versionsQuery.data.find((v) => v.id === vehicle.versionId) ??
+      versionsQuery.data.find(
+        (v) => v.name.toLowerCase() === vehicle.version?.toLowerCase(),
+      );
+    if (version) {
+      setSelectedVersionId(version.id);
+      prefillDoneRef.current = true;
+    }
+  }, [vehicle, selectedModelId, versionsQuery.data, selectedVersionId]);
+
   const handleBrandChange = (value: string) => {
     setSelectedBrandId(value);
     setSelectedModelId("");
@@ -77,17 +149,19 @@ export default function NewVehiclePage() {
 
   const onSubmit = async (data: VehicleFormValues) => {
     setSubmitError(null);
+    // El form solo se renderiza con la precarga resuelta (RF-5); guard defensivo.
+    if (!vehicleQuery.data) return;
     try {
-      await vehicleApi.registerVehicle(toVehicleInput(data, selectedVersionId));
+      // D-040/D-043 (RF-8): PATCH parcial. toEditVehicleInput compara con el
+      // prefill — opcionales vaciados → null explícito; ya vacíos → omitidos;
+      // con valor → valor. versionId solo viaja si cambió (NUNCA null, RF-2).
+      await vehicleApi.updateVehicle(
+        id,
+        toEditVehicleInput(vehicleQuery.data, data, selectedVersionId),
+      );
 
-      // RF-7: force the list to refetch and refresh the session so the
-      // dashboard reflects isVehicleOwner.
+      // RF-7: invalidar el listado y redirigir (mismo patrón que alta).
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-      try {
-        await refreshSession();
-      } catch {
-        // Best-effort: stale session data is not fatal for the redirect
-      }
       router.push("/vehicles");
     } catch (error) {
       const apiError = error as {
@@ -96,7 +170,8 @@ export default function NewVehiclePage() {
         code?: string;
       };
 
-      // RF-6: 409 → clear field-level message, form values are preserved.
+      // RF-6/D-041: 409 → mensaje junto al campo (placa/VIN) o general
+      // (engineNumber); los valores del formulario se conservan.
       if (apiError.status === 409) {
         const field = conflictField(apiError.message);
         if (field === "licensePlate" || field === "vin") {
@@ -105,7 +180,6 @@ export default function NewVehiclePage() {
             message: CONFLICT_MESSAGES[field],
           });
         } else if (field === "engineNumber") {
-          // Field not present in the MVP form; surface as a general error.
           setSubmitError(CONFLICT_MESSAGES.engineNumber);
         } else {
           setSubmitError(
@@ -116,8 +190,18 @@ export default function NewVehiclePage() {
         return;
       }
 
+      if (apiError.status === 403) {
+        setSubmitError("No tenés permiso para editar este vehículo.");
+        return;
+      }
+
       if (apiError.status === 401) {
         setSubmitError("Tu sesión expiró. Iniciá sesión nuevamente.");
+        return;
+      }
+
+      if (apiError.status === 404) {
+        setSubmitError("El vehículo no existe.");
         return;
       }
 
@@ -127,10 +211,69 @@ export default function NewVehiclePage() {
       }
 
       setSubmitError(
-        apiError.message || "Error al registrar el vehículo. Intentalo nuevamente.",
+        apiError.message || "Error al editar el vehículo. Intentalo nuevamente.",
       );
     }
   };
+
+  // Loading (precarga del form).
+  if (vehicleQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // RF-6: error de precarga.
+  if (vehicleQuery.isError) {
+    const status = errorStatus(vehicleQuery.error);
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
+        <Card>
+          <CardContent className="py-8 text-center">
+            {status === 404 ? (
+              <>
+                <p className="text-lg font-semibold">Vehículo no encontrado</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  El vehículo que intentás editar no existe o fue eliminado.
+                </p>
+              </>
+            ) : status === 403 ? (
+              <>
+                <p className="text-lg font-semibold">
+                  No tenés permiso para editar este vehículo
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Solo el propietario puede editar un vehículo en MVP (D-039).
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-semibold">
+                  No se pudo cargar el vehículo
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ocurrió un error al consultar el vehículo. Intentalo
+                  nuevamente.
+                </p>
+              </>
+            )}
+            <div className="mt-4 flex justify-center gap-2">
+              <Link href="/vehicles">
+                <Button variant="outline">Volver a mis vehículos</Button>
+              </Link>
+              {status !== 404 && status !== 403 && (
+                <Button onClick={() => vehicleQuery.refetch()}>
+                  Reintentar
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
@@ -143,11 +286,11 @@ export default function NewVehiclePage() {
           Volver a mis vehículos
         </Link>
         <h1 className="mt-3 text-2xl font-bold tracking-tight">
-          Registrar vehículo
+          Editar vehículo
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Completá los datos del vehículo. Los campos opcionales pueden dejarse
-          vacíos.
+          Corregí los datos del vehículo. Solo el propietario puede editar
+          (D-039).
         </p>
       </div>
 
@@ -199,8 +342,8 @@ export default function NewVehiclePage() {
                   Catálogo vehicular (opcional)
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Si seleccionás marca, modelo y versión, el vehículo se guarda
-                  con esos datos del catálogo (D-038).
+                  Si no se modifica, se mantiene la versión del catálogo
+                  actual. Si se vacía, la versión existente no se borra (RF-2).
                 </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-3">
@@ -220,7 +363,7 @@ export default function NewVehiclePage() {
                   </Select>
                   {brandsQuery.isError && (
                     <p className="text-xs text-muted-foreground" role="alert">
-                      No se pudo cargar el catálogo. Podés registrarlo sin
+                      No se pudo cargar el catálogo. Podés guardar sin
                       marca/modelo/versión.
                     </p>
                   )}
@@ -334,10 +477,10 @@ export default function NewVehiclePage() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Registrando...
+                  Guardando...
                 </>
               ) : (
-                "Registrar vehículo"
+                "Guardar cambios"
               )}
             </Button>
           </CardFooter>

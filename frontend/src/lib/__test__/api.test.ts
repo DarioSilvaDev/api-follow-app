@@ -305,4 +305,114 @@ describe("API client — vehicleApi", () => {
     expect(capturedRequests[0].url).toContain("vehicle-models");
     expect(capturedRequests[0].url).toContain("brandId=b1");
   });
+
+  it("getVehicle parses the denormalized detail response (F-011)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, {
+        id: "v1",
+        licensePlate: "ABC123",
+        brand: "Toyota",
+        model: "Corolla",
+        version: "XEI",
+        createdAt: "2026-09-09T00:00:00.000Z",
+        updatedAt: "2026-09-09T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.getVehicle("v1");
+
+    expect(result.licensePlate).toBe("ABC123");
+    expect(result.model).toBe("Corolla");
+
+    const vehicleCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1"),
+    );
+    expect(vehicleCalls).toHaveLength(1);
+    expect(vehicleCalls[0].method).toBe("GET");
+  });
+
+  it("maps getVehicle 404 to { status, message } (F-011 RF-6)", async () => {
+    fetchSpy.mockImplementation(async () =>
+      makeResponse(404, {
+        message: "Vehicle not found",
+        code: "VEHICLE_NOT_FOUND",
+      }),
+    );
+
+    const { vehicleApi } = await import("@/lib/api");
+
+    await expect(vehicleApi.getVehicle("nope")).rejects.toMatchObject({
+      status: 404,
+      message: "Vehicle not found",
+      code: "VEHICLE_NOT_FOUND",
+    });
+  });
+
+  it("updateVehicle PATCHes a partial body and parses the response (F-011 D-040)", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      // ky sends the JSON body inside the Request object (first argument).
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(200, {
+        id: "v1",
+        licensePlate: "ABC999",
+        color: "Verde",
+        createdAt: "2026-09-09T00:00:00.000Z",
+        updatedAt: "2026-09-10T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.updateVehicle("v1", {
+      licensePlate: "ABC999",
+      color: "Verde",
+    });
+
+    expect(result.licensePlate).toBe("ABC999");
+    const vehicleCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1"),
+    );
+    expect(vehicleCalls).toHaveLength(1);
+    expect(vehicleCalls[0].method).toBe("PATCH");
+    expect(requestBody).toEqual({ licensePlate: "ABC999", color: "Verde" });
+  });
+
+  it("maps updateVehicle 409 to { status, message, code } without refresh (F-011 D-041)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (url.includes("auth/refresh")) {
+        return makeResponse(200, { message: "ok" });
+      }
+      return makeResponse(409, {
+        message: "Ya existe un vehículo registrado con esa placa",
+        code: "VEHICLE_PLATE_EXISTS",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+
+    await expect(
+      vehicleApi.updateVehicle("v1", { licensePlate: "ABC999" }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "Ya existe un vehículo registrado con esa placa",
+      code: "VEHICLE_PLATE_EXISTS",
+    });
+
+    // 409 is not in the retry statusCodes → refresh must NOT be triggered
+    const refreshCalls = capturedRequests.filter((r) =>
+      r.url.includes("auth/refresh"),
+    );
+    expect(refreshCalls).toHaveLength(0);
+  });
 });

@@ -22,6 +22,11 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+// D-039: the Edit button visibility depends on the current session user id.
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({ user: { id: "user-1" }, status: "authenticated" }),
+}));
+
 // Mock UI components to avoid deep dependency trees (existing convention)
 vi.mock("@/components/ui/button", () => ({
   Button: ({ children, ...props }: React.ComponentProps<"button">) => (
@@ -172,5 +177,88 @@ describe("Vehicles list page", () => {
 
     expect(await screen.findByText("ABC123")).toBeInTheDocument();
     expect(mockListVehicles).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows an Editar link for owner vehicles (D-039 / RF-1)", async () => {
+    mockListVehicles.mockResolvedValue({
+      data: [
+        makeVehicle({
+          ownerships: [
+            {
+              id: "o1",
+              vehicleId: "v1",
+              userId: "user-1",
+              type: "owner",
+              startsAt: "2026-09-09T00:00:00.000Z",
+              endsAt: null,
+            },
+          ],
+        }),
+      ],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+
+    const editLink = await screen.findByRole("link", { name: /editar/i });
+    expect(editLink).toHaveAttribute("href", "/vehicles/v1/edit");
+  });
+
+  it("does NOT show Editar for co_owner access (D-039: solo owner)", async () => {
+    mockListVehicles.mockResolvedValue({
+      data: [
+        makeVehicle({
+          ownerships: [
+            {
+              id: "o1",
+              vehicleId: "v1",
+              userId: "user-1",
+              type: "co_owner",
+              startsAt: "2026-09-09T00:00:00.000Z",
+              endsAt: null,
+            },
+          ],
+        }),
+      ],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("ABC123")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
+  });
+
+  it("does NOT show Editar when the owner row belongs to another user", async () => {
+    mockListVehicles.mockResolvedValue({
+      data: [
+        makeVehicle({
+          ownerships: [
+            {
+              id: "o1",
+              vehicleId: "v1",
+              userId: "other-user",
+              type: "owner",
+              startsAt: "2026-09-09T00:00:00.000Z",
+              endsAt: null,
+            },
+            {
+              id: "o2",
+              vehicleId: "v1",
+              userId: "user-1",
+              type: "co_owner",
+              startsAt: "2026-09-09T00:00:00.000Z",
+              endsAt: null,
+            },
+          ],
+        }),
+      ],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("ABC123")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
   });
 });

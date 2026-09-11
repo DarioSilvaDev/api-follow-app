@@ -2,6 +2,7 @@ import ky, { HTTPError, isHTTPError } from "ky";
 import type { SessionUser } from "@/types/auth";
 import type {
   RegisterVehicleInput,
+  UpdateVehicleInput,
   Vehicle,
   VehicleBrand,
   VehicleListResponse,
@@ -306,6 +307,26 @@ export const vehicleApi = {
   registerVehicle: (input: RegisterVehicleInput) =>
     api
       .post("vehicles", { json: input })
+      .json<Vehicle>()
+      .catch(toApiError),
+
+  /**
+   * F-011: GET /api/vehicles/:id → VehicleResponseDto (denormalized).
+   * Used to prefill the edit form (RF-5).
+   */
+  getVehicle: (id: string) =>
+    api
+      .get(`vehicles/${id}`)
+      .json<Vehicle>()
+      .catch(toApiError),
+
+  /**
+   * F-011: PATCH /api/vehicles/:id → VehicleResponseDto.
+   * Partial body (D-040); responds 403 (non-owner) / 404 / 409 (duplicates).
+   */
+  updateVehicle: (id: string, input: UpdateVehicleInput) =>
+    api
+      .patch(`vehicles/${id}`, { json: input })
       .json<Vehicle>()
       .catch(toApiError),
 

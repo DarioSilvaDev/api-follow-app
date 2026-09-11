@@ -13,10 +13,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
 import type { Vehicle } from "@/types/vehicle";
 
 const PAGE = 1;
 const LIMIT = 20;
+
+/**
+ * D-039 / RF-1: only the OWNER can edit. The list returns active ownerships
+ * (endsAt === null) with `userId` y `type`. We match the ownership to the
+ * CURRENT user id (not just any "owner" row) so a future co_owner/company
+ * holder does not see the Edit button for the real owner's row.
+ */
+function isVehicleOwner(vehicle: Vehicle, userId: string | undefined): boolean {
+  if (!userId) return false;
+  return (
+    vehicle.ownerships?.some(
+      (o) => o.userId === userId && o.type === "owner" && !o.endsAt,
+    ) ?? false
+  );
+}
 
 /**
  * Render the catalog triplet. D-038: without a catalog selection the UI
@@ -38,6 +54,7 @@ function yearsLabel(vehicle: Vehicle): string {
 }
 
 export default function VehiclesPage() {
+  const { user } = useAuth();
   const query = useQuery({
     queryKey: ["vehicles", PAGE, LIMIT],
     queryFn: () => vehicleApi.listVehicles({ page: PAGE, limit: LIMIT }),
@@ -119,6 +136,16 @@ export default function VehiclesPage() {
                     </span>
                   </p>
                 </CardContent>
+                {/* D-039 / RF-1: "Editar" solo para owners activos. */}
+                {isVehicleOwner(vehicle, user?.id) && (
+                  <CardFooter>
+                    <Link href={`/vehicles/${vehicle.id}/edit`}>
+                      <Button variant="outline" size="sm">
+                        Editar
+                      </Button>
+                    </Link>
+                  </CardFooter>
+                )}
               </Card>
             </li>
           ))}
