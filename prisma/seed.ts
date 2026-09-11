@@ -187,6 +187,14 @@ const permissions = [
   },
 
   {
+    module: 'care-episode',
+    resource: 'care-episode',
+    action: 'create',
+    code: 'care-episode.create',
+    description: 'Create care episodes (vehicle check-in)',
+  },
+
+  {
     module: 'workorder',
     resource: 'workorder',
     action: 'create',
@@ -533,6 +541,8 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'estimate.convert',
     // service records
     'service-record.create',
+    // care episodes (vehicle check-in)
+    'care-episode.create',
     // history
     'history.view',
     'history.share',
@@ -546,6 +556,7 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'estimate.approve',
     'estimate.convert',
     'service-record.create',
+    'care-episode.create',
     'history.view',
   ],
   employee: ['appointment.create', 'history.view'],

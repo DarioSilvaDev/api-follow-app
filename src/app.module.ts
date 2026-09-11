@@ -14,6 +14,7 @@ import { UsersModule } from './modules/users/users.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { WorkshopsModule } from './modules/workshops/workshops.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
+import { CareEpisodesModule } from './modules/care-episodes/care-episodes.module';
 import { AdministrationModule } from './modules/administration/administration.module';
 import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -41,6 +42,7 @@ import { envs } from './config/envs';
     VehiclesModule,
     WorkshopsModule,
     MaintenanceModule,
+    CareEpisodesModule,
     AdministrationModule,
     VehicleCatalogModule,
     DashboardModule,

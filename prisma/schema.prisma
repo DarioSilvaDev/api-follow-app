@@ -406,6 +406,7 @@ model Workshop {
   workOrders WorkOrder[]
   serviceRecords ServiceRecord[]
   estimates Estimate[]
+  careEpisodes CareEpisode[]
 
   @@index([name])
   @@map("workshops")
@@ -457,6 +458,7 @@ model WorkshopBranch {
   appointments Appointment[]
   workOrders WorkOrder[]
   estimates Estimate[]
+  careEpisodes CareEpisode[]
 
   @@index([workshopId])
   @@map("workshop_branches")
@@ -527,6 +529,7 @@ model WorkshopMember {
   assignedAppointments Appointment[]
   assignedWorkOrders WorkOrder[]
   performedServiceRecords ServiceRecord[]
+  createdCareEpisodes CareEpisode[]
 
   @@unique([workshopId, userId])
   @@index([userId])
@@ -954,6 +957,7 @@ model Vehicle {
   workOrders WorkOrder[]
   serviceRecords ServiceRecord[]
   estimates Estimate[]
+  careEpisodes CareEpisode[]
 
   @@index([licensePlate])
   @@map("vehicles")
@@ -1222,6 +1226,12 @@ enum ServiceItemType {
   discount
 }
 
+enum CareEpisodeStatus {
+  open
+  delivered
+  cancelled
+}
+
 model Appointment {
   id String @id @default(uuid()) @db.Uuid
 
@@ -1252,6 +1262,7 @@ model Appointment {
   assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id], onDelete: SetNull)
 
   workOrders WorkOrder[]
+  careEpisodes CareEpisode[]
 
   @@index([vehicleId])
   @@index([workshopId])
@@ -1262,6 +1273,40 @@ model Appointment {
   @@map("appointments")
 }
 
+model CareEpisode {
+  id                String            @id @default(uuid()) @db.Uuid
+  vehicleId         String            @map("vehicle_id") @db.Uuid
+  workshopId        String            @map("workshop_id") @db.Uuid
+  branchId          String            @map("branch_id") @db.Uuid
+  appointmentId     String?           @map("appointment_id") @db.Uuid
+  createdByMemberId String            @map("created_by_member_id") @db.Uuid
+  status            CareEpisodeStatus @default(open)
+  mileageIn         Int?              @map("mileage_in")
+  customerComplaint String?           @map("customer_complaint") @db.VarChar(500)
+  customerNotes     String?           @map("customer_notes") @db.VarChar(1000)
+  internalNotes     String?           @map("internal_notes") @db.VarChar(1000)
+  checkedInAt       DateTime          @map("checked_in_at") @db.Timestamptz
+  closedAt          DateTime?         @map("closed_at") @db.Timestamptz
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  // Histórico: el episodio de atención forma parte de la historia del vehículo
+  vehicle          Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  workshop         Workshop         @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  branch           WorkshopBranch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  appointment      Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  createdByMember  WorkshopMember   @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
+
+  serviceRecords ServiceRecord[]
+  workOrders     WorkOrder[]
+  estimates      Estimate[]
+
+  @@index([vehicleId, createdAt])
+  @@index([workshopId, createdAt])
+  @@index([status])
+  @@map("care_episodes")
+}
+
 model WorkOrder {
   id String @id @default(uuid()) @db.Uuid
 
@@ -1270,6 +1315,7 @@ model WorkOrder {
   workshopId String @map("workshop_id") @db.Uuid
   branchId String @map("branch_id") @db.Uuid
   appointmentId String? @map("appointment_id") @db.Uuid
+  careEpisodeId String? @map("care_episode_id") @db.Uuid
   customerId String @map("customer_id") @db.Uuid
   assignedToMemberId String? @map("assigned_to_member_id") @db.Uuid
 
@@ -1295,6 +1341,7 @@ model WorkOrder {
   appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   customer User @relation(fields: [customerId], references: [id], onDelete: Restrict)
   assignedTo WorkshopMember? @relation(fields: [assignedToMemberId], references: [id], onDelete: SetNull)
+  careEpisode CareEpisode? @relation(fields: [careEpisodeId], references: [id], onDelete: Restrict)
 
   items WorkOrderItem[]
   estimates Estimate[]
@@ -1335,6 +1382,7 @@ model ServiceRecord {
   vehicleId String @map("vehicle_id") @db.Uuid
   workOrderId String? @map("work_order_id") @db.Uuid
   workshopId String @map("workshop_id") @db.Uuid
+  careEpisodeId String? @map("care_episode_id") @db.Uuid
   performedByMemberId String? @map("performed_by_member_id") @db.Uuid
 
   mileageAtService Int @map("mileage_at_service")
@@ -1350,6 +1398,7 @@ model ServiceRecord {
   workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   workshop Workshop @relation(fields: [workshopId], references: [id], onDelete: Restrict)
   performedBy WorkshopMember? @relation(fields: [performedByMemberId], references: [id], onDelete: SetNull)
+  careEpisode CareEpisode? @relation(fields: [careEpisodeId], references: [id], onDelete: Restrict)
 
   @@index([vehicleId])
   @@index([workOrderId])
@@ -1366,6 +1415,7 @@ model Estimate {
   workshopId String @map("workshop_id") @db.Uuid
   branchId String @map("branch_id") @db.Uuid
   workOrderId String? @map("work_order_id") @db.Uuid
+  careEpisodeId String? @map("care_episode_id") @db.Uuid
   customerId String @map("customer_id") @db.Uuid
 
   status EstimateStatus @default(draft)
@@ -1388,6 +1438,7 @@ model Estimate {
   branch WorkshopBranch @relation(fields: [branchId], references: [id], onDelete: Restrict)
   workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
   customer User @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  careEpisode CareEpisode? @relation(fields: [careEpisodeId], references: [id], onDelete: Restrict)
 
   items EstimateItem[]
 
