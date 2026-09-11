@@ -770,4 +770,46 @@ describe("API client — vehicleApi", () => {
       code: "VALIDATION_ERROR",
     });
   });
+
+  // ── F-014: Vehicle history ───────────────────────────────────────────────
+
+  it("getVehicleHistory GETs the history route and parses the 3-source response (F-014)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, {
+        transfers: [
+          {
+            id: "t1",
+            vehicleId: "v1",
+            fromUser: { id: "u1", firstName: "Juan", lastName: "Perez" },
+            toUser: { id: "u2", firstName: "Maria", lastName: "Lopez" },
+            status: "completed",
+            requestedAt: "2026-09-09T00:00:00.000Z",
+            respondedAt: "2026-09-10T00:00:00.000Z",
+            completedAt: "2026-09-10T00:00:00.000Z",
+            expiresAt: null,
+            notes: null,
+            createdAt: "2026-09-09T00:00:00.000Z",
+          },
+        ],
+        mileages: [],
+        ownerships: [],
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.getVehicleHistory("v1");
+
+    expect(result.transfers).toHaveLength(1);
+    expect(result.transfers[0].fromUser.firstName).toBe("Juan");
+    expect(result.mileages).toEqual([]);
+    expect(result.ownerships).toEqual([]);
+
+    const historyCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1/history"),
+    );
+    expect(historyCalls).toHaveLength(1);
+    expect(historyCalls[0].method).toBe("GET");
+  });
 });

@@ -41,6 +41,7 @@ const mockUploadDocument = vi.fn();
 const mockUpdateDocument = vi.fn();
 const mockDeleteDocument = vi.fn();
 const mockRecordMileage = vi.fn();
+const mockGetVehicleHistory = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   vehicleApi: {
@@ -54,6 +55,7 @@ vi.mock("@/lib/api", () => ({
     updateDocument: (...args: unknown[]) => mockUpdateDocument(...args),
     deleteDocument: (...args: unknown[]) => mockDeleteDocument(...args),
     recordMileage: (...args: unknown[]) => mockRecordMileage(...args),
+    getVehicleHistory: (...args: unknown[]) => mockGetVehicleHistory(...args),
   },
 }));
 
@@ -179,6 +181,12 @@ let VehicleDetailPage: React.ComponentType;
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  // F-014: default history is empty; the section renders "Sin eventos registrados".
+  mockGetVehicleHistory.mockResolvedValue({
+    transfers: [],
+    mileages: [],
+    ownerships: [],
+  });
   // Dynamic import ensures mocks are resolved first
   const mod = await import("@/app/(dashboard)/vehicles/[id]/page");
   VehicleDetailPage = mod.default;

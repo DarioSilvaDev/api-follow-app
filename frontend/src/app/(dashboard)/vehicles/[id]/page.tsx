@@ -33,6 +33,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { vehicleApi } from "@/lib/api";
+import {
+  type TimelineEntry,
+  mergeHistory,
+  mileageSourceLabel,
+} from "@/lib/vehicle-history";
 import type {
   Vehicle,
   VehicleDocument,
@@ -82,19 +87,35 @@ function formatDateTime(value?: string | null): string {
   });
 }
 
-const MILEAGE_SOURCE_LABELS: Record<string, string> = {
-  owner: "Propietario",
-  workshop: "Taller",
-  inspection: "Inspección",
-  dealership: "Concesionaria",
-  imported: "Importado",
-  system: "Sistema",
-};
-
-function mileageSourceLabel(source?: string | null): string {
-  if (!source) return "—";
-  return MILEAGE_SOURCE_LABELS[source] ?? source;
+/** F-014: fecha de timeline — dd/mm/yyyy (con hora si el timestamp la trae). */
+function formatTimelineDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  // timestamptz: si trae hora distinta de medianoche, mostrarla.
+  const timePart = iso.slice(11, 19);
+  const hasTime =
+    /^\d{2}:\d{2}:\d{2}$/.test(timePart) && timePart !== "00:00:00";
+  if (hasTime) {
+    return date.toLocaleString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+  return date.toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
+
+const TIMELINE_TYPE_ICONS: Record<TimelineEntry["type"], string> = {
+  transfer: "🔄",
+  mileage: "📊",
+  ownership: "🚗",
+};
 
 /** Detección de imagen por extensión del key (el schema NO expone mimeType). */
 function isImageDocument(doc: VehicleDocument): boolean {
@@ -919,6 +940,94 @@ function MileageSection({
 }
 
 // ---------------------------------------------------------------------------
+// F-014: Historial — merge cronológico de transfers + mileages + ownerships
+// ---------------------------------------------------------------------------
+
+function HistorySection({
+  entries,
+  isLoading,
+  isError,
+  refetch,
+}: {
+  entries: TimelineEntry[];
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Historial</CardTitle>
+        <CardDescription>
+          {entries.length > 0
+            ? "Del más reciente al más antiguo."
+            : "Transferencias, kilometraje y cambios de propiedad."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {isLoading ? (
+          <div
+            role="status"
+            aria-label="Cargando historial"
+            className="flex justify-center py-6"
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No se pudo cargar el historial.
+            </p>
+            <Button variant="outline" size="sm" onClick={refetch}>
+              <RotateCw className="h-3.5 w-3.5" />
+              Reintentar
+            </Button>
+          </div>
+        ) : entries.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Sin eventos registrados
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-2">
+            {entries.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex items-start gap-3 rounded-lg ring-1 ring-foreground/10 px-3 py-2 text-sm"
+              >
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 text-base leading-none"
+                >
+                  {TIMELINE_TYPE_ICONS[entry.type]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                    <p className="font-medium">{entry.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatTimelineDate(entry.date)}
+                    </p>
+                  </div>
+                  {entry.actor ? (
+                    <p className="text-xs text-muted-foreground">
+                      {entry.actor}
+                    </p>
+                  ) : null}
+                  {entry.notes ? (
+                    <p className="mt-1 text-xs text-muted-foreground/80">
+                      {entry.notes}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -943,6 +1052,13 @@ export default function VehicleDetailPage() {
   const documentsQuery = useQuery({
     queryKey: ["vehicle", id, "documents"],
     queryFn: () => vehicleApi.listDocuments(id),
+    retry: false,
+  });
+
+  // F-014 §5: 4ª llamada en paralelo (no bloquea la carga inicial del ficha).
+  const historyQuery = useQuery({
+    queryKey: ["vehicle", id, "history"],
+    queryFn: () => vehicleApi.getVehicleHistory(id),
     retry: false,
   });
 
@@ -1070,6 +1186,20 @@ export default function VehicleDetailPage() {
 
       {/* Kilometraje (últimos 5 de GET /:id) */}
       <MileageSection vehicle={vehicle} canWrite={isOwner} />
+
+      {/* Historial (F-014 / D-052: merge cronológico de transfers, km y titularidad) */}
+      <HistorySection
+        entries={
+          historyQuery.data ? mergeHistory(historyQuery.data) : []
+        }
+        isLoading={historyQuery.isLoading}
+        isError={historyQuery.isError}
+        refetch={() =>
+          queryClient.invalidateQueries({
+            queryKey: ["vehicle", vehicle.id, "history"],
+          })
+        }
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import type {
   Vehicle,
   VehicleBrand,
   VehicleDocument,
+  VehicleHistoryResponse,
   VehicleListResponse,
   VehicleMileage,
   VehicleModel,
@@ -463,5 +464,16 @@ export const vehicleApi = {
     api
       .post(`vehicles/${vehicleId}/mileage`, { json: dto })
       .json<VehicleMileage>()
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // F-014 — Vehicle history / timeline (GET :id/history, read-only)
+  // -----------------------------------------------------------------------
+
+  /** GET vehicles/:id/history → { transfers, mileages, ownerships } (F-014 / D-052). */
+  getVehicleHistory: (vehicleId: string) =>
+    api
+      .get(`vehicles/${vehicleId}/history`)
+      .json<VehicleHistoryResponse>()
       .catch(toApiError),
 };

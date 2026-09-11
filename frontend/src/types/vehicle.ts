@@ -25,7 +25,9 @@ export interface VehicleOwnership {
   type: VehicleOwnershipType;
   startsAt: string;
   endsAt?: string | null;
-  /** Detailed GET /:id only — the list response omits it. */
+  /** Ownership notes — present in GET /:id/history (F-014), NOT in list. */
+  notes?: string | null;
+  /** Detailed GET /:id and history only — the list response omits it. */
   user?: {
     id: string;
     firstName: string;
@@ -99,6 +101,51 @@ export interface VehicleMileage {
   notes?: string | null;
   recordedAt: string;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// F-014: Vehicle history / timeline types (GET :id/history)
+// ---------------------------------------------------------------------------
+
+/**
+ * Transfer status — mirrors the Prisma `TransferStatus` enum.
+ * D-054: every status is shown as a visible timeline entry.
+ */
+export type VehicleTransferStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "completed"
+  | "expired";
+
+/**
+ * F-014: Vehicle transfer. Backend GET :id/history includes nested
+ * `fromUser`/`toUser` as { id, firstName, lastName } (no email — PII).
+ */
+export interface VehicleTransfer {
+  id: string;
+  vehicleId: string;
+  fromUser: { id: string; firstName: string; lastName: string };
+  toUser: { id: string; firstName: string; lastName: string };
+  status: VehicleTransferStatus;
+  requestedAt: string;
+  respondedAt: string | null;
+  completedAt: string | null;
+  expiresAt: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+/**
+ * F-014: GET /api/vehicles/:id/history response — 3 sources, each sorted
+ * desc by its own timestamp (transfers.createdAt, mileages.recordedAt,
+ * ownerships.startsAt). The frontend merges them (D-052).
+ */
+export interface VehicleHistoryResponse {
+  transfers: VehicleTransfer[];
+  mileages: VehicleMileage[];
+  ownerships: VehicleOwnership[];
 }
 
 // ---------------------------------------------------------------------------
