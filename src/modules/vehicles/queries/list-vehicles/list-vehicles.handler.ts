@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
 import { VehicleResponseDto } from '../../dto/vehicle-response.dto';
@@ -7,6 +8,7 @@ interface ListVehiclesQuery {
   userId?: string;
   page?: number;
   limit?: number;
+  q?: string;
 }
 
 @Injectable()
@@ -21,8 +23,21 @@ export class ListVehiclesHandler {
     );
     const skip = (page - 1) * limit;
 
-    const where = query.userId
-      ? { ownerships: { some: { userId: query.userId, endsAt: null } } }
+    // F-012 (D-044): búsqueda por placa parcial. `q` se combina con el scope
+    // de ownership existente mediante AND. Guard `typeof`: `?q=a&q=b` llega
+    // como array y `.trim()` explotaría. Mínimo 2 caracteres tras trim; con
+    // menos, se comporta como sin `q` (RF-2). Hardening `slice(0, 20)` alinea
+    // con `licensePlate @db.VarChar(20)`.
+    const rawQ = typeof query.q === 'string' ? query.q : '';
+    const q = rawQ.trim().length >= 2 ? rawQ.trim().slice(0, 20) : '';
+
+    const where: Prisma.VehicleWhereInput | undefined = query.userId
+      ? {
+          ownerships: { some: { userId: query.userId, endsAt: null } },
+          ...(q
+            ? { licensePlate: { contains: q, mode: 'insensitive' } }
+            : {}),
+        }
       : undefined;
 
     const [vehicles, total] = await Promise.all([

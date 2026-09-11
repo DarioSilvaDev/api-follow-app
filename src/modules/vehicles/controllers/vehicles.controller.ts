@@ -345,11 +345,13 @@ export class VehiclesController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
+    @Query('q') q?: string,
   ) {
     return this.listVehiclesHandler.execute({
       userId: user.id,
       page,
       limit,
+      q,
     });
   }
 

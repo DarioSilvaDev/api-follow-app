@@ -139,4 +139,97 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
     );
     expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
   });
+
+  describe('F-012 — búsqueda por placa (q)', () => {
+    it('combina el filtro de placa con el scope de ownership vía AND', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
+      prismaMock.vehicle.count.mockResolvedValue(1);
+
+      await handler.execute({ userId: 'user-1', page: 1, limit: 20, q: 'SMK' });
+
+      expect(prismaMock.vehicle.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            ownerships: { some: { userId: 'user-1', endsAt: null } },
+            licensePlate: { contains: 'SMK', mode: 'insensitive' },
+          },
+        }),
+      );
+    });
+
+    it('q en minúsculas → mode insensitive presente', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(0);
+
+      await handler.execute({ userId: 'user-1', q: 'smk' });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.where.licensePlate).toEqual({
+        contains: 'smk',
+        mode: 'insensitive',
+      });
+    });
+
+    it('q con espacios → contains con trim aplicado', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(0);
+
+      await handler.execute({ userId: 'user-1', q: '  SMK  ' });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.where.licensePlate).toEqual({
+        contains: 'SMK',
+        mode: 'insensitive',
+      });
+    });
+
+    it('q con menos de 2 caracteres o vacío → where idéntico al actual (regresión)', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(0);
+
+      for (const q of ['A', '', '   ']) {
+        prismaMock.vehicle.findMany.mockClear();
+
+        await handler.execute({ userId: 'user-1', q });
+
+        const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+        expect(arg.where).toEqual({
+          ownerships: { some: { userId: 'user-1', endsAt: null } },
+        });
+        expect(arg.where).not.toHaveProperty('licensePlate');
+      }
+    });
+
+    it('q no-string (query repetida ?q=a&q=b) → no crash, sin filtro', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(0);
+
+      await expect(
+        handler.execute({ userId: 'user-1', q: ['a', 'b'] as any }),
+      ).resolves.toBeDefined();
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({
+        ownerships: { some: { userId: 'user-1', endsAt: null } },
+      });
+      expect(arg.where).not.toHaveProperty('licensePlate');
+    });
+
+    it('q sin coincidencias → data vacía y meta.total 0 (count con mismo where)', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(0);
+
+      const result = await handler.execute({ userId: 'user-1', q: 'ZZZ' });
+
+      expect(result.data).toEqual([]);
+      expect(result.meta.total).toBe(0);
+      expect(prismaMock.vehicle.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            licensePlate: { contains: 'ZZZ', mode: 'insensitive' },
+          }),
+        }),
+      );
+    });
+  });
 });
