@@ -2135,3 +2135,50 @@ Completar el journey de edici�n de veh�culo (F-011) de extremo a extremo: el
 4. **Detecci�n de owner en frontend por `ownerships`** (`userId` + `type` + `!endsAt`): depende del shape real del listado; verificado en tests. Si el contrato del listado cambia, revisitar.
 5. **Bug pre-existente `DELETE /api/vehicles/:id` ? 500** (Secci�n 17): sigue como ticket separado, NO tocado en F-011.
 6. **Proceso backend en 3001:** qued� corriendo el `dist` nuevo (PID 10364 al cierre). Entorno de dev; finalizable si no debe quedar procesos colgados.
+
+# 19. Registro (2026-09-11): F-012 Buscar Veh�culo end-to-end (D-044..D-045)
+
+## Objetivo
+
+Permitir al propietario encontrar un veh�culo dentro de su lista escribiendo parte de la placa (b�squeda en vivo con debounce), manteniendo el shape y contrato existentes del listado.
+
+## Decisiones de producto confirmadas (2026-09-11)
+
+### D-044 � B�squeda por placa parcial en la lista del propietario
+- `GET /api/vehicles?q=` filtra por `licensePlate` con `contains` + `mode: 'insensitive'` (case-insensitive), combinado con AND al scope de ownership existente.
+- `q` se normaliza con `trim()`; m�nimo 2 caracteres tras trim para filtrar; con menos, se comporta como sin `q`.
+- Param aditivo en la ruta existente (NO se cre� `/vehicles/search`: `@Get(':id')` ya registrado en `vehicles.controller.ts` L356 har�a que una ruta `/vehicles/search` mal ordenada fuera capturada por `:id` ? 404/400).
+- Sin permiso nuevo: el listado es ownership-scoped, no permission-gated (verificado).
+- Alternativas descartadas: b�squeda por VIN/n�mero de motor (no son datos que el due�o recuerde de memoria); filtros marca/modelo/a�o (navegaci�n de cat�logo, no "encontrar mi veh�culo"); ruta separada; query-DTO en esta feature.
+
+### D-045 � Filtros de cat�logo post-MVP
+- Filtros por marca/modelo/a�o quedan post-MVP (el owner busca por placa, dato que ya conoce). Cuando lleguen, es el momento coordinado de introducir `ListVehiclesQueryDto` (hoy params crudos + interfaz interna, decisi�n TL).
+
+## Decisiones t�cnicas validadas por el Tech Lead (2026-09-11)
+
+1. **Param aditivo en `GET /api/vehicles?q=`** (no ruta separada) � evita foot-gun de `@Get(':id')`.
+2. **Donde: `licensePlate: { contains, mode: 'insensitive' }` combinado con AND con `ownerships.some(userId, endsAt: null)`** � preserva la frontera IDOR (solo se busca dentro de la lista del owner). `meta.total` filtrado autom�ticamente (`count({ where })` reusa la misma variable).
+3. **Mantener params crudos + interfaz interna** (`q?: string` en `ListVehiclesQuery`). NO crear query-DTO: ser�a el primero del codebase, sumar�a casos 400 nuevos (rompiendo "sin 4xx nuevos") y crear�a patr�n nuevo a mitad de feature. Cu�ndo s�: con filtros marca/modelo (D-045).
+4. **Guard `typeof query.q === 'string'`** obligatorio: `?q=a&q=b` entrega array y `.trim()` explotar�a. Normalizaci�n en el handler (testeable sin HTTP). Hardening `slice(0, 20)` (placa VarChar(20)).
+5. **Frontend: `placeholderData: keepPreviousData` OBLIGATORIO** (React Query v5): con queryKey din�mico cada cambio de `q` crea una query sin cach�; sin el placeholder, `isLoading` desmontar�a la lista en cada tipeo (regresi�n UX). Hook `useDebounce` propio en `frontend/src/hooks/` (sin dependencias).
+6. **`contains` (`%q%`) no usa el �ndice B-tree** (ni `@unique` ni `@@index([licensePlate])` � ese �ndice es redundante con el unique y no da soporte de b�squeda). Riesgo Baja en MVP: volumen post-ownership es de docenas de filas. Trigram/full-text = decisi�n aparte si crece.
+7. **Quirk LIKE wildcards** (`%`/`_` en la entrada act�an como wildcards; `q="A_B"` matchea "AXB"): sem�ntica inesperada, no es issue de seguridad (parametrizado), aceptada y documentada en spec �12.
+
+## Cambios t�cnicos aplicados
+
+### Backend (commit `f9c6917`)
+- `vehicles.controller.ts` `findAll`: + `@Query('q') q?: string` ? handler.
+- `list-vehicles.handler.ts`: `q?: string` en `ListVehiclesQuery`; normalizaci�n (guard `typeof` + `trim()` + m�nimo 2 + `slice(0,20)`); `where` tipado `Prisma.VehicleWhereInput` combinando ownership AND `licensePlate contains/insensitive`; orden/include/paginaci�n intactos. Import `Vehicle` sin uso limpiado.
+- Tests: 24 suites / 214 tests (6 nuevos: composici�n AND, insensitive, trim, <2 chars, no-string sin crash, sin match ? data [] + meta.total 0). Los 3 tests de regresi�n F-010 del listado pasan sin modificaci�n (RF-2).
+
+### Frontend (commit `ae6dae8`)
+- `frontend/src/hooks/use-debounce.ts` (nuevo): debounce gen�rico ~300ms, sin dependencias.
+- `api.ts` `listVehicles`: firma `{ page?, limit?, q? }`; `searchParams` con `q` solo si est� presente (no enviar `q=""`).
+- `/vehicles/page.tsx`: input controlado (label sr-only, placeholder "Buscar por placa�", `maxLength={20}`, bot�n limpiar con aria-label), `useDebounce` ? `effectiveQ` (trim >= 2), queryKey din�mico `["vehicles", PAGE, LIMIT, effectiveQ]`, `placeholderData: keepPreviousData`, estados vac�os ramificados por `effectiveQ` ("No se encontraron veh�culos con esa placa" + CTA limpiar vs. vac�o real). Invalidaci�n de F-011 intacta (match por prefijo).
+- Tests: 6 files / 56 tests (p�gina +3 con fake timers y `settle()` 4-pass; api +2 con/sin q). `/vehicles` sigue est�tica en build.
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Soft-deleted en listado/b�squeda** sigue abierto: ticket follow-up sist�mico de soft-delete filtering (Secci�n 18, �tem 2). La b�squeda hace los veh�culos retirados levemente m�s "descubribles" (un owner puede buscar una placa dada de baja); mismo defecto que el listado, no es nuevo. Decisiones de producto pendientes: archivo/retirados, reactivaci�n, 404 vs 410.
+2. **`?page=abc` ? NaN** en el listado (deuda preexistente): se arreglar� con el query-DTO cuando lleguen los filtros marca/modelo (D-045 post-MVP). NO se toc� en F-012.
+3. **Import `Vehicle` limpiado** en `list-vehicles.handler.ts` (deja `import { Prisma }`), tras el escaneo del engineer � sin cambio funcional.
