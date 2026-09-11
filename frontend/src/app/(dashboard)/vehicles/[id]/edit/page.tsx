@@ -160,9 +160,10 @@ export default function EditVehiclePage() {
         toEditVehicleInput(vehicleQuery.data, data, selectedVersionId),
       );
 
-      // RF-7: invalidar el listado y redirigir (mismo patrón que alta).
+      // RF-7: invalidar el listado y el detalle, y redirigir al detalle.
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-      router.push("/vehicles");
+      queryClient.invalidateQueries({ queryKey: ["vehicle", id] });
+      router.push(`/vehicles/${id}`);
     } catch (error) {
       const apiError = error as {
         status?: number;

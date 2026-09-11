@@ -4,7 +4,8 @@
  * Critical behaviors (F-011 §7 RF-5/RF-6/RF-7, §10):
  * - GET /api/vehicles/:id prefills the form (plate, VIN, years, color, notes)
  *   and pre-selects the catalog cascade (brand/model/version, RF-5).
- * - Submit → PATCH /api/vehicles/:id → invalidate ["vehicles"] + redirect.
+ * - Submit → PATCH /api/vehicles/:id → invalidate ["vehicles"] + ["vehicle", id]
+ *   and redirect to the detail page /vehicles/:id (F-013).
  * - 409 plate conflict → clear field message; form values preserved.
  * - 403 → access denied message; 404 (preload) → "Vehículo no encontrado".
  * - RF-2: clearing the version select omits versionId from the PATCH body
@@ -216,7 +217,7 @@ describe("Vehicle edit form", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["vehicles"] });
     });
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/vehicles");
+      expect(mockPush).toHaveBeenCalledWith("/vehicles/v1");
     });
   });
 

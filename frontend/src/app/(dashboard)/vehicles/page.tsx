@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2, RotateCw, Search, X } from "lucide-react";
@@ -55,6 +56,7 @@ function yearsLabel(vehicle: Vehicle): string {
 
 export default function VehiclesPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [searchInput, setSearchInput] = useState("");
   const debouncedInput = useDebounce(searchInput, DEBOUNCE_MS);
   const effectiveQ =
@@ -178,41 +180,62 @@ export default function VehiclesPage() {
         <ul className="flex flex-col gap-4">
           {query.data.data.map((vehicle) => (
             <li key={vehicle.id}>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-medium">
-                    {vehicle.licensePlate}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-1 text-sm sm:grid-cols-2">
-                  <p className="text-muted-foreground">
-                    Marca / modelo / versión:{" "}
-                    <span className="text-foreground">
-                      {catalogLabel(vehicle)}
-                    </span>
-                  </p>
-                  <p className="text-muted-foreground">
-                    Año:{" "}
-                    <span className="text-foreground">{yearsLabel(vehicle)}</span>
-                  </p>
-                  <p className="text-muted-foreground">
-                    Color:{" "}
-                    <span className="text-foreground">
-                      {vehicle.color || "—"}
-                    </span>
-                  </p>
-                </CardContent>
-                {/* D-039 / RF-1: "Editar" solo para owners activos. */}
-                {isVehicleOwner(vehicle, user?.id) && (
-                  <CardFooter>
-                    <Link href={`/vehicles/${vehicle.id}/edit`}>
-                      <Button variant="outline" size="sm">
-                        Editar
-                      </Button>
-                    </Link>
-                  </CardFooter>
-                )}
-              </Card>
+              {/* F-013 / D-046: TODA la card navega al detalle. PROHIBIDO
+                  <Link> anidado (Next.js no lo soporta) — usamos un <div>
+                  clickable (role="link") y la acción "Editar" (D-039, solo
+                  owner) con e.stopPropagation() para no disparar la card. */}
+              <div
+                role="link"
+                tabIndex={0}
+                aria-label={`Ver detalle de ${vehicle.licensePlate}`}
+                className="cursor-pointer rounded-xl ring-1 ring-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 hover:bg-muted/30"
+                onClick={() => router.push(`/vehicles/${vehicle.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    router.push(`/vehicles/${vehicle.id}`);
+                  }
+                }}
+              >
+                <Card className="ring-0">
+                  <CardHeader>
+                    <CardTitle className="text-base font-medium">
+                      {vehicle.licensePlate}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-1 text-sm sm:grid-cols-2">
+                    <p className="text-muted-foreground">
+                      Marca / modelo / versión:{" "}
+                      <span className="text-foreground">
+                        {catalogLabel(vehicle)}
+                      </span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      Año:{" "}
+                      <span className="text-foreground">{yearsLabel(vehicle)}</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      Color:{" "}
+                      <span className="text-foreground">
+                        {vehicle.color || "—"}
+                      </span>
+                    </p>
+                  </CardContent>
+                  {/* D-039 / RF-1: "Editar" solo para owners activos. */}
+                  {isVehicleOwner(vehicle, user?.id) && (
+                    <CardFooter>
+                      <Link
+                        href={`/vehicles/${vehicle.id}/edit`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button variant="outline" size="sm">
+                          Editar
+                        </Button>
+                      </Link>
+                    </CardFooter>
+                  )}
+                </Card>
+              </div>
             </li>
           ))}
         </ul>

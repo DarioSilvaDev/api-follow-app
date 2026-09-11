@@ -452,4 +452,322 @@ describe("API client — vehicleApi", () => {
     );
     expect(refreshCalls).toHaveLength(0);
   });
+
+  // ── F-013: Photos ────────────────────────────────────────────────────────
+
+  it("listPhotos sends ?signed=true and parses the photo array (F-013)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, [
+        {
+          id: "p1",
+          vehicleId: "v1",
+          key: "vehicles/v1/photos/p1.webp",
+          caption: null,
+          isPrimary: true,
+          createdAt: "2026-09-10T00:00:00.000Z",
+          url: "https://signed.example/p1",
+          expiresAt: "2026-09-10T01:00:00.000Z",
+        },
+      ]);
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.listPhotos("v1");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("p1");
+    expect(result[0].isPrimary).toBe(true);
+    expect(result[0].url).toBe("https://signed.example/p1");
+
+    const photoCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1/photos"),
+    );
+    expect(photoCalls).toHaveLength(1);
+    expect(photoCalls[0].method).toBe("GET");
+    expect(photoCalls[0].url).toContain("signed=true");
+  });
+
+  it("uploadPhoto POSTs a multipart form with the file field (F-013)", async () => {
+    let body: FormData | string | undefined;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        const contentType = input.headers.get("content-type") ?? "";
+        body = contentType.includes("multipart/form-data")
+          ? await input.clone().formData()
+          : await input.clone().text();
+      } else if (init?.body instanceof FormData) {
+        body = init.body;
+      } else {
+        body = init?.body as string | undefined;
+      }
+      return makeResponse(200, {
+        id: "p2",
+        vehicleId: "v1",
+        key: "vehicles/v1/photos/p2.webp",
+        caption: null,
+        isPrimary: false,
+        createdAt: "2026-09-10T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const file = new File(["dummy"], "photo.jpg", { type: "image/jpeg" });
+    const result = await vehicleApi.uploadPhoto("v1", file);
+
+    expect(result.id).toBe("p2");
+    const photoCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1/photos"),
+    );
+    expect(photoCalls).toHaveLength(1);
+    expect(photoCalls[0].method).toBe("POST");
+
+    expect(body).toBeDefined();
+    if (body instanceof FormData) {
+      expect(body.get("file")).toBeTruthy();
+    } else {
+      expect(String(body)).toContain('name="file"');
+    }
+  });
+
+  it("setPrimaryPhoto PATCHes the primary route (F-013)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, {
+        id: "p1",
+        vehicleId: "v1",
+        key: "k",
+        caption: null,
+        isPrimary: true,
+        createdAt: "2026-09-10T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.setPrimaryPhoto("v1", "p1");
+
+    expect(result.isPrimary).toBe(true);
+    expect(capturedRequests[0].url).toContain("vehicles/v1/photos/p1/primary");
+    expect(capturedRequests[0].method).toBe("PATCH");
+  });
+
+  it("deletePhoto DELETEs the photo route and resolves on empty body (F-013)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200);
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    await expect(vehicleApi.deletePhoto("v1", "p1")).resolves.toBeUndefined();
+
+    expect(capturedRequests[0].url).toContain("vehicles/v1/photos/p1");
+    expect(capturedRequests[0].method).toBe("DELETE");
+  });
+
+  it("maps uploadPhoto 403 to { status, message } (D-048)", async () => {
+    fetchSpy.mockImplementation(async () =>
+      makeResponse(403, { message: "Forbidden", code: "FORBIDDEN" }),
+    );
+
+    const { vehicleApi } = await import("@/lib/api");
+
+    await expect(
+      vehicleApi.uploadPhoto("v1", new File(["x"], "a.jpg", { type: "image/jpeg" })),
+    ).rejects.toMatchObject({ status: 403, message: "Forbidden", code: "FORBIDDEN" });
+  });
+
+  // ── F-013: Documents ─────────────────────────────────────────────────────
+
+  it("listDocuments sends ?signed=true and parses document URLs (F-013)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, [
+        {
+          id: "d1",
+          vehicleId: "v1",
+          key: "vehicles/v1/documents/d1.pdf",
+          name: "Cédula verde",
+          documentType: "Cédula",
+          expiresAt: null,
+          createdAt: "2026-09-10T00:00:00.000Z",
+          updatedAt: "2026-09-10T00:00:00.000Z",
+          url: "https://signed.example/d1",
+          urlExpiresAt: "2026-09-10T01:00:00.000Z",
+        },
+      ]);
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.listDocuments("v1");
+
+    expect(result[0].name).toBe("Cédula verde");
+    expect(result[0].url).toBe("https://signed.example/d1");
+    expect(capturedRequests[0].url).toContain("vehicles/v1/documents");
+    expect(capturedRequests[0].url).toContain("signed=true");
+  });
+
+  it("uploadDocument POSTs multipart with file + metadata fields (F-013)", async () => {
+    let body: FormData | string | undefined;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        const contentType = input.headers.get("content-type") ?? "";
+        body = contentType.includes("multipart/form-data")
+          ? await input.clone().formData()
+          : await input.clone().text();
+      } else if (init?.body instanceof FormData) {
+        body = init.body;
+      } else {
+        body = init?.body as string | undefined;
+      }
+      return makeResponse(200, {
+        id: "d2",
+        vehicleId: "v1",
+        key: "vehicles/v1/documents/d2.pdf",
+        name: "Seguro",
+        documentType: "Seguro",
+        expiresAt: null,
+        createdAt: "2026-09-10T00:00:00.000Z",
+        updatedAt: "2026-09-10T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const file = new File(["dummy"], "seguro.pdf", { type: "application/pdf" });
+    await vehicleApi.uploadDocument("v1", file, {
+      name: "Seguro",
+      documentType: "Seguro",
+      expiresAt: "2027-01-01",
+    });
+
+    expect(capturedRequests[0].method).toBe("POST");
+    expect(capturedRequests[0].url).toContain("vehicles/v1/documents");
+    expect(body).toBeDefined();
+    if (body instanceof FormData) {
+      expect(body.get("file")).toBeTruthy();
+      expect(body.get("name")).toBe("Seguro");
+      expect(body.get("documentType")).toBe("Seguro");
+      expect(body.get("expiresAt")).toBe("2027-01-01");
+    } else {
+      const text = String(body);
+      expect(text).toContain('name="file"');
+      expect(text).toContain('name="name"');
+      expect(text).toContain("Seguro");
+      expect(text).toContain('name="documentType"');
+      expect(text).toContain("2027-01-01");
+    }
+  });
+
+  it("updateDocument PATCHes metadata and parses the response (F-013)", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(200, {
+        id: "d1",
+        vehicleId: "v1",
+        key: "k",
+        name: "Seguro actualizado",
+        documentType: "Seguro",
+        expiresAt: null,
+        createdAt: "2026-09-10T00:00:00.000Z",
+        updatedAt: "2026-09-11T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.updateDocument("v1", "d1", {
+      name: "Seguro actualizado",
+    });
+
+    expect(result.name).toBe("Seguro actualizado");
+    expect(capturedRequests[0].url).toContain("vehicles/v1/documents/d1");
+    expect(capturedRequests[0].method).toBe("PATCH");
+    expect(requestBody).toEqual({ name: "Seguro actualizado" });
+  });
+
+  it("deleteDocument DELETEs and resolves on empty body (F-013)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200);
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    await expect(vehicleApi.deleteDocument("v1", "d1")).resolves.toBeUndefined();
+
+    expect(capturedRequests[0].url).toContain("vehicles/v1/documents/d1");
+    expect(capturedRequests[0].method).toBe("DELETE");
+  });
+
+  // ── F-013: Mileage ───────────────────────────────────────────────────────
+
+  it("recordMileage POSTs { mileage, source: 'owner', notes } (F-013 D-048)", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(201, {
+        id: "m1",
+        vehicleId: "v1",
+        mileage: 25000,
+        source: "owner",
+        notes: "Cambio de aceite",
+        recordedAt: "2026-09-11T00:00:00.000Z",
+        createdAt: "2026-09-11T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.recordMileage("v1", {
+      mileage: 25000,
+      source: "owner",
+      notes: "Cambio de aceite",
+    });
+
+    expect(result.mileage).toBe(25000);
+    expect(result.source).toBe("owner");
+    expect(capturedRequests[0].url).toContain("vehicles/v1/mileage");
+    expect(capturedRequests[0].method).toBe("POST");
+    expect(requestBody).toEqual({
+      mileage: 25000,
+      source: "owner",
+      notes: "Cambio de aceite",
+    });
+  });
+
+  it("maps recordMileage 400 (non-monotonic) to { status, message } (RF-5)", async () => {
+    fetchSpy.mockImplementation(async () =>
+      makeResponse(400, {
+        message: "Mileage must be greater than or equal to last recorded",
+        code: "VALIDATION_ERROR",
+      }),
+    );
+
+    const { vehicleApi } = await import("@/lib/api");
+
+    await expect(
+      vehicleApi.recordMileage("v1", { mileage: 1000, source: "owner" }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+    });
+  });
 });

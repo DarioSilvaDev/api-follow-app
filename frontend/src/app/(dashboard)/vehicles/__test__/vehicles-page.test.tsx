@@ -8,6 +8,7 @@
  * - Load error shows a message and a retry action.
  * - F-012: search by plate with 300ms debounce, dynamic queryKey,
  *   keepPreviousData, branched empty states (with-q vs without-q).
+ * - F-013: whole-card navigation → /vehicles/:id (list is the entry point).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -27,6 +28,12 @@ vi.mock("@/lib/api", () => ({
 // D-039: the Edit button visibility depends on the current session user id.
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: { id: "user-1" }, status: "authenticated" }),
+}));
+
+// F-013: cards are now clickable (whole-card navigation to the detail page).
+const mockPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush, prefetch: vi.fn() }),
 }));
 
 // Mock UI components to avoid deep dependency trees (existing convention)
@@ -271,6 +278,51 @@ describe("Vehicles list page", () => {
 
     expect(await screen.findByText("ABC123")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
+  });
+
+  it("navigates to the detail page when the whole card is clicked (F-013)", async () => {
+    const user = userEvent.setup();
+    mockListVehicles.mockResolvedValue({
+      data: [makeVehicle()],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+
+    const card = await screen.findByRole("link", {
+      name: /ver detalle de ABC123/i,
+    });
+    await user.click(card);
+
+    expect(mockPush).toHaveBeenCalledWith("/vehicles/v1");
+  });
+
+  it("does NOT navigate when clicking the Editar link inside a card (F-013)", async () => {
+    const user = userEvent.setup();
+    mockListVehicles.mockResolvedValue({
+      data: [
+        makeVehicle({
+          ownerships: [
+            {
+              id: "o1",
+              vehicleId: "v1",
+              userId: "user-1",
+              type: "owner",
+              startsAt: "2026-09-09T00:00:00.000Z",
+              endsAt: null,
+            },
+          ],
+        }),
+      ],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+
+    const editLink = await screen.findByRole("link", { name: /editar/i });
+    await user.click(editLink);
+
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });
 

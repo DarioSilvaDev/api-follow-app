@@ -15,6 +15,8 @@ export type VehicleOwnershipType = "owner" | "co_owner" | "company";
  * and detail responses; here we only type the fields the UI reads:
  * - `type` is `owner` for active owners (D-039 edit rule).
  * - `endsAt === null` marks an ACTIVE ownership (historical rows are kept).
+ * - F-013: GET /:id include el anidado `user` (nombre/apellido) para mostrar
+ *   el titular actual (RF-2). El listado NO lo incluye — por eso es opcional.
  */
 export interface VehicleOwnership {
   id: string;
@@ -23,7 +25,85 @@ export interface VehicleOwnership {
   type: VehicleOwnershipType;
   startsAt: string;
   endsAt?: string | null;
+  /** Detailed GET /:id only — the list response omits it. */
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+  };
 }
+
+// ---------------------------------------------------------------------------
+// F-013: Photo / Document / Mileage types
+// ---------------------------------------------------------------------------
+
+/**
+ * F-013 / D-048: Vehicle photo.
+ * When fetched via `GET :id/photos?signed=true` the response includes `url`
+ * and `expiresAt` (signed URL expiry, ISO string).
+ */
+export interface VehiclePhoto {
+  id: string;
+  vehicleId: string;
+  key: string;
+  caption: string | null;
+  isPrimary: boolean;
+  createdAt: string;
+  /** Signed URL (R2 batch `?signed=true`) — present only with signed query. */
+  url?: string;
+  /** Signed URL expiration timestamp (ISO string). */
+  expiresAt?: string;
+}
+
+/**
+ * F-013 / D-048: Vehicle document.
+ * `expiresAt` is the document metadata expiry (null = no expiry).
+ * `urlExpiresAt` is the signed URL expiry (separate from the metadata field).
+ */
+export interface VehicleDocument {
+  id: string;
+  vehicleId: string;
+  key: string;
+  name: string;
+  documentType: string;
+  /** Document metadata expiry (null = no expiry). */
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Signed URL (R2 batch `?signed=true`) — present only with signed query. */
+  url?: string;
+  /** Signed URL expiration timestamp (ISO string). */
+  urlExpiresAt?: string;
+}
+
+/**
+ * Mileage source enum — mirrors the Prisma `MileageSource` enum.
+ */
+export type MileageSource =
+  | "owner"
+  | "workshop"
+  | "inspection"
+  | "dealership"
+  | "imported"
+  | "system";
+
+/**
+ * F-013: Vehicle mileage record.
+ */
+export interface VehicleMileage {
+  id: string;
+  vehicleId: string;
+  mileage: number;
+  source: MileageSource | string;
+  notes?: string | null;
+  recordedAt: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Vehicle response (base — used by list and detail)
+// ---------------------------------------------------------------------------
 
 export interface Vehicle {
   id: string;
@@ -42,8 +122,12 @@ export interface Vehicle {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Relations exposed by the backend — not consumed by the MVP list yet. */
-  photos?: unknown[];
+  /** F-013: Photos (raw from GET /:id, or with url when signed=true). */
+  photos?: VehiclePhoto[];
+  /** F-013: Documents (raw from GET /:id, or with url when signed=true). */
+  documents?: VehicleDocument[];
+  /** F-013: Latest mileage records (from GET /:id, last 5). */
+  mileages?: VehicleMileage[];
   /** Active ownerships (list) / all ownerships (detail). See VehicleOwnership. */
   ownerships?: VehicleOwnership[];
 }

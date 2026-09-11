@@ -5,8 +5,11 @@ import type {
   UpdateVehicleInput,
   Vehicle,
   VehicleBrand,
+  VehicleDocument,
   VehicleListResponse,
+  VehicleMileage,
   VehicleModel,
+  VehiclePhoto,
   VehicleVersion,
 } from "@/types/vehicle";
 
@@ -345,5 +348,120 @@ export const vehicleApi = {
     api
       .get("vehicle-versions", { searchParams: { modelId } })
       .json<VehicleVersion[]>()
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // F-013 — Photos (D-048: reads via assertVehicleAccess, writes via assertVehicleOwned)
+  // -----------------------------------------------------------------------
+
+  /** GET vehicles/:id/photos?signed=true → photos with signed R2 URLs. */
+  listPhotos: (vehicleId: string) =>
+    api
+      .get(`vehicles/${vehicleId}/photos`, {
+        searchParams: { signed: "true" },
+      })
+      .json<VehiclePhoto[]>()
+      .catch(toApiError),
+
+  /** POST vehicles/:id/photos (multipart, field: file). Returns the new photo. */
+  uploadPhoto: (
+    vehicleId: string,
+    file: File,
+    onProgress?: (percent: number) => void,
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api
+      .post(`vehicles/${vehicleId}/photos`, {
+        body: formData,
+        onUploadProgress: onProgress
+          ? (event) => onProgress(Math.round(event.percent * 100))
+          : undefined,
+      })
+      .json<VehiclePhoto>()
+      .catch(toApiError);
+  },
+
+  /** PATCH vehicles/:id/photos/:photoId/primary → set photo as primary. */
+  setPrimaryPhoto: (vehicleId: string, photoId: string) =>
+    api
+      .patch(`vehicles/${vehicleId}/photos/${photoId}/primary`)
+      .json<VehiclePhoto>()
+      .catch(toApiError),
+
+  /** DELETE vehicles/:id/photos/:photoId → delete photo + R2 object. */
+  deletePhoto: (vehicleId: string, photoId: string) =>
+    api
+      .delete(`vehicles/${vehicleId}/photos/${photoId}`)
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // F-013 — Documents (D-048: reads via assertVehicleAccess, writes via assertVehicleOwned)
+  // -----------------------------------------------------------------------
+
+  /** GET vehicles/:id/documents?signed=true → documents with signed R2 URLs. */
+  listDocuments: (vehicleId: string) =>
+    api
+      .get(`vehicles/${vehicleId}/documents`, {
+        searchParams: { signed: "true" },
+      })
+      .json<VehicleDocument[]>()
+      .catch(toApiError),
+
+  /**
+   * POST vehicles/:id/documents (multipart, field: file + name + documentType + expiresAt?).
+   * Returns the new document.
+   */
+  uploadDocument: (
+    vehicleId: string,
+    file: File,
+    dto: { name: string; documentType: string; expiresAt?: string },
+  ) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("name", dto.name);
+    formData.append("documentType", dto.documentType);
+    if (dto.expiresAt) formData.append("expiresAt", dto.expiresAt);
+    return api
+      .post(`vehicles/${vehicleId}/documents`, { body: formData })
+      .json<VehicleDocument>()
+      .catch(toApiError);
+  },
+
+  /** PATCH vehicles/:id/documents/:docId → update document metadata (no file replacement). */
+  updateDocument: (
+    vehicleId: string,
+    docId: string,
+    dto: {
+      name?: string;
+      documentType?: string;
+      expiresAt?: string | null;
+    },
+  ) =>
+    api
+      .patch(`vehicles/${vehicleId}/documents/${docId}`, { json: dto })
+      .json<VehicleDocument>()
+      .catch(toApiError),
+
+  /** DELETE vehicles/:id/documents/:docId → delete document + R2 object. */
+  deleteDocument: (vehicleId: string, docId: string) =>
+    api
+      .delete(`vehicles/${vehicleId}/documents/${docId}`)
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // F-013 — Mileage (D-048: write via assertVehicleOwned)
+  // -----------------------------------------------------------------------
+
+  /** POST vehicles/:id/mileage → record mileage (monotonic, source: "owner" in MVP). */
+  recordMileage: (
+    vehicleId: string,
+    dto: { mileage: number; source: "owner"; notes?: string },
+  ) =>
+    api
+      .post(`vehicles/${vehicleId}/mileage`, { json: dto })
+      .json<VehicleMileage>()
       .catch(toApiError),
 };
