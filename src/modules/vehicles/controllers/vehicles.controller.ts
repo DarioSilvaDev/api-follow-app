@@ -191,7 +191,8 @@ export class VehiclesController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048 (F-013): writes are owner-only in MVP; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     const photo = await this.uploadPhotoHandler.execute(
       new UploadPhotoCommand(id, file, user.id),
     );
@@ -202,9 +203,21 @@ export class VehiclesController {
   async listPhotos(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Query('signed') signed?: string,
   ) {
     await this.assertVehicleAccess(id, user);
     const photos = await this.listPhotosHandler.execute(id);
+    if (signed === 'true') {
+      return Promise.all(
+        photos.map(async (p) => ({
+          ...PhotoResponseDto.from(p),
+          url: await this.storage.getSignedUrl!(p.key),
+          expiresAt: new Date(
+            Date.now() + envs.SIGNED_URL_EXPIRES_SECONDS * 1000,
+          ),
+        })),
+      );
+    }
     return photos.map((p) => PhotoResponseDto.from(p));
   }
 
@@ -235,7 +248,8 @@ export class VehiclesController {
     @Param('photoId') photoId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     return this.setPrimaryPhotoHandler.execute(
       new SetPrimaryPhotoCommand(id, photoId),
     );
@@ -247,7 +261,8 @@ export class VehiclesController {
     @Param('photoId') photoId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     await this.deletePhotoHandler.execute(new DeletePhotoCommand(id, photoId));
   }
 
@@ -264,7 +279,8 @@ export class VehiclesController {
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     const doc = await this.uploadDocumentHandler.execute(
       new UploadDocumentCommand(id, dto, file, user.id),
     );
@@ -275,9 +291,21 @@ export class VehiclesController {
   async listDocuments(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Query('signed') signed?: string,
   ) {
     await this.assertVehicleAccess(id, user);
     const docs = await this.listDocumentsHandler.execute(id);
+    if (signed === 'true') {
+      return Promise.all(
+        docs.map(async (d) => ({
+          ...DocumentResponseDto.from(d),
+          url: await this.storage.getSignedUrl!(d.key),
+          urlExpiresAt: new Date(
+            Date.now() + envs.SIGNED_URL_EXPIRES_SECONDS * 1000,
+          ),
+        })),
+      );
+    }
     return docs.map((d) => DocumentResponseDto.from(d));
   }
 
@@ -309,7 +337,8 @@ export class VehiclesController {
     @Body() dto: UpdateDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     return this.updateDocumentHandler.execute(
       new UpdateDocumentCommand(id, docId, dto),
     );
@@ -321,7 +350,8 @@ export class VehiclesController {
     @Param('docId') docId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     await this.deleteDocumentHandler.execute(
       new DeleteDocumentCommand(id, docId),
     );
@@ -410,7 +440,8 @@ export class VehiclesController {
     @Body() dto: RecordMileageDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // D-048: writes are owner-only; shared access is read-only.
+    await this.assertVehicleOwned(id, user);
     return this.recordMileageHandler.execute(
       new RecordMileageCommand(id, dto, user.id),
     );

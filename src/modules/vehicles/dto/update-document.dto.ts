@@ -11,5 +11,5 @@ export class UpdateDocumentDto {
 
   @IsOptional()
   @IsDateString()
-  expiresAt?: string;
+  expiresAt?: string | null;
 }

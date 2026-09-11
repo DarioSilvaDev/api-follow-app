@@ -22,7 +22,10 @@ export class UpdateDocumentHandler {
           documentType: command.dto.documentType,
         }),
         ...(command.dto.expiresAt !== undefined && {
-          expiresAt: new Date(command.dto.expiresAt),
+          expiresAt:
+            command.dto.expiresAt === null
+              ? null
+              : new Date(command.dto.expiresAt),
         }),
       },
     });
