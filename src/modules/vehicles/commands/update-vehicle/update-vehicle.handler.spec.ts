@@ -211,4 +211,54 @@ describe('UpdateVehicleHandler — F-011 (D-039 / D-040 / D-042 / D-043)', () =>
       }),
     );
   });
+
+  // ── F-011 §18.2: soft-deleted vehicle → 404 ─────────────────────────────
+
+  it('throws NotFoundException (404) when the vehicle is soft-deleted (deletedAt set)', async () => {
+    repositoryMock.findById.mockResolvedValue({
+      id: 'v1',
+      deletedAt: new Date('2026-09-01'),
+    });
+
+    const cmd = new UpdateVehicleCommand('v1', { ...baseDto, color: 'Rojo' });
+
+    let caught: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NotFoundException);
+    expect(caught.getResponse()).toEqual({
+      statusCode: 404,
+      message: "Vehicle with id 'v1' not found",
+      error: 'Not Found',
+    });
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException (404) on empty PATCH ({}) when the vehicle is soft-deleted', async () => {
+    repositoryMock.findById.mockResolvedValue({
+      id: 'v1',
+      deletedAt: new Date('2026-09-01'),
+    });
+
+    const cmd = new UpdateVehicleCommand('v1', {});
+
+    let caught: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(NotFoundException);
+    expect(caught.getResponse()).toEqual({
+      statusCode: 404,
+      message: "Vehicle with id 'v1' not found",
+      error: 'Not Found',
+    });
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
 });

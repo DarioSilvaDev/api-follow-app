@@ -13,7 +13,7 @@ export class UpdateVehicleHandler {
 
   async execute(command: UpdateVehicleCommand) {
     const existing = await this.repository.findById(command.id);
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new NotFoundException('Vehicle', command.id);
     }
     // D-040: PATCH parcial — si no se envía ningún campo, no-op 200.

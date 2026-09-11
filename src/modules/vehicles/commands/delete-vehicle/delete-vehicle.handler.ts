@@ -25,7 +25,7 @@ export class DeleteVehicleHandler {
 
   async execute(command: DeleteVehicleCommand) {
     const existing = await this.repository.findById(command.id);
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new NotFoundException('Vehicle', command.id);
     }
 
