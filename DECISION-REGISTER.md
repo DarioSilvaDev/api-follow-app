@@ -2247,3 +2247,62 @@ Completar el journey de visualización y gestión de la información del vehícu
 3. **Lint del controller (pre-existente):** `ForbiddenException` importado sin uso (presente en HEAD) y patrón `this.storage.getSignedUrl!(key)` con `no-unnecessary-type-assertion` replicado del código original (L221/L294). Ticket cosmético de limpieza aparte; no se ejecutó lint global (`--fix`) fuera de scope.
 4. **URLs firmadas expiran (3600s):** el frontend degrada a placeholder si la URL venció; refresh planificado con `expiresAt`/`urlExpiresAt` (futuro).
 5. **`?page=abc` → NaN** (deuda preexistente): se arreglará con el query-DTO cuando lleguen los filtros marca/modelo (D-045 post-MVP). NO se tocó.
+
+# 21. Registro (2026-09-11): F-014 Timeline del Vehículo end-to-end (D-050..D-055)
+
+## Objetivo
+
+Mostrar en la vista de detalle una sección "Historial" con los eventos del vehículo ordenados cronológicamente (más reciente primero): transfers, kilometrajes y cambios de propiedad. F-014 es el "Timeline vacío" del roadmap (sin episodios de taller, que son F-020+). El backend ya existía (`GET /api/vehicles/:id/history`); esta iteración fue **frontend puro** (cero cambios de backend).
+
+## Decisiones de producto confirmadas (2026-09-11)
+
+### D-050 — Alcance del timeline: solo transfers, mileages y ownerships
+
+- Consistente con el roadmap (F-014 = "Timeline vacío"). Service records, appointments, work orders y estimates son F-020+ (CareEpisodes, Fase 2). El módulo maintenance tiene su propio endpoint (`GET /maintenance/vehicles/:vehicleId/history`) que se consumirá cuando lleguen los CareEpisodes.
+
+### D-051 — Ubicación: sección "Historial" dentro de la página de detalle (`/vehicles/[id]`)
+
+- Quinta Card debajo de Kilometraje (Ficha → Fotos → Documentos → Km → Historial). Ruta separada `/timeline` descartada: sin beneficio en MVP y agrega navegación.
+
+### D-052 — Orden y desempate: cronológico desc
+
+- Timestamp canónico: `createdAt` (transfers), `recordedAt` (mileages), `startsAt` (ownerships). Sort estable por fecha desc; empates conservan orden de inserción (transfers → mileages → ownerships).
+
+### D-053 — Sin filtros, sin paginación, sin rango de fechas en MVP
+
+- El volumen en MVP es bajo. Los filtros (tipo, rango, actor, búsqueda) son post-MVP.
+
+### D-054 — Transfers: todos los estados se muestran como entries
+
+- `completed`/`pending`/`rejected`/`cancelled`/`expired` → "Transferencia completada/pendiente/rechazada/cancelada/expirada" (cada transfer es un evento visible). Si el volumen se vuelve ruidoso, filtrar post-MVP.
+
+### D-055 — Ownerships: entries de cambio de titular
+
+- "Inicio de propiedad" (primer ownership, lógica asc por `startsAt`) o "Propiedad transferida a [nombre]" (si hay previa). Actor = titular; notas si existen.
+
+## Decisión técnica validada (2026-09-11)
+
+1. **Merge en frontend (lógica pura testeable):** `mergeHistory()` vive en `frontend/src/lib/vehicle-history.ts` (no inline en la página de ~1200 líneas), transforma los 3 arrays del backend en `TimelineEntry[]` ordenados desc. El backend NO se toca (el endpoint ya trae todo; no paginar/filtrar en MVP).
+2. **Consulta de history paralela** al patrón existente de photos/documents (`["vehicle", id, "history"]`, `retry: false`), sin `enabled` guard (consistencia con la página).
+3. **`VehicleOwnership.notes` agregado al tipo frontend** (aditivo, lo expone el backend en history). `VehicleTransferStatus` como union de los 6 valores del enum Prisma.
+4. **PII:** el frontend solo renderiza lo que llega; el backend ya controla emails (Security Review #13). Sin emails en la UI.
+
+## Cambios técnicos aplicados — Frontend (commit `e7fab73`)
+
+- `types/vehicle.ts`: + `VehicleTransferStatus`, `VehicleTransfer`, `VehicleHistoryResponse`; `VehicleOwnership.notes?: string | null`.
+- `api.ts`: + `getVehicleHistory(vehicleId)`.
+- `src/lib/vehicle-history.ts` (nuevo): `mergeHistory()` + `mileageSourceLabel()` (helper de labels movido del componente para evitar tablas divergentes) + `formatTimelineDate()`.
+- Página `/vehicles/[id]`: quinta Card "Historial" con loading (spinner + `role="status"`), error + Reintentar, empty ("Sin eventos registrados"), lista `<ol>` con icono/título/fecha/actor/notas.
+- Tests: 9 files / 98 tests (+18: merge 11 → 5 estados D-054 + orden desc + Inicio de propiedad vs transferida; sección 6 → render/loading/error/empty; api 1). Build OK.
+
+### Spec (commit `d4f0f86`)
+
+- `docs/specs/vehicle-timeline-flow.md` (nueva): problema, objetivos, actores, D-050..D-055, contrato backend sin cambios, user journey, RF-1..RF-7, alcance dentro/fuera, criterios de aceptación (6), dependencias, riesgos.
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Service records / appointments / work orders / estimates fuera del timeline** (F-020+, CareEpisodes): el propietario que ya tiene actividad de taller registrada no la verá en "Historial" hasta esa fase. Es el alcance decidido (D-050), no un bug.
+2. **`vehicle.transferred` event muerto:** la clase `VehicleTransferredEvent` existe pero no se emite en ningún handler. Cuando lleguen los CareEpisodes (F-020+) o una UI de transfers completa, decidir si la timeline consume eventos o sigue leyendo la tabla directamente (read-path actual).
+3. **Decisiones pendientes registradas en UNIFIED-BASELINE:** si `history.view` / `vehicle.history.read` deben gatear los endpoints de history (hoy ownership-scoped sin PermissionsGuard) — se resolverá con el contexto workshop.
+4. **Todos los estados de transfer visibles (D-054):** si el usuario los encuentra ruidosos (ej. transfers rejected/expired), filtrar post-MVP.
+5. **Emails en transfers:** `fromUser`/`toUser` se muestran sin email en todos los casos (el handler solo expone email en ownerships para owner activo). Si una futura UI de transfers lo requiera, revisar PII.
