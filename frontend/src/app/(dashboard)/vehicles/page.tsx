@@ -1,23 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { Loader2, RotateCw } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Loader2, RotateCw, Search, X } from "lucide-react";
 import { vehicleApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { Vehicle } from "@/types/vehicle";
 
 const PAGE = 1;
 const LIMIT = 20;
+const DEBOUNCE_MS = 300;
+/** D-044 / RF-1: same normalization as backend — < 2 chars (after trim) → no filter. */
+const MIN_SEARCH_LENGTH = 2;
 
 /**
  * D-039 / RF-1: only the OWNER can edit. The list returns active ownerships
@@ -55,10 +55,27 @@ function yearsLabel(vehicle: Vehicle): string {
 
 export default function VehiclesPage() {
   const { user } = useAuth();
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedInput = useDebounce(searchInput, DEBOUNCE_MS);
+  const effectiveQ =
+    debouncedInput.trim().length >= MIN_SEARCH_LENGTH
+      ? debouncedInput.trim()
+      : "";
+
+  // F-012 / RF-4: dynamic 4-element key (stable base for F-011 invalidation)
+  // + placeholderData keeps the previous list while q changes (no flash).
   const query = useQuery({
-    queryKey: ["vehicles", PAGE, LIMIT],
-    queryFn: () => vehicleApi.listVehicles({ page: PAGE, limit: LIMIT }),
+    queryKey: ["vehicles", PAGE, LIMIT, effectiveQ],
+    queryFn: () =>
+      effectiveQ
+        ? vehicleApi.listVehicles({ page: PAGE, limit: LIMIT, q: effectiveQ })
+        : vehicleApi.listVehicles({ page: PAGE, limit: LIMIT }),
+    placeholderData: keepPreviousData,
   });
+
+  const isEmpty =
+    !query.data || query.data.data.length === 0;
+  const showSearchEmptyState = Boolean(effectiveQ && isEmpty);
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,6 +89,37 @@ export default function VehiclesPage() {
         <Link href="/vehicles/new">
           <Button>Registrar vehículo</Button>
         </Link>
+      </div>
+
+      {/* F-012 / RF-5: search bar — controlled input, accessible label, clear button. */}
+      <div className="flex flex-col gap-2 max-w-md">
+        <Label htmlFor="vehicle-search" className="sr-only">
+          Buscar por placa
+        </Label>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            id="vehicle-search"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Buscar por placa…"
+            maxLength={20}
+            className="pl-8 pr-8"
+          />
+          {searchInput && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2"
+              aria-label="Limpiar búsqueda"
+              onClick={() => setSearchInput("")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {query.isLoading ? (
@@ -93,21 +141,39 @@ export default function VehiclesPage() {
             </Button>
           </CardFooter>
         </Card>
-      ) : !query.data || query.data.data.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No tenés vehículos registrados</CardTitle>
-            <CardDescription>
-              Registrá tu primer vehículo para empezar a construir su historia
-              clínica digital.
-            </CardDescription>
-          </CardHeader>
-          <CardFooter>
-            <Link href="/vehicles/new">
-              <Button>Registrar vehículo</Button>
-            </Link>
-          </CardFooter>
-        </Card>
+      ) : isEmpty ? (
+        showSearchEmptyState ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>No se encontraron vehículos con esa placa</CardTitle>
+              <CardDescription>
+                No hay vehículos que coincidan con «{effectiveQ}». Probá con
+                otra placa o limpiá la búsqueda.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Button variant="outline" onClick={() => setSearchInput("")}>
+                <X className="h-4 w-4" />
+                Limpiar búsqueda
+              </Button>
+            </CardFooter>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>No tenés vehículos registrados</CardTitle>
+              <CardDescription>
+                Registrá tu primer vehículo para empezar a construir su historia
+                clínica digital.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Link href="/vehicles/new">
+                <Button>Registrar vehículo</Button>
+              </Link>
+            </CardFooter>
+          </Card>
+        )
       ) : (
         <ul className="flex flex-col gap-4">
           {query.data.data.map((vehicle) => (

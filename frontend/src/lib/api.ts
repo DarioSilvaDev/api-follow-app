@@ -298,9 +298,12 @@ export const vehicleApi = {
   listVehicles: ({
     page = 1,
     limit = 20,
-  }: { page?: number; limit?: number } = {}) =>
+    q,
+  }: { page?: number; limit?: number; q?: string } = {}) =>
     api
-      .get("vehicles", { searchParams: { page, limit } })
+      .get("vehicles", {
+        searchParams: { page, limit, ...(q ? { q } : {}) },
+      })
       .json<VehicleListResponse>()
       .catch(toApiError),
 

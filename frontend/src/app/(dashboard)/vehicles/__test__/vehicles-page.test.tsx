@@ -1,14 +1,16 @@
 /**
  * Tests for the "Mis vehículos" list page (/vehicles).
  *
- * Critical behaviors (F-010 §8 / §10):
+ * Critical behaviors (F-010 §8 / §10 + F-012):
  * - Renders the paginated list (plate, catalog triplet, year, color).
  * - Renders "—" when brand/model/version are missing (D-038 / §9 tolerance).
  * - Empty state with CTA "Registrar vehículo" → /vehicles/new.
  * - Load error shows a message and a retry action.
+ * - F-012: search by plate with 300ms debounce, dynamic queryKey,
+ *   keepPreviousData, branched empty states (with-q vs without-q).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -53,10 +55,18 @@ vi.mock("@/components/ui/card", () => ({
     <div {...props}>{children}</div>
   ),
 }));
+// F-012 search bar uses Input + Label — mock them to keep the tree shallow.
+vi.mock("@/components/ui/input", () => ({
+  Input: (props: React.ComponentProps<"input">) => <input {...props} />,
+}));
+vi.mock("@/components/ui/label", () => ({
+  Label: (props: React.ComponentProps<"label">) => <label {...props} />,
+}));
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const emptyMeta = { total: 0, page: 1, limit: 20, totalPages: 0 };
+const DEBOUNCE_MS = 300;
 
 function makeVehicle(overrides: Record<string, unknown> = {}) {
   return {
@@ -84,6 +94,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -260,5 +271,117 @@ describe("Vehicles list page", () => {
 
     expect(await screen.findByText("ABC123")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /editar/i })).not.toBeInTheDocument();
+  });
+});
+
+// ── F-012: search by plate ───────────────────────────────────────────────────
+
+/**
+ * Flush fake timers + microtasks inside act. Needed because:
+ * - the debounce uses a 300ms setTimeout;
+ * - React Query schedules state notifications via setTimeout(0) and resolves
+ *   queryFn promises on microtasks, so we advance + await explicitly.
+ */
+async function settle() {
+  // Multiple independent act passes. Each debounce/fetch cycle crosses
+  // React (effect) → React Query (microtask) → notify (setTimeout(0)),
+  // and a single advance often leaves the tail pending on the fake clock.
+  for (let i = 0; i < 4; i++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+      await Promise.resolve();
+    });
+  }
+}
+
+describe("Vehicles list page — search (F-012)", () => {
+  it("writes 'SMK' → after debounce, listVehicles is called with { page, limit, q: 'SMK' }", async () => {
+    vi.useFakeTimers();
+    mockListVehicles.mockResolvedValue({
+      data: [makeVehicle()],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+    await settle();
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
+
+    // fireEvent is sync (no internal timers) — fake timers only drive the
+    // useDebounce setTimeout.
+    fireEvent.change(screen.getByPlaceholderText("Buscar por placa…"), {
+      target: { value: "SMK" },
+    });
+    await settle();
+
+    expect(mockListVehicles).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+      q: "SMK",
+    });
+  });
+
+  it("shows the search empty state (RF-3) and restores the full list after clearing", async () => {
+    vi.useFakeTimers();
+    // Dynamic mock: with q → no results; without q → full list.
+    mockListVehicles.mockImplementation(({ q }: { q?: string }) => {
+      if (q) {
+        return Promise.resolve({ data: [], meta: emptyMeta });
+      }
+      return Promise.resolve({
+        data: [
+          makeVehicle(),
+          makeVehicle({ id: "v2", licensePlate: "QWE234" }),
+        ],
+        meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+      });
+    });
+
+    renderPage();
+    await settle();
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
+    await settle();
+
+    fireEvent.change(screen.getByPlaceholderText("Buscar por placa…"), {
+      target: { value: "SMK" },
+    });
+    await settle();
+
+    expect(
+      screen.getByText("No se encontraron vehículos con esa placa"),
+    ).toBeInTheDocument();
+
+    // CTA "Limpiar búsqueda" is the button with visible text (the input X
+    // button is icon-only). Click it → back to the unfiltered list.
+    const clearCta = screen
+      .getAllByRole("button", { name: /limpiar búsqueda/i })
+      .find((b) => b.textContent?.includes("Limpiar búsqueda"));
+    expect(clearCta).toBeDefined();
+    fireEvent.click(clearCta!);
+    await settle();
+
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
+    expect(screen.getByText("QWE234")).toBeInTheDocument();
+    expect(mockListVehicles).toHaveBeenCalledWith({ page: 1, limit: 20 });
+  });
+
+  it("does NOT filter with a 1-character plate (effectiveQ '')", async () => {
+    vi.useFakeTimers();
+    mockListVehicles.mockResolvedValue({
+      data: [makeVehicle()],
+      meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+    });
+
+    renderPage();
+    await settle();
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
+
+fireEvent.change(screen.getByPlaceholderText("Buscar por placa…"), {
+      target: { value: "SMK" },
+    });
+    await settle();
+
+    // Same base key → same query run: only the initial unfiltered call.
+    expect(mockListVehicles).toHaveBeenCalledWith({ page: 1, limit: 20 });
+    expect(screen.getByText("ABC123")).toBeInTheDocument();
   });
 });

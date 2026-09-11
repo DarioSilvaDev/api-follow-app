@@ -218,6 +218,8 @@ describe("API client — vehicleApi", () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
   let capturedRequests: Array<{ url: string; method: string }>;
 
+  const emptyMeta = { total: 0, page: 1, limit: 20, totalPages: 0 };
+
   beforeEach(() => {
     capturedRequests = [];
     vi.resetModules();
@@ -259,6 +261,41 @@ describe("API client — vehicleApi", () => {
       r.url.includes("vehicles"),
     );
     expect(vehicleCalls).toHaveLength(1);
+  });
+
+  it("listVehicles sends q as a search param when provided (F-012 D-044)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, { data: [], meta: emptyMeta });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    await vehicleApi.listVehicles({ page: 1, limit: 20, q: "SMK" });
+
+    const vehicleCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles"),
+    );
+    expect(vehicleCalls).toHaveLength(1);
+    expect(vehicleCalls[0].url).toContain("q=SMK");
+  });
+
+  it("listVehicles does NOT include q when it is empty (F-012)", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, { data: [], meta: emptyMeta });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    await vehicleApi.listVehicles({ page: 1, limit: 20, q: "" });
+
+    const vehicleCalls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles"),
+    );
+    expect(vehicleCalls).toHaveLength(1);
+    expect(vehicleCalls[0].url).toContain("page=1");
+    expect(vehicleCalls[0].url).not.toContain("q=");
   });
 
   it("maps registerVehicle 409 to { status, message, code } without refresh", async () => {
