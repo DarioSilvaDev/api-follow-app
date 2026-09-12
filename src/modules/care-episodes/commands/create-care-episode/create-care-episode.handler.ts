@@ -77,12 +77,13 @@ export class CreateCareEpisodeHandler {
       },
     });
 
-    // ── Event: emitted after successful creation ──
+    // ── Event: emitted after successful creation (iteración 2-2: source='workshop') ──
     this.eventEmitter.emit(
       'care-episode.created',
       new CareEpisodeCreatedEvent(
         careEpisode.id,
         vehicleId,
+        'workshop',
         command.workshopId,
         command.createdByMemberId,
       ),

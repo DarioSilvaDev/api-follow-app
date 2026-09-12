@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { WorkshopsController } from './controllers/workshops.controller';
 import { PublicWorkshopController } from './controllers/public.controller';
+import { WorkshopSearchController } from './controllers/search.controller';
 import { PrismaWorkshopRepository } from './repositories/prisma-workshop.repository';
 import { WORKSHOP_REPOSITORY } from './tokens';
 import { AuthorizationModule } from '../../common/authorization.module';
@@ -22,6 +23,7 @@ import {
   ListWorkshopSpecialtiesHandler,
   ListPublicSpecialtiesHandler,
 } from './queries/list-specialties/list-specialties.handler';
+import { SearchWorkshopsHandler } from './queries/search-workshops/search-workshops.handler';
 import { CreateRoleHandler } from './commands/create-role/create-role.handler';
 import { UpdateRoleHandler } from './commands/update-role/update-role.handler';
 import { DeleteRoleHandler } from './commands/delete-role/delete-role.handler';
@@ -29,7 +31,13 @@ import { ListRolesHandler } from './queries/list-roles/list-roles.handler';
 
 @Module({
   imports: [AuthorizationModule],
-  controllers: [WorkshopsController, PublicWorkshopController],
+  // WorkshopSearchController ANTES de WorkshopsController: evita que
+  // `GET /api/workshops/:id` capture `search` como id (F-012).
+  controllers: [
+    WorkshopSearchController,
+    WorkshopsController,
+    PublicWorkshopController,
+  ],
   providers: [
     CreateWorkshopHandler,
     UpdateWorkshopHandler,
@@ -47,6 +55,7 @@ import { ListRolesHandler } from './queries/list-roles/list-roles.handler';
     RemoveSpecialtyHandler,
     ListWorkshopSpecialtiesHandler,
     ListPublicSpecialtiesHandler,
+    SearchWorkshopsHandler,
     CreateRoleHandler,
     UpdateRoleHandler,
     DeleteRoleHandler,

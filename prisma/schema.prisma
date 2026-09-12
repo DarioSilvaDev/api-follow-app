@@ -169,6 +169,7 @@ model User {
   appointments Appointment[]
   workOrders WorkOrder[]
   estimates Estimate[]
+  careEpisodesCreated CareEpisode[]
 
   impersonationAsAdmin  ImpersonationSession[] @relation("ImpersonationAsAdmin")
   impersonationAsTarget ImpersonationSession[] @relation("ImpersonationAsTarget")
@@ -530,6 +531,7 @@ model WorkshopMember {
   assignedWorkOrders WorkOrder[]
   performedServiceRecords ServiceRecord[]
   createdCareEpisodes CareEpisode[]
+  verifiedCareEpisodes CareEpisode[] @relation("VerifiedCareEpisodes")
 
   @@unique([workshopId, userId])
   @@index([userId])
@@ -1232,6 +1234,16 @@ enum CareEpisodeStatus {
   cancelled
 }
 
+enum CareEpisodeSource {
+  workshop
+  owner
+}
+
+enum CareEpisodeVerification {
+  unverified
+  verified
+}
+
 model Appointment {
   id String @id @default(uuid()) @db.Uuid
 
@@ -1274,28 +1286,38 @@ model Appointment {
 }
 
 model CareEpisode {
-  id                String            @id @default(uuid()) @db.Uuid
-  vehicleId         String            @map("vehicle_id") @db.Uuid
-  workshopId        String            @map("workshop_id") @db.Uuid
-  branchId          String            @map("branch_id") @db.Uuid
-  appointmentId     String?           @map("appointment_id") @db.Uuid
-  createdByMemberId String            @map("created_by_member_id") @db.Uuid
-  status            CareEpisodeStatus @default(open)
-  mileageIn         Int?              @map("mileage_in")
-  customerComplaint String?           @map("customer_complaint") @db.VarChar(500)
-  customerNotes     String?           @map("customer_notes") @db.VarChar(1000)
-  internalNotes     String?           @map("internal_notes") @db.VarChar(1000)
-  checkedInAt       DateTime          @map("checked_in_at") @db.Timestamptz
-  closedAt          DateTime?         @map("closed_at") @db.Timestamptz
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  id                String                  @id @default(uuid()) @db.Uuid
+  vehicleId         String                  @map("vehicle_id") @db.Uuid
+  workshopId        String?                 @map("workshop_id") @db.Uuid
+  branchId          String?                 @map("branch_id") @db.Uuid
+  appointmentId     String?                 @map("appointment_id") @db.Uuid
+  createdByMemberId String?                 @map("created_by_member_id") @db.Uuid
+  status            CareEpisodeStatus       @default(open)
+  source            CareEpisodeSource       @default(workshop)
+  verification      CareEpisodeVerification @default(unverified)
+  title             String?                 @db.VarChar(120)
+  serviceDate       DateTime?               @map("service_date") @db.Timestamptz
+  workshopName      String?                 @map("workshop_name") @db.VarChar(150)
+  mileageIn         Int?                    @map("mileage_in")
+  customerComplaint String?                 @map("customer_complaint") @db.VarChar(500)
+  customerNotes     String?                 @map("customer_notes") @db.VarChar(1000)
+  internalNotes     String?                 @map("internal_notes") @db.VarChar(1000)
+  checkedInAt       DateTime?               @map("checked_in_at") @db.Timestamptz
+  closedAt          DateTime?               @map("closed_at") @db.Timestamptz
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+  createdByUserId   String?                 @map("created_by_user_id") @db.Uuid
+  verifiedByMemberId String?                @map("verified_by_member_id") @db.Uuid
+  verifiedAt        DateTime?               @map("verified_at") @db.Timestamptz
 
   // Histórico: el episodio de atención forma parte de la historia del vehículo
   vehicle          Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  workshop         Workshop         @relation(fields: [workshopId], references: [id], onDelete: Restrict)
-  branch           WorkshopBranch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  workshop         Workshop?        @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  branch           WorkshopBranch?  @relation(fields: [branchId], references: [id], onDelete: Restrict)
   appointment      Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  createdByMember  WorkshopMember   @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
+  createdByMember  WorkshopMember?  @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
+  createdByUser    User?            @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  verifiedByMember WorkshopMember?  @relation("VerifiedCareEpisodes", fields: [verifiedByMemberId], references: [id], onDelete: Restrict)
 
   serviceRecords ServiceRecord[]
   workOrders     WorkOrder[]
@@ -1304,6 +1326,8 @@ model CareEpisode {
   @@index([vehicleId, createdAt])
   @@index([workshopId, createdAt])
   @@index([status])
+  @@index([workshopId, source, verification])
+  @@index([createdByUserId])
   @@map("care_episodes")
 }
 

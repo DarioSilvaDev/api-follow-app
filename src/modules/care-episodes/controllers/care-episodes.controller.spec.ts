@@ -24,22 +24,27 @@ import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
  *              rate limiting to prevent plate enumeration — spec §6.2)
  */
 describe('CareEpisodesController — F-020 guard matrix', () => {
-  const classGuards = Reflect.getMetadata(GUARDS_METADATA, CareEpisodesController) as
-    | Function[]
-    | undefined;
+  const classGuards = Reflect.getMetadata(
+    GUARDS_METADATA,
+    CareEpisodesController,
+  ) as Function[] | undefined;
 
   function methodGuards(method: string): Function[] {
-    const target = (CareEpisodesController.prototype as Record<string, unknown>)[
-      method
-    ] as object | undefined;
-    return target ? ((Reflect.getMetadata(GUARDS_METADATA, target) ?? []) as Function[]) : [];
+    const target = (
+      CareEpisodesController.prototype as Record<string, unknown>
+    )[method] as object | undefined;
+    return target
+      ? ((Reflect.getMetadata(GUARDS_METADATA, target) ?? []) as Function[])
+      : [];
   }
 
   function permissionsFor(method: string): string[] | undefined {
-    const target = (CareEpisodesController.prototype as Record<string, unknown>)[
-      method
-    ] as object | undefined;
-    return target ? (Reflect.getMetadata(PERMISSIONS_KEY, target) as string[] | undefined) : undefined;
+    const target = (
+      CareEpisodesController.prototype as Record<string, unknown>
+    )[method] as object | undefined;
+    return target
+      ? (Reflect.getMetadata(PERMISSIONS_KEY, target) as string[] | undefined)
+      : undefined;
   }
 
   // ──────────────────────────────────────────────────────
@@ -83,5 +88,54 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
     const guards = methodGuards('lookup');
     expect(guards).toContain(ThrottlerGuard);
     expect(guards).not.toContain(PermissionsGuard);
+  });
+
+  // ──────────────────────────────────────────────────────
+  // POST owner (RF-1)
+  // ──────────────────────────────────────────────────────
+
+  it('POST owner carries ThrottlerGuard but NOT WorkshopOnlyGuard nor PermissionsGuard (PERSONAL context, ownership enforced by handler)', () => {
+    const guards = methodGuards('createOwner');
+    expect(guards).toContain(ThrottlerGuard);
+    expect(guards).not.toContain(WorkshopOnlyGuard);
+    expect(guards).not.toContain(PermissionsGuard);
+  });
+
+  it('POST owner has NO permission requirement', () => {
+    expect(permissionsFor('createOwner')).toBeUndefined();
+  });
+
+  // ──────────────────────────────────────────────────────
+  // GET verifications (RF-4)
+  // ──────────────────────────────────────────────────────
+
+  it('GET verifications carries @Permissions(care-episode.verify)', () => {
+    expect(permissionsFor('listVerifications')).toEqual([
+      'care-episode.verify',
+    ]);
+  });
+
+  it('GET verifications carries WorkshopOnlyGuard BEFORE PermissionsGuard', () => {
+    const guards = methodGuards('listVerifications');
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
+  });
+
+  // ──────────────────────────────────────────────────────
+  // POST :id/verify (RF-5)
+  // ──────────────────────────────────────────────────────
+
+  it('POST verify carries @Permissions(care-episode.verify)', () => {
+    expect(permissionsFor('verify')).toEqual(['care-episode.verify']);
+  });
+
+  it('POST verify carries WorkshopOnlyGuard BEFORE PermissionsGuard', () => {
+    const guards = methodGuards('verify');
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
   });
 });
