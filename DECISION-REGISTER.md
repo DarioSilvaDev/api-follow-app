@@ -1915,6 +1915,8 @@ VerificaciÃ³n global: `npm test` â†’ **19 suites / 173 tests PASS** (165 
 
 # 16. Registro (2026-09-09): F-010 Registrar VehÃ­culo end-to-end (D-035..D-038)
 
+# 22. Registro (2026-09-11): F-020 Crear CareEpisode desde taller end-to-end (D-056..D-061)
+
 ## Objetivo
 
 Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propietario registra su vehÃ­culo desde el frontend, el vehÃ­culo queda asociado como owner (VehicleOwnership) y aparece en "Mis vehÃ­culos". El backend ya exponÃ­a el alta; el trabajo real fue el journey frontend + ajustes menores de robustez backend.
@@ -2377,3 +2379,84 @@ Completar el journey **"el taller registra el ingreso (check-in) de un vehículo
 6. **`vehicle.transferred` event muerto** (deuda previa, F-014): se mantiene abierta; decidir con CareEpisodes/F-024 si la timeline consume eventos o sigue leyendo la tabla.
 7. **Permisos fantasma de workshops (deuda pre-existente):** `workshop.roles.create/update/delete` y `workshop.specialties.manage` existen en controllers pero no en seed → 403 para no-super_admin. Fuera de F-020; registrar para una pasada de workshops.
 8. **Build warnings multi-lockfile** (backend + frontend): cosmético; considerar `turbopack.root` o consolidar lockfiles al abordar el build.
+
+# 23. Registro (2026-09-12): Iteración 2-2 — Servicios del propietario + verificación del taller (D-062..D-068)
+
+## Objetivo
+
+Amendar parcialmente D-024 A2 para habilitar el journey **"el propietario registra un servicio propio y el taller lo verifica"** (F-020+): el origen (`source`) del episodio se declara en la creación y **nunca cambia**; la confirmación del taller es una afirmación auditable superpuesta. Incluye búsqueda pública de talleres y cola de verificaciones del taller.
+
+## Decisión de producto (usuario, 2026-09-12): del puntaje al modelo discreto
+
+- El usuario propuso un "nivel de veracidad" numérico (4/10) para los servicios registrados por el propietario. El PM reformuló: **el origen no se puntúa, se declara** (`source='owner' | 'workshop'`); la verificación es una afirmación binaria (`unverified | verified`) que se superpone sin mutar el origen. **Puntaje 4/10 descartado explícitamente.**
+
+## Decisiones de producto confirmadas (2026-09-12)
+
+### D-062 — Amend parcial de D-024 A2: el owner crea servicios propios
+
+- Nuevo `POST /api/care-episodes/owner` (contexto PERSONAL): el propietario vigente crea `care_episode` `source='owner'` SOLO sobre vehículos owned (`assertOwnership`, no acceso compartido). El resto de los writes del módulo maintenance sigue WORKSHOP-only (D-024 A2 ACCEPTED inalterado). Los episodios del propietario son *ingresos de servicio*, no atenciones de taller.
+
+### D-063 — `source` derivado del contexto/path; origen inmutable
+
+- El source es constante del path (`/owner` → `owner`, `/` → `workshop`). Cualquier `source` en el body es **stripped silenciosamente** por whitelist (decisión PM; el TL propuso rechazo duro → descartado para no acoplar el contrato al enum). Un episodio jamás cambia de origen.
+
+### D-064 — Confianza discreta, no puntaje
+
+- `CareEpisodeVerification { unverified | verified }` (minúsculas). UI source-aware: episodio owner sin verificar → "Registrado por el propietario"; verificado → "Verificado por {taller}". Sin puntajes numéricos.
+
+### D-065 — Estado de nacimiento según origen
+
+- Owner: `status='delivered'` (serviceDate retroactivo por naturaleza; sin check-in). Workshop: `status='open'` (F-020 intacto).
+
+### D-066 — Taller responsable: XOR `workshopId` | `workshopName`
+
+- `workshopId` proviene de la búsqueda pública acotada `GET /api/workshops/search?q=` (sin membresía; PII mínima `{id, name, logoUrl?, city}`; sin taxId/email/branches); `workshopName` es texto libre ≤150. Ambos o ninguno → 400.
+
+### D-067 — Permiso `care-episode.verify` para owner + mechanic
+
+- Employee NO. Convención `module/resource: 'care-episode', action: 'verify'`. Seed idempotente.
+
+### D-068 — `mileageIn` del propietario: informativo
+
+- No genera `VehicleMileage` (a diferencia del flujo taller). El timeline F-014 sigue sin kilometrajes de taller — deuda de la iteración.
+
+## Decisiones validadas por el Tech Lead (2026-09-12) — ajustes #1–#9 de la spec
+
+1. **Dos rutas separadas** (no dualidad en un POST): `/` (F-020, guards intactos) + `/owner` (sin PermissionsGuard; `assertOwnership`; Throttler 30/60s).
+2. **Enums minúsculas** + mapping UI source-aware (contrato, no decisión de frontend).
+3. **Migración aditiva** `20260911201057_add_care_episode_owner_source`: FKs debilitadas a NULLABLE exigen relaciones opcionales + back-relations (`User.careEpisodesCreated`, `WorkshopMember.verifiedCareEpisodes`); enums con defaults constantes (source='workshop', verification='unverified') — sin backfill manual.
+4. **Search anti-colisión:** controller nuevo registrado ANTES de `WorkshopsController` (foot-gun `@Get(':id')`, patrón F-012); `escapeLike()`; `q` min 2 chars; sin match → `200 []`; limit 10; Throttle 30/60s.
+5. **Strip silencioso por whitelist** (decisión PM; ver D-063).
+6. **Verify atómico** con `updateMany` condicional: 404 otro taller (no revelar existencia), 200 idempotente mismo taller, 409 ya verificado por otro, 403 `source='workshop'`.
+7. **Cola con `limit` default 50 / max 100**, orden `serviceDate` asc.
+8. **`serviceDate` ≤ fin de día UTC** (sin `user.timezone`).
+9. **Ruta frontend propietario** `(dashboard)/vehicles/[id]/servicios/nueva` gated `isVehicleOwner && PERSONAL`; página taller "Verificaciones" gated WORKSHOP. **Sin CHECKs SQL** (enforcement en handlers + tests de matriz).
+
+## Cambios técnicos aplicados — Backend (commit `feat(care-episodes): owner service records + verification`)
+
+- `schema.prisma` + migración aditiva `20260911201057_add_care_episode_owner_source`: enums `CareEpisodeSource`/`CareEpisodeVerification`; campos `source`, `verification`, `title`, `serviceDate`, `workshopName`, `createdByUserId` (FK User), `verifiedByMemberId` (FK WorkshopMember, relación `VerifiedCareEpisodes`), `verifiedAt`; `workshopId`/`branchId`/`createdByMemberId`/`checkedInAt` → NULLABLE; back-relations; índices `(workshopId, source, verification)` y `(createdByUserId)`. BD aplicada (12 migraciones), sin `db:reset`.
+- `src/modules/care-episodes/`: `POST /api/care-episodes/owner` (contexto PERSONAL obligatorio → 403; ownership; XOR taller; `serviceDate` ≤ fin de día UTC; persiste `source='owner'`+`delivered`+`unverified`+`createdByUserId`; emite `care-episode.created` con payload extendido), `GET /api/care-episodes/verifications` (cola owner+unverified del taller; limit 50/100; PII mínima sin email/teléfono), `POST /api/care-episodes/:id/verify` (updateMany atómico; 404/200/409/403; evento nuevo `care-episode.verified`).
+- `src/modules/workshops/`: `GET /api/workshops/search?q=` en controller nuevo registrado ANTES de `WorkshopsController`; `contains`+insensitive con `escapeLike`; solo activos; `{id, name, logoUrl, city}`.
+- `seed.ts`: permiso `care-episode.verify` (63 total) + links owner/mechanic (employee NO); re-ejecutado idempotente.
+- Tests: +6 suites / +42 → **35 suites / 306 tests**; build OK. POST `/` de F-020 intacto (solo la firma del evento `care-episode.created` se extendió, sin listeners afectados).
+
+## Cambios técnicos aplicados — Frontend (commit `feat(frontend): owner services + verifications`)
+
+- Página `(dashboard)/vehicles/[id]/servicios/nueva`: form RHF+Zod (título, fecha máx hoy, km, notas), taller XOR (`workshopId` vía búsqueda con debounce 400ms | `workshopName` texto libre), estados 400/403/404/429+Reintentar/5xx/red, éxito con mensaje de confianza (D-064) + "Registrar otro".
+- Botón "Registrar servicio" en `/vehicles/[id]` visible solo `isVehicleOwner && PERSONAL` (UX; enforcement real en backend).
+- Página `(dashboard)/atenciones/verificaciones` (link en header gated WORKSHOP): cola `GET /care-episodes/verifications`, confirmar vía `window.confirm` → `POST /:id/verify`, badge "Verificado por {taller}", errores por item (403/404/409), empty/loading/error+Reintentar, sin taller → guía.
+- Tipos `CareEpisodeSource`/`CareEpisodeVerification`/`CreateOwnerCareEpisodeInput`/`CareEpisodeVerificationItem`/`WorkshopSearchResult`; API `careEpisodeApi.createOwnerCareEpisode/getCareEpisodeVerifications/verifyCareEpisode` + `workshopApi.searchWorkshops`.
+- Sin dependencias nuevas; inyector de contexto y `/atenciones/nueva` intactos. Tests: +31 → **16 files / 153 tests**; build OK.
+
+### Spec (commit `docs: spec owner service records verification flow`)
+
+- `docs/specs/owner-service-records-verification-flow.md` (nueva, v2 aprobada por TL con ajustes #1–#9 incorporados): problema, objetivo, actores, D-062..D-068, journey owner + taller, flujos alternativos (404/200 idempotente/409/403), RF-1..RF-8, contrato backend validado, alcance dentro/fuera, criterios de aceptación (backend + frontend + calidad, 14), dependencias, riesgos.
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Contrato del 200 de `POST /api/care-episodes/:id/verify`:** el frontend tipa la respuesta como `CareEpisode` (`ky.json()`); fijar en la spec el body exacto del 200 (si el backend responde 200 sin body, `ky.json()` fallaría). Verificación E2E pendiente.
+2. **`q` URL-encoded en search (workshops):** comportamiento correcto (ky encodea el search param); solo nota de test, sin break.
+3. **PDP-1 / PDP-2 heredadas de F-020** siguen abiertas (selector sin filtro por permiso `care-episode.create`; branches no están en `/auth/me`).
+4. **T4 heredada:** `careEpisodeId` NULLABLE en ServiceRecord/WorkOrder/Estimate (vinculación obligatoria con F-021/F-022).
+5. **`vehicle.transferred` event muerto + `mileageIn` de taller → `VehicleMileage`:** abiertas (D-068 difiere solo para el owner).
+6. **Permisos fantasma de workshops** (deuda pre-existente): se mantiene para la pasada de workshops.
