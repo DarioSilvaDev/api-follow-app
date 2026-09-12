@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { clearWorkshop, selectWorkshop } from "@/lib/active-context";
 
 // ── Mocks (must be before dynamic imports) ───────────────────────────────────
 
@@ -194,6 +195,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearWorkshop();
 });
 
 function renderPage() {
@@ -565,5 +567,79 @@ it("rejects invalid mileage input without calling the API", async () => {
       expect(confirmSpy).toHaveBeenCalled();
       expect(mockDeleteDocument).toHaveBeenCalledWith("v1", "d1");
     });
+  });
+});
+
+// ── Iteración 2-2 / RF-8: "Registrar servicio" (owner + contexto PERSONAL) ──
+
+/**
+ * El botón "Registrar servicio" abre el flujo del propietario (D-063 bajo
+ * RF-8). Reglas:
+ * - Solo owners activos (D-039 helper isVehicleOwner).
+ * - Solo con contexto PERSONAL (null): si el owner tiene un taller activo la
+ *   página de origen owner respondería 403, así que se oculta la entrada.
+ */
+describe("Registrar servicio button (iteración 2-2)", () => {
+  it("se muestra para el owner activo en contexto PERSONAL y apunta al flujo propietario", async () => {
+    mockGetVehicle.mockResolvedValue(makeVehicle());
+    mockListPhotos.mockResolvedValue(makeVehicle().photos);
+    mockListDocuments.mockResolvedValue(makeVehicle().documents);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
+
+    const link = screen.getByRole("link", { name: /registrar servicio/i });
+    expect(link).toHaveAttribute("href", "/vehicles/v1/servicios/nueva");
+  });
+
+  it("se oculta cuando el owner opera con un taller seleccionado (WORKSHOP)", async () => {
+    selectWorkshop("w1");
+    mockGetVehicle.mockResolvedValue(makeVehicle());
+    mockListPhotos.mockResolvedValue(makeVehicle().photos);
+    mockListDocuments.mockResolvedValue(makeVehicle().documents);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /registrar servicio/i }),
+    ).not.toBeInTheDocument();
+    // El flujo taller (Nueva atención) vive en el header, no en la ficha.
+  });
+
+  it("se oculta para no-owners (co_owner / acceso compartido)", async () => {
+    mockGetVehicle.mockResolvedValue(
+      makeVehicle({
+        ownerships: [
+          {
+            id: "o1",
+            vehicleId: "v1",
+            userId: "other-user",
+            type: "owner",
+            startsAt: "2026-09-09T00:00:00.000Z",
+            endsAt: null,
+            user: { id: "other-user", firstName: "Otra", lastName: "Persona" },
+          },
+          {
+            id: "o2",
+            vehicleId: "v1",
+            userId: "user-1",
+            type: "co_owner",
+            startsAt: "2026-09-09T00:00:00.000Z",
+            endsAt: null,
+          },
+        ],
+      }),
+    );
+    mockListPhotos.mockResolvedValue([]);
+    mockListDocuments.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByText("Acceso compartido")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /registrar servicio/i }),
+    ).not.toBeInTheDocument();
   });
 });

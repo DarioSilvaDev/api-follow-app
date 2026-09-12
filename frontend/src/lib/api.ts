@@ -4,9 +4,14 @@ import type { SessionUser } from "@/types/auth";
 import type {
   CareEpisode,
   CareEpisodeLookupVehicle,
+  CareEpisodeVerificationItem,
   CreateCareEpisodeInput,
+  CreateOwnerCareEpisodeInput,
 } from "@/types/care-episode";
-import type { WorkshopDetail } from "@/types/workshop";
+import type {
+  WorkshopDetail,
+  WorkshopSearchResult,
+} from "@/types/workshop";
 import type {
   RegisterVehicleInput,
   UpdateVehicleInput,
@@ -568,6 +573,37 @@ export const careEpisodeApi = {
       .post("care-episodes", { json: input })
       .json<CareEpisode>()
       .catch(toApiError),
+
+  // -------------------------------------------------------------------------
+  // Iteración 2-2 — propietario + verificación por taller (spec 2-2 §6-§7)
+  //
+  // El inyector de contexto existente (auth/* excluido) NO cambia: la ruta
+  // `/owner` opera en PERSONAL (sin headers → el backend exige ctx PERSONAL,
+  // RF-1) y `verifications`/`:id/verify` operan en WORKSHOP (headers del
+  // contexto activo, RF-4/RF-5). La ruta estática `verifications` convive con
+  // `:id/verify` sin colisión (foot-gun F-012 documentado en la spec).
+  // -------------------------------------------------------------------------
+
+  /** Iteración 2-2 RF-1: POST /care-episodes/owner → 201 episodio source=OWNER (contexto PERSONAL). */
+  createOwnerCareEpisode: (input: CreateOwnerCareEpisodeInput) =>
+    api
+      .post("care-episodes/owner", { json: input })
+      .json<CareEpisode>()
+      .catch(toApiError),
+
+  /** Iteración 2-2 RF-4: GET /care-episodes/verifications → cola del taller (contexto WORKSHOP). */
+  getCareEpisodeVerifications: () =>
+    api
+      .get("care-episodes/verifications")
+      .json<CareEpisodeVerificationItem[]>()
+      .catch(toApiError),
+
+  /** Iteración 2-2 RF-5: POST /care-episodes/:id/verify → 200 (contexto WORKSHOP; idempotente). */
+  verifyCareEpisode: (id: string) =>
+    api
+      .post(`care-episodes/${id}/verify`)
+      .json<CareEpisode>()
+      .catch(toApiError),
 };
 
 // ---------------------------------------------------------------------------
@@ -584,5 +620,17 @@ export const workshopApi = {
     api
       .get(`workshops/${id}`)
       .json<WorkshopDetail>()
+      .catch(toApiError),
+
+  /**
+   * Iteración 2-2 RF-3: búsqueda pública acotada de talleres para el
+   * propietario (autenticado, SIN membresía). El debounce (≥2 chars) se
+   * resuelve en la UI, no acá. Sin match → `[]`; `q` de 1 char → 400;
+   * throttle 30/60s → 429.
+   */
+  searchWorkshops: (q: string) =>
+    api
+      .get("workshops/search", { searchParams: { q } })
+      .json<WorkshopSearchResult[]>()
       .catch(toApiError),
 };

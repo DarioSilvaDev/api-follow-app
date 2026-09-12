@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
+import { useActiveContext } from "@/hooks/use-active-context";
 import { vehicleApi } from "@/lib/api";
 import {
   type TimelineEntry,
@@ -1034,6 +1035,7 @@ function HistorySection({
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const activeContext = useActiveContext();
   const queryClient = useQueryClient();
 
   // F-013 §5: 3 llamadas en paralelo (edición también usa ["vehicle", id]).
@@ -1142,6 +1144,16 @@ export default function VehicleDetailPage() {
               </span>
             )}
           </div>
+          {/* Iteración 2-2 / RF-8: "Registrar servicio" solo para el owner en
+              contexto PERSONAL (null). Con taller seleccionado (WORKSHOP) el
+              owner ve el flujo del taller. */}
+          {isOwner && activeContext === null && (
+            <Link href={`/vehicles/${vehicle.id}/servicios/nueva`}>
+              <Button variant="outline" size="sm">
+                Registrar servicio
+              </Button>
+            </Link>
+          )}
           {/* D-039: "Editar" solo para owners activos. */}
           {isOwner && (
             <Link href={`/vehicles/${vehicle.id}/edit`}>

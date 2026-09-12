@@ -937,3 +937,272 @@ describe("API client — vehicleApi", () => {
     expect(historyCalls[0].method).toBe("GET");
   });
 });
+
+// ── Iteración 2-2: owner service + verification (spec 2-2 §7) ───────────────
+
+/**
+ * Nuevos contratos de la iteración 2-2:
+ * - `POST /api/care-episodes/owner` (RF-1) — body del propietario, XOR taller.
+ * - `GET /api/care-episodes/verifications` (RF-4) — cola del taller.
+ * - `POST /api/care-episodes/:id/verify` (RF-5) — confirmar.
+ * - `GET /api/workshops/search?q=` (RF-3) — búsqueda pública de talleres.
+ */
+describe("API client — iteración 2-2 (owner service + verification)", () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  let capturedRequests: Array<{ url: string; method: string }>;
+
+  beforeEach(() => {
+    capturedRequests = [];
+    vi.resetModules();
+
+    fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, { data: "ok" });
+    });
+
+    vi.stubGlobal("fetch", fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("createOwnerCareEpisode POSTs the exact body to /care-episodes/owner", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(201, {
+        id: "e1",
+        vehicleId: "v1",
+        workshopId: "w1",
+        branchId: null,
+        status: "delivered",
+        source: "owner",
+        verification: "unverified",
+        title: "Cambio de aceite",
+        serviceDate: "2026-06-15T00:00:00.000Z",
+        mileageIn: 18500,
+        notes: null,
+        checkedInAt: null,
+        createdAt: "2026-09-11T00:00:00.000Z",
+      });
+    });
+
+    const { careEpisodeApi } = await import("@/lib/api");
+    const result = await careEpisodeApi.createOwnerCareEpisode({
+      vehicleId: "v1",
+      title: "Cambio de aceite",
+      serviceDate: "2026-06-15",
+      workshopId: "w1",
+      mileageIn: 18500,
+      notes: "Aceite 5W30",
+    });
+
+    expect(result.source).toBe("owner");
+    expect(result.verification).toBe("unverified");
+
+    const ownerCalls = capturedRequests.filter((r) =>
+      r.url.includes("care-episodes/owner"),
+    );
+    expect(ownerCalls).toHaveLength(1);
+    expect(ownerCalls[0].method).toBe("POST");
+    expect(requestBody).toEqual({
+      vehicleId: "v1",
+      title: "Cambio de aceite",
+      serviceDate: "2026-06-15",
+      workshopId: "w1",
+      mileageIn: 18500,
+      notes: "Aceite 5W30",
+    });
+  });
+
+  it("createOwnerCareEpisode forwards workshopName when the owner chose free text (XOR)", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(201, {
+        id: "e2",
+        vehicleId: "v1",
+        workshopId: null,
+        branchId: null,
+        status: "delivered",
+        source: "owner",
+        verification: "unverified",
+        title: "Cambio de aceite",
+        serviceDate: "2026-06-10T00:00:00.000Z",
+        mileageIn: null,
+        notes: null,
+        checkedInAt: null,
+        createdAt: "2026-09-11T00:00:00.000Z",
+      });
+    });
+
+    const { careEpisodeApi } = await import("@/lib/api");
+    await careEpisodeApi.createOwnerCareEpisode({
+      vehicleId: "v1",
+      title: "Cambio de aceite",
+      serviceDate: "2026-06-10",
+      workshopName: "Taller de la esquina",
+    });
+
+    expect(requestBody).toEqual({
+      vehicleId: "v1",
+      title: "Cambio de aceite",
+      serviceDate: "2026-06-10",
+      workshopName: "Taller de la esquina",
+    });
+    expect(requestBody).not.toHaveProperty("workshopId");
+  });
+
+  it("getCareEpisodeVerifications GETs /care-episodes/verifications and parses the queue", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(200, [
+        {
+          id: "e1",
+          title: "Cambio de aceite",
+          serviceDate: "2026-06-15T00:00:00.000Z",
+          mileageIn: 18500,
+          notes: "Aceite 5W30",
+          vehicle: {
+            licensePlate: "ABC123",
+            brand: "Chevrolet",
+            model: "Onix",
+            version: "LT",
+            manufactureYear: 2024,
+          },
+          owner: { firstName: "Pedro", lastName: "Gómez" },
+        },
+      ]);
+    });
+
+    const { careEpisodeApi } = await import("@/lib/api");
+    const result = await careEpisodeApi.getCareEpisodeVerifications();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].vehicle.licensePlate).toBe("ABC123");
+    expect(result[0].owner.firstName).toBe("Pedro");
+    expect(result[0].mileageIn).toBe(18500);
+
+    const queueCalls = capturedRequests.filter((r) =>
+      r.url.includes("care-episodes/verifications"),
+    );
+    expect(queueCalls).toHaveLength(1);
+    expect(queueCalls[0].method).toBe("GET");
+  });
+
+  it("verifyCareEpisode POSTs to /care-episodes/:id/verify", async () => {
+    let requestBody: string | null = null;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (init?.body) requestBody = String(init.body);
+      return makeResponse(200, {
+        id: "e1",
+        vehicleId: "v1",
+        workshopId: "w1",
+        branchId: null,
+        status: "delivered",
+        source: "owner",
+        verification: "verified",
+        verifiedAt: "2026-09-11T15:00:00.000Z",
+        checkedInAt: null,
+        createdAt: "2026-09-11T10:00:00.000Z",
+      });
+    });
+
+    const { careEpisodeApi } = await import("@/lib/api");
+    const result = await careEpisodeApi.verifyCareEpisode("e1");
+
+    expect(result.verification).toBe("verified");
+    const verifyCalls = capturedRequests.filter((r) =>
+      r.url.includes("care-episodes/e1/verify"),
+    );
+    expect(verifyCalls).toHaveLength(1);
+    expect(verifyCalls[0].method).toBe("POST");
+    expect(requestBody).toBeNull(); // sin body: la confirmación no envía payload
+  });
+
+  it("maps verifyCareEpisode 409 to { status, message, code } without refresh", async () => {
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      return makeResponse(409, {
+        message: "Care episode already verified by another workshop",
+        code: "CARE_EPISODE_ALREADY_VERIFIED",
+      });
+    });
+
+    const { careEpisodeApi } = await import("@/lib/api");
+
+    await expect(careEpisodeApi.verifyCareEpisode("e1")).rejects.toMatchObject({
+      status: 409,
+      code: "CARE_EPISODE_ALREADY_VERIFIED",
+    });
+
+    const refreshCalls = capturedRequests.filter((r) =>
+      r.url.includes("auth/refresh"),
+    );
+    expect(refreshCalls).toHaveLength(0);
+  });
+
+  it("searchWorkshops sends q as a query param (RF-3)", async () => {
+    let requestBody: string | null = null;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (init?.body) requestBody = String(init.body);
+      return makeResponse(200, [
+        {
+          id: "w1",
+          name: "Lubricentro Central",
+          logoUrl: null,
+          city: "Córdoba",
+        },
+      ]);
+    });
+
+    const { workshopApi } = await import("@/lib/api");
+    const result = await workshopApi.searchWorkshops("Lubricentro");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Lubricentro Central");
+
+    const searchCalls = capturedRequests.filter((r) =>
+      r.url.includes("workshops/search"),
+    );
+    expect(searchCalls).toHaveLength(1);
+    expect(searchCalls[0].method).toBe("GET");
+    expect(searchCalls[0].url).toContain("q=Lubricentro");
+    expect(requestBody).toBeNull();
+  });
+
+  it("searchWorkshops maps a 429 rate-limit to { status, message }", async () => {
+    fetchSpy.mockImplementation(async () =>
+      makeResponse(429, { message: "ThrottlerException: Too Many Requests" }),
+    );
+
+    const { workshopApi } = await import("@/lib/api");
+
+    await expect(workshopApi.searchWorkshops("Lubricentro")).rejects.toMatchObject(
+      {
+        status: 429,
+      },
+    );
+  });
+});

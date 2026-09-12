@@ -66,6 +66,16 @@ export default function DashboardLayout({
                 Nueva atención
               </Link>
             )}
+            {/* Iteración 2-2 / RF-8: la cola de verificaciones es WORKSHOP-only
+                — mismo patrón que "Nueva atención". */}
+            {activeContext?.type === "WORKSHOP" && (
+              <Link
+                href="/atenciones/verificaciones"
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Verificaciones
+              </Link>
+            )}
             <Link
               href="/profile"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"

@@ -41,3 +41,16 @@ export interface WorkshopDetail {
   memberCount?: number;
   branchCount?: number;
 }
+
+/**
+ * Iteración 2-2 (RF-3): `GET /api/workshops/search?q=` → resultado de la
+ * búsqueda pública acotada de talleres (autenticado, SIN membresía).
+ * Devuelve SOLO `id`/`name`/`logoUrl?`/`city` — sin taxId/email/branches
+ * (PII mínima). Sin match → `[]`; `q` min 2 chars → 400.
+ */
+export interface WorkshopSearchResult {
+  id: string;
+  name: string;
+  logoUrl?: string | null;
+  city: string | null;
+}
