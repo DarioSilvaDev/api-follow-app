@@ -112,7 +112,7 @@ export default function RegisterPage() {
           Crear cuenta
         </CardTitle>
         <CardDescription>
-          Completa los datos para registrarte en HCDV.
+          Completa los datos para registrarte en Autentia.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>

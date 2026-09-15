@@ -29,29 +29,71 @@ export class GetVehicleHistoryHandler {
       ? { id: true, firstName: true, lastName: true, email: true }
       : { id: true, firstName: true, lastName: true };
 
-    const [transfers, mileages, ownerships] = await Promise.all([
-      this.prisma.vehicleTransfer.findMany({
-        where: { vehicleId },
-        include: {
-          fromUser: { select: { id: true, firstName: true, lastName: true } },
-          toUser: { select: { id: true, firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.vehicleMileage.findMany({
-        where: { vehicleId },
-        orderBy: { recordedAt: 'desc' },
-      }),
-      this.prisma.vehicleOwnership.findMany({
-        where: { vehicleId },
-        include: {
-          user: { select: ownershipUserSelect },
-        },
-        orderBy: { startsAt: 'desc' },
-      }),
-    ]);
+    const [transfers, mileages, ownerships, careEpisodesRaw] =
+      await Promise.all([
+        this.prisma.vehicleTransfer.findMany({
+          where: { vehicleId },
+          include: {
+            fromUser: { select: { id: true, firstName: true, lastName: true } },
+            toUser: { select: { id: true, firstName: true, lastName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.vehicleMileage.findMany({
+          where: { vehicleId },
+          orderBy: { recordedAt: 'desc' },
+        }),
+        this.prisma.vehicleOwnership.findMany({
+          where: { vehicleId },
+          include: {
+            user: { select: ownershipUserSelect },
+          },
+          orderBy: { startsAt: 'desc' },
+        }),
+        // D-069/D-070: careEpisodes — owner + workshop, no status filter,
+        // sorted in JS post-query (D-070 coalesce not expressible in Prisma orderBy).
+        this.prisma.careEpisode.findMany({
+          where: { vehicleId },
+          select: {
+            id: true,
+            title: true,
+            serviceDate: true,
+            status: true,
+            source: true,
+            verification: true,
+            mileageIn: true,
+            customerNotes: true,
+            checkedInAt: true,
+            createdAt: true,
+            workshopName: true,
+            workshop: { select: { id: true, name: true } },
+          },
+        }),
+      ]);
 
-    return { transfers, mileages, ownerships };
+    const careEpisodes = this.sortCareEpisodes(careEpisodesRaw);
+
+    return { transfers, mileages, ownerships, careEpisodes };
+  }
+
+  /**
+   * D-070: Sort care episodes by canonical timestamp descending.
+   * Canonical key: serviceDate ?? checkedInAt ?? createdAt.
+   * Tiebreak: createdAt desc (deterministic ordering for stable tests).
+   *
+   * This MUST be done in JS — Prisma's composite orderBy does not
+   * replicate the coalesce semantics when serviceDate is null and
+   * checkedInAt is set (TL rejection of Prisma orderBy approach).
+   */
+  private sortCareEpisodes<T extends { serviceDate: Date | null; checkedInAt: Date | null; createdAt: Date }>(
+    episodes: T[],
+  ): T[] {
+    return [...episodes].sort((a, b) => {
+      const keyA = new Date(a.serviceDate ?? a.checkedInAt ?? a.createdAt).getTime();
+      const keyB = new Date(b.serviceDate ?? b.checkedInAt ?? b.createdAt).getTime();
+      if (keyB !== keyA) return keyB - keyA; // desc by canonical timestamp
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); // tiebreak: createdAt desc
+    });
   }
 
   /**

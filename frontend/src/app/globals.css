@@ -5,40 +5,54 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Brand — Autentia */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  /* Semantic — Autentia */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  /* Layout */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  /* Sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  /* Typography */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+  /* Radius */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,72 +63,104 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  /* ─── Autentia Brand ─── */
+  --primary: oklch(0.37 0.145 258);           /* Deep blue — trust, technology */
+  --primary-hover: oklch(0.32 0.145 258);     /* Darker on hover */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+
+  /* ─── Semantic States ─── */
+  --success: oklch(0.62 0.17 150);            /* Green — completed, verified */
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.155 70);            /* Amber — pending, attention */
+  --warning-foreground: oklch(0.22 0.02 70);
+  --info: oklch(0.55 0.12 250);               /* Blue — informational */
+  --info-foreground: oklch(0.985 0 0);
+
+  /* ─── Layout ─── */
+  --background: oklch(0.985 0.002 250);       /* Slight blue tint */
+  --foreground: oklch(0.16 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0.01 260);
+  --secondary: oklch(0.95 0.015 258);         /* Light blue tint */
+  --secondary-foreground: oklch(0.30 0.08 258);
+  --muted: oklch(0.955 0.008 250);
+  --muted-foreground: oklch(0.50 0.02 258);
+  --accent: oklch(0.95 0.015 258);
+  --accent-foreground: oklch(0.30 0.08 258);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: oklch(0.905 0.01 258);
+  --input: oklch(0.905 0.01 258);
+  --ring: oklch(0.37 0.145 258);              /* Matches primary */
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+
+  /* ─── Sidebar ─── */
+  --sidebar: oklch(0.985 0.002 250);
+  --sidebar-foreground: oklch(0.16 0.01 260);
+  --sidebar-primary: oklch(0.37 0.145 258);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.95 0.015 258);
+  --sidebar-accent-foreground: oklch(0.30 0.08 258);
+  --sidebar-border: oklch(0.905 0.01 258);
+  --sidebar-ring: oklch(0.37 0.145 258);
+
+  /* ─── Charts ─── */
+  --chart-1: oklch(0.37 0.145 258);           /* Autentia blue */
+  --chart-2: oklch(0.62 0.17 150);            /* Success green */
+  --chart-3: oklch(0.75 0.155 70);            /* Warning amber */
+  --chart-4: oklch(0.55 0.12 250);            /* Info blue */
+  --chart-5: oklch(0.577 0.245 27.325);       /* Destructive red */
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* ─── Autentia Brand (Dark) ─── */
+  --primary: oklch(0.72 0.16 258);            /* Lighter blue for dark bg */
+  --primary-hover: oklch(0.78 0.16 258);
+  --primary-foreground: oklch(0.16 0.02 258);
+
+  /* ─── Semantic States (Dark) ─── */
+  --success: oklch(0.72 0.17 150);            /* Brighter green */
+  --success-foreground: oklch(0.16 0.02 150);
+  --warning: oklch(0.82 0.155 70);            /* Brighter amber */
+  --warning-foreground: oklch(0.22 0.02 70);
+  --info: oklch(0.65 0.12 250);               /* Brighter info */
+  --info-foreground: oklch(0.985 0 0);
+
+  /* ─── Layout (Dark) ─── */
+  --background: oklch(0.15 0.015 260);        /* Dark with blue tint */
+  --foreground: oklch(0.95 0.005 250);
+  --card: oklch(0.19 0.015 260);
+  --card-foreground: oklch(0.95 0.005 250);
+  --popover: oklch(0.19 0.015 260);
+  --popover-foreground: oklch(0.95 0.005 250);
+  --secondary: oklch(0.24 0.015 260);
+  --secondary-foreground: oklch(0.95 0.005 250);
+  --muted: oklch(0.24 0.015 260);
+  --muted-foreground: oklch(0.65 0.015 258);
+  --accent: oklch(0.24 0.015 260);
+  --accent-foreground: oklch(0.95 0.005 250);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.72 0.16 258);               /* Matches primary */
+
+  /* ─── Sidebar (Dark) ─── */
+  --sidebar: oklch(0.17 0.015 260);
+  --sidebar-foreground: oklch(0.95 0.005 250);
+  --sidebar-primary: oklch(0.72 0.16 258);
+  --sidebar-primary-foreground: oklch(0.16 0.02 258);
+  --sidebar-accent: oklch(0.24 0.015 260);
+  --sidebar-accent-foreground: oklch(0.95 0.005 250);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.72 0.16 258);
+
+  /* ─── Charts (Dark) ─── */
+  --chart-1: oklch(0.72 0.16 258);
+  --chart-2: oklch(0.72 0.17 150);
+  --chart-3: oklch(0.82 0.155 70);
+  --chart-4: oklch(0.65 0.12 250);
+  --chart-5: oklch(0.704 0.191 22.216);
 }
 
 @layer base {

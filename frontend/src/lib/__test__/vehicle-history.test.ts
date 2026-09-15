@@ -1,5 +1,6 @@
 /**
- * Unit tests for mergeHistory (F-014 / D-052, D-054, D-055).
+ * Unit tests for mergeHistory (F-014 / D-052, D-054, D-055 + iteración 2-3
+ * D-069..D-071).
  *
  * Pure logic, no DOM: title building per source type, "Inicio de propiedad"
  * detection and desc chronological ordering.
@@ -7,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { mergeHistory } from "@/lib/vehicle-history";
 import type {
+  VehicleCareEpisode,
   VehicleHistoryResponse,
   VehicleOwnership,
   VehicleTransfer,
@@ -45,7 +47,33 @@ function makeOwnership(overrides: Partial<VehicleOwnership> = {}): VehicleOwners
 function makeHistory(
   overrides: Partial<VehicleHistoryResponse> = {},
 ): VehicleHistoryResponse {
-  return { transfers: [], mileages: [], ownerships: [], ...overrides };
+  return {
+    transfers: [],
+    mileages: [],
+    ownerships: [],
+    careEpisodes: [],
+    ...overrides,
+  };
+}
+
+function makeCareEpisode(
+  overrides: Partial<VehicleCareEpisode> = {},
+): VehicleCareEpisode {
+  return {
+    id: "c1",
+    title: "Cambio de aceite",
+    serviceDate: "2026-09-12T00:00:00.000Z",
+    status: "delivered",
+    source: "owner",
+    verification: "unverified",
+    mileageIn: 68500,
+    customerNotes: null,
+    checkedInAt: null,
+    createdAt: "2026-09-12T10:00:00.000Z",
+    workshop: null,
+    workshopName: null,
+    ...overrides,
+  };
 }
 
 const kmLabel = (n: number) => n.toLocaleString("es-AR");
@@ -207,5 +235,239 @@ describe("mergeHistory (F-014 / D-052)", () => {
 
   it("devuelve [] cuando no hay eventos", () => {
     expect(mergeHistory(makeHistory())).toEqual([]);
+  });
+});
+
+// ── Iteración 2-3: care episodes en el timeline (D-069..D-071) ──────────────
+
+describe("mergeHistory — care episodes (iteración 2-3)", () => {
+  it("mapea un episodio owner unverified con actor, badge y notas (D-071)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({ customerNotes: "Cambio de filtro" }),
+        ],
+      }),
+    );
+
+    expect(entries[0]).toMatchObject({
+      id: "care:c1",
+      type: "care",
+      title: "Cambio de aceite",
+      actor: "Registrado por el propietario",
+      badge: "Pendiente de verificación",
+      date: "2026-09-12T00:00:00.000Z",
+      notes: "Cambio de filtro",
+    });
+  });
+
+  it("owner verificado → actor 'Verificado por {taller}' usando workshop (D-071)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            verification: "verified",
+            workshop: { id: "w1", name: "Taller Integral" },
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].actor).toBe("Verificado por Taller Integral");
+    expect(entries[0].badge).toBeUndefined();
+  });
+
+  it("owner verificado con taller externo (solo workshopName) → 'Verificado por {taller}' (D-071)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            verification: "verified",
+            workshop: null,
+            workshopName: "Taller Libre",
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].actor).toBe("Verificado por Taller Libre");
+  });
+
+  it("workshop con title null → 'Atención de taller' y actor 'Taller {name}' (D-071)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            title: null,
+            source: "workshop",
+            workshop: { id: "w1", name: "Lubricentro Central" },
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].title).toBe("Atención de taller");
+    expect(entries[0].actor).toBe("Taller Lubricentro Central");
+    expect(entries[0].badge).toBeUndefined();
+  });
+
+  it("owner con title null → 'Servicio registrado' (D-071)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [makeCareEpisode({ title: null, source: "owner" })],
+      }),
+    );
+
+    expect(entries[0].title).toBe("Servicio registrado");
+    expect(entries[0].actor).toBe("Registrado por el propietario");
+  });
+
+  it("status cancelled → sufijo '(cancelada)' en el título (D-071/D-054)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            title: "Reparación de frenos",
+            status: "cancelled",
+            source: "workshop",
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].title).toBe("Reparación de frenos (cancelada)");
+  });
+
+  it("date = D-070: serviceDate gana; si no checkedInAt; si no createdAt", () => {
+    const withServiceDate = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            id: "c-sd",
+            serviceDate: "2026-09-12T00:00:00.000Z",
+            checkedInAt: "2026-09-10T00:00:00.000Z",
+            createdAt: "2026-09-09T00:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    expect(withServiceDate[0].date).toBe("2026-09-12T00:00:00.000Z");
+
+    const withCheckedIn = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            id: "c-ci",
+            serviceDate: null,
+            checkedInAt: "2026-09-10T00:00:00.000Z",
+            createdAt: "2026-09-09T00:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    expect(withCheckedIn[0].date).toBe("2026-09-10T00:00:00.000Z");
+
+    const withCreated = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            id: "c-created",
+            serviceDate: null,
+            checkedInAt: null,
+            createdAt: "2026-09-09T00:00:00.000Z",
+          }),
+        ],
+      }),
+    );
+    expect(withCreated[0].date).toBe("2026-09-09T00:00:00.000Z");
+  });
+
+  it("owner con taller asignado pero unverified → NUNCA 'Verificado por' (TL §3.3)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            workshop: { id: "w1", name: "Taller Integral" },
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].actor).toBe("Registrado por el propietario");
+    expect(entries[0].badge).toBe("Pendiente de verificación");
+    expect(JSON.stringify(entries[0])).not.toContain("Verificado por");
+  });
+
+  it("merge global desc con las 4 fuentes mezcladas (D-052 / D-070)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        transfers: [
+          makeTransfer({ id: "t1", createdAt: "2026-09-11T00:00:00.000Z" }),
+        ],
+        mileages: [
+          {
+            id: "m1",
+            vehicleId: "v1",
+            mileage: 80000,
+            source: "workshop",
+            notes: null,
+            recordedAt: "2026-09-10T00:00:00.000Z",
+            createdAt: "2026-09-10T00:00:00.000Z",
+          },
+        ],
+        ownerships: [
+          makeOwnership({ id: "o1", startsAt: "2026-09-01T00:00:00.000Z" }),
+        ],
+        careEpisodes: [
+          makeCareEpisode({ id: "c1", serviceDate: "2026-09-12T00:00:00.000Z" }),
+        ],
+      }),
+    );
+
+    expect(entries.map((e) => e.id)).toEqual([
+      "care:c1",
+      "transfer:t1",
+      "mileage:m1",
+      "ownership:o1",
+    ]);
+  });
+
+  it("empates exactos conservan el orden de inserción (transfers → mileages → ownerships → cares)", () => {
+    const sameDate = "2026-09-10T00:00:00.000Z";
+    const entries = mergeHistory(
+      makeHistory({
+        transfers: [makeTransfer({ id: "t1", createdAt: sameDate })],
+        mileages: [
+          {
+            id: "m1",
+            vehicleId: "v1",
+            mileage: 50000,
+            source: "owner",
+            notes: null,
+            recordedAt: sameDate,
+            createdAt: sameDate,
+          },
+        ],
+        ownerships: [makeOwnership({ id: "o1", startsAt: sameDate })],
+        careEpisodes: [makeCareEpisode({ id: "c1", serviceDate: sameDate })],
+      }),
+    );
+
+    expect(entries.map((e) => e.id)).toEqual([
+      "transfer:t1",
+      "mileage:m1",
+      "ownership:o1",
+      "care:c1",
+    ]);
+  });
+
+  it("careEpisodes ausente en runtime (backend viejo) → [] defensivo sin romper", () => {
+    const entries = mergeHistory({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+    } as unknown as VehicleHistoryResponse);
+
+    expect(entries).toEqual([]);
   });
 });

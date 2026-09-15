@@ -2460,3 +2460,564 @@ Amendar parcialmente D-024 A2 para habilitar el journey **"el propietario regist
 4. **T4 heredada:** `careEpisodeId` NULLABLE en ServiceRecord/WorkOrder/Estimate (vinculación obligatoria con F-021/F-022).
 5. **`vehicle.transferred` event muerto + `mileageIn` de taller → `VehicleMileage`:** abiertas (D-068 difiere solo para el owner).
 6. **Permisos fantasma de workshops** (deuda pre-existente): se mantiene para la pasada de workshops.
+
+---
+
+# 24. Registro (2026-09-15): CareEpisodes en el Timeline del Vehículo (D-069..D-076)
+
+## Objetivo
+
+Cerrar la deuda F-014 §1: mostrar los **CareEpisodes** del vehículo (tanto `source=owner` como `source=workshop`) dentro de la sección "Historial" del detalle (`/vehicles/[id]`), integrados al merge cronológico existente (D-052), con su estado de verificación visible. Trabajo end-to-end backend + frontend, sin migración de base de datos (los datos ya existen desde F-020 / 2-2).
+
+Decisión de producto confirmada por el usuario 2026-09-15; especificación: `docs/specs/care-episode-timeline-flow.md` (validada por Tech Lead, ajustes §4.1–§4.4 incorporados).
+
+## Decisiones de producto
+
+### D-069 — Incluir CareEpisodes en el timeline del vehículo (ambos sources)
+
+- La "historia clínica" del vehículo incluye los episodios del propietario (`source=owner`) y los de talleres (`source=workshop`).
+- Fuente: `GET /api/vehicles/:id/history` se amplía con un 4º array `careEpisodes` (Opción A aprobada por TL; endpoint paralelo descartado). El endpoint de maintenance (`GET /maintenance/vehicles/:id/history`) NO se toca (F-021+, otra capa).
+
+### D-070 — Timestamp canónico del episodio para ordenar (merge)
+
+- `serviceDate` cuando existe; workshop sin `serviceDate` (nace `open` en check-in) → `checkedInAt ?? createdAt`.
+- El resto del merge no cambia (D-052): transfers `createdAt`, mileages `recordedAt`, ownerships `startsAt`.
+- Implementación validada: sort en JS post-query con clave `serviceDate ?? checkedInAt ?? createdAt` desc + tiebreak `createdAt` desc (el `orderBy` compuesto de Prisma NO equivale al coalesce — rechazado por TL).
+
+### D-071 — Título y actor del episodio en el timeline (fallbacks definidos)
+
+- Contrato: `title: string | null` (no se normaliza en el handler).
+- Fallback de UI: `title` presente → se usa; `title` null + workshop → "Atención de taller"; `title` null + owner → "Servicio registrado".
+- Owner: actor "Registrado por el propietario"; badge **solo si `verification === "verified"`** → "Verificado por {nombre del taller}".
+- Fuente del taller: **`workshop?.name ?? workshopName`** (relación viva con fallback al snapshot de texto libre). El gate del badge es `verification === "verified"` — nunca por presencia de `workshop`.
+- Workshop: actor "Taller {workshop?.name ?? workshopName}"; sin badge de verificación (origen confiable, D-064).
+- Se muestran todos los estados (`open/delivered/cancelled`), consistente con D-054. Episodio `cancelled` → título con sufijo "(cancelada)".
+- Copy de la Card Historial: "Atenciones, transferencias, kilometraje y cambios de propiedad."
+
+### D-072 — PII y acceso compartido
+
+- El historial ya controla emails (Security Review #13). Los episodios solo exhiben: título, fechas, km, estado, taller (nombre), notas del cliente — sin exposición nueva.
+- Acceso compartido ve los episodios (consistente con D-046). Sin cambios de guard en `assertVehicleAccess`.
+
+### D-073 — Sin paginación ni filtros en MVP
+
+- Igual que el resto del timeline (D-053): volumen esperado bajo; los episodios se traen completos (orden desc por timestamp canónico).
+
+### D-074 — Modal de confirmación al crear servicio (owner)
+
+- Al confirmar el registro de un servicio desde el form del propietario, se muestra un modal antes de enviar.
+- Texto: **"No podrás editar ni cancelar este registro desde tu cuenta. Solo el taller asignado podrá gestionarlo. ¿Confirmás el registro?"**
+- Cancelar → el form vuelve editable (no envía). Confirmar → se envía `POST /api/care-episodes/owner`.
+- Sin cambios backend (el propietario ya no puede editar: no existe endpoint de edición). Modal = pura UX de transparencia, integrado en 2-3 por costo bajo.
+
+### D-075 — Edición y cancelación de episodios: solo el taller asignado — *regla capturada, fuera de 2-3*
+
+- Regla de producto confirmada (2026-09-15): editar/cancelar un care-episode es operación exclusiva del taller asignado (`workshopId`), desde contexto workshop (WorkshopGuard). El propietario nunca edita ni cancela sus propios registros.
+- No se implementa en 2-3. Iteración candidate 2-5: requiere `PATCH /api/care-episodes/:id` o `POST /:id/cancel`, decisiones sobre campos editables (nunca source/verification/workshopId), invalidación de verificación al editar, auditoría, seed de permisos y Security review.
+
+### D-076 — Vehículos anteriores (ex-propietarios): corte por propiedad — *Opción B, fuera de 2-3*
+
+- Regla confirmada (2026-09-15, Opción B): un ex-propietario puede acceder a la ficha e historial de un vehículo que ya no posee, pero **solo ve los eventos hasta el final de su ownership** (no ve atenciones futuras del nuevo dueño).
+- No se implementa en 2-3. Iteración candidate 2-4: cambio en `assertVehicleAccess`/`VehicleAccessService`, regla de filtrado (fechas ≤ `endsAt` del último ownership), vista "Vehículos anteriores", acciones bloqueadas, Security review.
+
+## Decisiones técnicas validadas por el Tech Lead (2026-09-15)
+
+1. **Opción A — ampliar `GET /api/vehicles/:id/history`** (mismo guard `assertVehicleAccess`, D-046 + super_admin); endpoint paralelo descartado. Arrays existentes byte-compatibles.
+2. **`select` explícito en `careEpisode.findMany`** (defensa en profundidad, patrón Security Review #13): `id, title, serviceDate, status, source, verification, mileageIn, customerNotes, checkedInAt, createdAt, workshopName, workshop { id, name }`. Excluidos: `internalNotes` (PII taller, NUNCA en payload), `customerComplaint`, `closedAt`, `updatedAt`, `createdByUserId`, `createdByMemberId`, `verifiedByMemberId`, `verifiedAt`, `branchId`, `appointmentId`, `vehicleId`.
+3. **Sin `orderBy` en Prisma** — orden en JS post-query por clave D-070 desc + tiebreak `createdAt` desc; `orderBy` compuesto rechazado por TL (no equivale al coalesce cuando `serviceDate` es null y `checkedInAt` está seteado).
+4. **Sin mapper**: el `select` de Prisma elimina los campos sensibles en la frontera de la query; los specs existentes hacen property-checks, no `toEqual` del objeto completo.
+5. **Frontend:** tipos nuevos (`VehicleCareEpisode` ligero — NO reutilizar el modelo del crear, `title` es `string | null`); `TimelineEntryType` gana `"care"`; inserción de cares después de ownerships en `mergeHistory` (empates por orden estable desc); factory `makeHistory()` del test unitario devuelve `careEpisodes: []` por defecto (si no, rompen los 153 tests frontend en compile).
+
+## Cambios técnicos aplicados
+
+### Backend
+
+- `get-vehicle-history.handler.ts`: 4º `careEpisode.findMany` en el `Promise.all` (select explícito, sin filtro por status), `sortCareEpisodes()` privado (clave `serviceDate ?? checkedInAt ?? createdAt` desc + tiebreak `createdAt` desc).
+- `get-vehicle-history.handler.spec.ts`: `prismaMock.careEpisode` agregado + stubs `[]` en los tests existentes + tests nuevos (sort con nulls mixtos, tiebreak, select sin keys sensibles, shape `workshop`, episodio `cancelled` incluido).
+
+### Frontend
+
+- `types/vehicle.ts`: `VehicleCareEpisode` nuevo + `careEpisodes` en `VehicleHistoryResponse`.
+- `lib/vehicle-history.ts`: `mergeHistory()` integra cares (timestamp D-070, inserción tras ownerships), `TimelineEntryType` gana `"care"`, `mileageSourceLabel`/format helpers extendidos.
+- Página `/vehicles/[id]`: render de episodios en la Card Historial (fallbacks D-071, badge "Verificado por...", actor taller/propietario, sufijo "(cancelada)", notas), íconos lucide reemplazan emojis.
+- `servicios/nueva`: modal de confirmación D-074 (Dialog) antes de enviar.
+- Componentes nuevos reutilizables: `components/ui/empty-state.tsx`, `components/ui/badge.tsx`, `components/ui/dialog.tsx`, `components/vehicle/vehicle-card.tsx`, `components/vehicle/vehicle-header.tsx`.
+- Layout dashboard: nav móvil (hamburguesa), items por contexto.
+
+## Deuda / decisiones pendientes detectadas en el cierre
+
+1. **Editar/cancelar episodios** (D-075) → iteración candidate 2-5.
+2. **Ex-propietarios corte por propiedad** (D-076) → iteración candidate 2-4 (cambia `assertVehicleAccess`, listado, UI; Security review).
+3. **Timeline muestra TODOS los episodios del vehículo que el caller puede ver** (D-069 no filtra por ownership del caller); el filtrado por propiedad es exclusivo de 2-4.
+4. **`careEpisodes` del history: sin paginación** (D-073); si escala, TL propone paginar el timeline completo, no un endpoint paralelo.
+
+---
+
+# 25. Registro (2026-09-15): Panel de Transferencias, Alias y QR (D-077..D-091)
+
+## Objetivo
+
+Definir las decisiones de producto para la funcionalidad de **transferencia de propiedad de vehículo** de extremo a extremo, incluyendo el panel de transferencias (Fase 1), el alias de usuario tipo billetera virtual (Fase 2) y la transferencia por QR presencial/concesionaria (Fase 3). Se trabaja en coordinación con UX/UI, Frontend Tech Lead y Backend Tech Lead.
+
+## Contexto
+
+- El backend de transferencias ya está implementado: `POST /vehicles/:id/transfer`, `GET /vehicles/transfers/incoming`, `GET /vehicles/transfers/outgoing`, `PATCH /vehicles/transfers/:id/accept|reject|cancel`.
+- Modelos existentes: `VehicleTransfer`, `VehicleOwnership` (con `startsAt`/`endsAt`), `VehicleTransferEvent`.
+- El frontend tiene los tipos y el timeline, pero falta la integración con las APIs de transferencia.
+- Se elige el flujo **Panel dedicado** (Flujo 2) por sobre el Modal directo (Flujo 1) para el MVP.
+
+---
+
+### D-077 — Alias de usuario editable (tipo billetera virtual)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Domain / Data
+**Prioridad:** P1
+
+#### Decisión
+
+El usuario posee un **alias público editable** (`@usuario`, formato `^[a-z0-9._-]{3,30}$`), único case-insensitive, que se utiliza como identificador humano en transferencias en lugar del email (PII). El alias es **inmutable mientras exista una transferencia pendiente** que lo use como identificador.
+
+#### Razón
+- El email es PII que no debe exponerse en contratos de transferencia.
+- El alias es estable frente a cambios de email y da control sobre la identidad pública.
+- Consistente con D-003 (User = cuenta + actor en MVP).
+
+#### Impacto
+- Backend: columna `User.alias` (unique, guardado en lowercase) + `lastAliasChangedAt`.
+- Frontend: campo en perfil, validación en vivo, display en transferencias y timeline.
+
+#### Alternativas descartadas
+- Derivado del email (expone PII, se rompe al cambiar email).
+- Autogenerado `@firstName-randomNumber` (impersonal, difícil de recordar).
+
+---
+
+### D-078 — Respuestas simétricas de transferencia (fromUser + toUser)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Backend Contract / Frontend
+**Prioridad:** P1
+
+#### Decisión
+
+Todos los endpoints de transferencia (`incoming`, `outgoing` y mutaciones) retornan **ambos** `fromUser` y `toUser` con `{ id, firstName, lastName, alias }`. **Nunca** el email de la contraparte (solo la sesión ve su propio email).
+
+#### Razón
+- El contrato actual es asimétrico (incoming solo `fromUser`, outgoing solo `toUser`), obligando al frontend a inferir el actor local desde la sesión — conocimiento procedural frágil.
+- Un contrato simétrico es determinista y permite un único renderer.
+
+#### Impacto
+- Backend: ampliar includes en `get-incoming-transfers`, `get-outgoing-transfers` y mutaciones.
+- Frontend: eliminar la inferencia de sesión; menos casos especiales.
+
+#### Alternativas descartadas
+- Mantener asimetría (conocimiento implícito frágil).
+- Simetría solo en queries (mutaciones inconsistentes).
+
+---
+
+### D-079 — Conflicto QR pendiente: rechazar con error (1 QR activo por vehículo)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+#### Decisión
+
+Si al generar un QR ya existe uno pendiente para el vehículo, el sistema **rechaza con error 409 CONFLICT** y mensaje claro (ya existe un QR pendiente, su vencimiento y CTA de revocación explícita). El invariante es **un solo QR pendiente activo por vehículo**.
+
+#### Razón
+- Un QR es un bearer con capacidad transaccional real. Auto-revocar puede inutilizar silenciosamente un QR legítimo ya entregado (ej. QR de concesionaria impreso), destruyendo una transacción en curso: erosiona la confianza.
+- La revocación es una acción explícita del owner, no un efecto secundario silencioso.
+
+#### Impacto
+- Backend: 409 CONFLICT con detalle.
+- Frontend: estado de error en el panel con acción "Revocar QR existente".
+
+#### Alternativas descartadas
+- Auto-revocar el anterior (riesgo de romper transacciones legítimas).
+- Warning y elegir (complejidad para caso raro).
+
+#### Nota de implementación
+- Revocar un QR pendiente debe cancelar el intento de transferencia asociado, registrando `VehicleTransferEvent` tipo `cancelled` (trazabilidad D-014).
+
+---
+
+### D-080 — Deep link HTTPS canónico para QR
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Architecture / Backend Contract
+**Prioridad:** P1
+
+#### Decisión
+
+El QR codifica la URL canónica:
+
+```text
+${FRONTEND_URL}/transfer/qr/{token}
+```
+
+El token es el identificador canónico (path param). La ruta requiere autenticación (JwtAuthGuard).
+
+#### Razón
+- HTTPS universal funciona con todos los scanners y en desktop; custom schemes fallan en muchos.
+- Ruta auto-descriptiva; el segmento `/qr` permite distinguir el origen (copia contextual).
+
+#### Impacto
+- Backend: `FRONTEND_URL` (precedente D-028) como base del deep link.
+- Frontend: ruta `(auth)/transfer/qr/[token]` con pantalla de preview/confirmación.
+
+#### Alternativas descartadas
+- `/t/{token}` (ahorro de densidad irrelevante, ruta opaca).
+- Custom scheme `hcdv://` (incompatible con scanners y desktop).
+
+#### Nota de implementación
+- Mantener el token fuera del query string cuando sea posible; si se usa query param, aplicar `history.replaceState` (precedente D-028).
+
+---
+
+### D-081 — QR aceptado → `completed` directo
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Domain
+**Prioridad:** P1
+
+#### Decisión
+
+La aceptación de un QR confirma la transferencia en **un solo paso**: `VehicleTransfer` se crea con `status='completed'` al momento de aceptar, dentro de una transacción atómica que registra los eventos `requested → ownership_closed → ownership_created → completed`.
+
+#### Razón
+- El escaneo + confirmación de identidad (D-082) **es** el acto de aceptación; QR implica consentimiento explícito.
+- El flujo ya es totalmente trazable vía `VehicleTransferEvent`; un estado `pending` intermedio no agrega granularidad.
+
+#### Impacto
+- Backend: el command de aceptación QR replica la transacción de `accept-transfer`.
+- Frontend: una única pantalla de confirmación.
+
+#### Alternativas descartadas
+- `pending` → auto-complete (estado intermedio sin valor de trazabilidad adicional).
+
+#### Nota de implementación
+- El valor `accepted` del enum `TransferStatus` permanece sin uso por diseño (mismo comportamiento que el aceptar actual). Documentarlo para evitar "correcciones" futuras.
+
+---
+
+### D-082 — Cualquier usuario autenticado escanea + confirmación de identidad
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+#### Decisión
+
+Cualquier usuario autenticado puede escanear/resolver un QR. Tras el escaneo, el receptor debe **confirmar explícitamente su identidad** antes de aceptar. El QR jamás nombra al destinatario.
+
+#### Razón
+- El QR existe precisamente para el escenario donde el emisor **no conoce la cuenta del receptor** (comprador walk-in en concesionaria, venta presencial).
+- Un escaneo sin confirmación convertiría la posesión del QR en consentimiento — inaceptable ante un QR filtrado.
+
+#### Impacto
+- Backend: resolución del token exige autenticación; la aceptación opera contra el usuario de sesión.
+- Frontend: flujo escanear → preview del vehículo y emisor → confirmación → aceptar.
+- Seguridad: mitigaciones = TTL corto (D-086) + confirmación explícita + aceptación de un solo uso.
+
+#### Alternativas descartadas
+- QR nominativo (invalida el escenario walk-in; redundante con el email).
+- Escaneo sin confirmación (posesión = consentimiento; inaceptable).
+
+---
+
+### D-083 — Preview reutilizable; solo la aceptación consume
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+#### Decisión
+
+El token QR tiene estados `pending → consumed | revoked | expired`. El **preview (GET) es idempotente y reutilizable**; solo el accept (mutation) consume el token en la misma transacción.
+
+#### Razón
+- El journey real (D-082) requiere al menos dos interacciones: escanear → preview y confirmar → aceptar. El comprador puede revisar y decidir minutos después (o re-escanear).
+- Precedente `VehicleShare` (maxViews/currentViews) ya establece tokens de sharing view-reusable.
+
+#### Impacto
+- Backend: preview idempotente; accept one-shot.
+- Frontend: manejar caso "QR ya consumido" con estado claro.
+
+#### Alternativas descartadas
+- Consumir en primer escaneo (rompe el journey de preview + confirmación).
+
+#### Nota de implementación
+- Riesgo de QR filtrado acotado por TTL + confirmación + consumo al aceptar. Proteger el preview con throttling (anti-enumeración).
+
+---
+
+### D-084 — "Transferir" en detalle del vehículo Y en el panel
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / UX
+**Prioridad:** P1
+
+#### Decisión
+
+La acción "Transferir" existe en **ambos** lugares: la página de detalle del vehículo y el panel de transferencias, compartiendo el **mismo diálogo/formulario**.
+
+#### Razón
+- Vehicle First (D-012): la acción debe existir donde vive el vehículo.
+- El panel necesita un CTA de inicio para su estado vacío.
+
+#### Impacto
+- Frontend: `TransferDialog` compartido usado desde `/vehicles/[id]` y desde el panel.
+- Backend: sin cambios — `POST /vehicles/:id/transfer` ya existe.
+
+#### Alternativas descartadas
+- Solo detalle del vehículo (el panel vacío queda muerto).
+- Solo panel (rompe el journey principal del vehículo).
+
+---
+
+### D-085 — Diferencia concesionaria: solo TTL + metadata
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product
+**Prioridad:** P1
+
+#### Decisión
+
+La transferencia vía concesionaria **no es un rol ni un flujo de UI distinto**. La única diferencia es el **TTL de expiración** del QR (D-086) y la **metadata de origen** (`source: 'presencial' | 'concesionaria'`) persistida en el evento/token para trazabilidad.
+
+#### Razón
+- El journey del receptor (escanear → confirmar → aceptar) es idéntico sin importar quién imprimió el QR.
+- Modelar concesionaria como rol/usuario arrastra sobrealcance severo de MVP (roles, onboarding, permisos).
+
+#### Impacto
+- Backend: comando de generación recibe `source` que determina el TTL y se persiste como metadata.
+- Frontend: el lado emisor cambia solo el contexto de presentación; el lado receptor no cambia.
+
+#### Alternativas descartadas
+- Expiración + UI distinta (duplicación sin valor).
+- Rol de concesionaria (sobrealcance; se evalúa cuando el producto soporte dealers como actores).
+
+---
+
+### D-086 — TTLs QR: presencial 1h / concesionaria 48h
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+#### Decisión
+
+| Origen | TTL |
+| ------ | --- |
+| Presencial | **1 hora** |
+| Concesionaria | **48 horas** |
+
+El vencimiento se enforce server-side sobre el token (`expiresAt`), nunca solo en cliente.
+
+#### Razón
+- Presencial: 15min es insuficiente para preview → decisión → confirmación; 24h deja el QR vivo toda la noche.
+- Concesionaria: 24h no cubre "el comprador vuelve al día siguiente"; 72h deja el QR stale durante 3 días.
+- Ambos TTLs son más cortos que los 7 días del flujo por email → reduce exposición del modelo bearer.
+
+#### Impacto
+- Backend: constantes `QR_TTL_PRESENCIAL = 3600s`, `QR_TTL_CONCESIONARIA = 172800s`.
+- Frontend: countdown visible en el panel; estado expirado con acción de regenerar.
+
+#### Alternativas descartadas
+- Presencial 15min (rompe journey) y 24h (ventana de leak nocturna).
+- Concesionaria 24h (ajustado) y 72h (QR stale).
+
+#### Nota de implementación
+- El TTL es propiedad del token QR, no del intento de transferencia. La expiración dispara la lógica de D-088.
+
+---
+
+### D-087 — Notificaciones: email solamente (MVP)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product
+**Prioridad:** P1
+
+#### Decisión
+
+Las notificaciones de transferencia utilizan **email solamente** para el MVP (reutilizando los listeners existentes: `TransferRequestEmailListener`, `TransferAcceptedEmailListener`). El panel de transferencias es la superficie in-app pasiva.
+
+#### Razón
+- El email ya está implementado; notificaciones in-app requieren un subsistema nuevo (tabla, estado no-leído, campana, UI); push requiere infraestructura mobile.
+- La no-aceptación no daña el historial (expira y queda `expired` trazable).
+
+#### Impacto
+- Backend: reutilizar listeners de email existentes para el flujo QR.
+- Frontend: sin cambios de notificación; el panel incoming ya muestra las solicitudes.
+
+#### Alternativas descartadas
+- In-app (subsistema completo sin usuario validado que lo exija).
+- Push (requiere app/PWA; fuera de alcance).
+
+#### Nota de implementación
+- Registrar como roadmap: "notification center" post-MVP gatillado por actividad del vehículo.
+
+---
+
+### D-088 — Expiración de transferencia: auto-cancelar + notificar solo al emisor
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product / Security
+**Prioridad:** P1
+
+#### Decisión
+
+Toda transferencia/QR pendiente más allá de `expiresAt` eventualmente queda `expired`: se registra el evento `expired` en `VehicleTransferEvent` (trazabilidad) y se notifica **solo al emisor** con email template "Tu transferencia expiró" + CTA regenerar.
+
+#### Razón
+- El emisor es el único actor que **puede actuar** (regenerar QR o reenviar el pedido); el receptor no comprometido no necesita ruido.
+- Silencio arriesga un QR de concesionaria muerto sin detección — problema comercial real.
+
+#### Impacto
+- Backend: detección de expiración (mecanismo a criterio del Tech Lead: job periódico vs lazy-on-read), evento `expired`, email al emisor.
+- Frontend: el panel renderiza el estado `expired` con copy de acción "Reintentar".
+
+#### Alternativas descartadas
+- Silencioso (transacciones comerciales muertas sin detección).
+- Notificar a ambos (ruido para el receptor no comprometido).
+
+#### Nota de implementación
+- La marca `expired` lazy que hoy hace `AcceptTransferHandler` debe coexistir con la detección proactiva. El mecanismo (job vs lazy) es decisión del Tech Lead; el requisito de producto es el definido aquí.
+
+---
+
+### D-089 — Tabs con `@base-ui/react` (patrón existente)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Architecture / Frontend
+**Prioridad:** P1
+
+#### Decisión
+
+El componente Tabs del panel de transferencias se construye envolviendo el primitive **`@base-ui/react/tabs`** (ya instalado, v1.8.0) en `components/ui/tabs.tsx` con estilos shadcn. **Cero dependencias nuevas.**
+
+#### Razón
+- El patrón establecido del codebase es envolver primitives de Base UI en `components/ui/*` con estilos shadcn (button, input, dialog).
+- Instalar Tabs de shadcn/ui arrastraría Radix como segunda capa de primitives — inconsistente.
+
+#### Impacto
+- Frontend: `components/ui/tabs.tsx` (nuevo).
+
+#### Alternativas descartadas
+- shadcn Tabs + Radix (segunda biblioteca de primitives).
+- Custom (duplica trabajo accesible).
+
+#### Nota de implementación
+- Verificar la API exacta de Tabs en la versión instalada (Context7/paquete local) antes de codificar.
+
+---
+
+### D-090 — Librerías QR: `qrcode.react` (generación) + `html5-qrcode` (escaneo)
+
+**Estado:** `ACCEPTED`
+**Tipo:** Architecture / Frontend
+**Prioridad:** P1
+
+#### Decisión
+
+| Función | Librería |
+| ------- | -------- |
+| Generación QR | `qrcode.react` (componente React, SVG/Canvas) |
+| Escaneo QR | `html5-qrcode` (cámara + upload) |
+
+Ambas en el frontend. El payload del QR = la URL de D-080.
+
+#### Razón
+- `qrcode.react` encaja directamente con Next.js; `html5-qrcode` ofrece escaneo listo para usar.
+- Alternativa A (`qrcode` + `jsqr`) obliga a cablear canvas y cámara manualmente (más código, más bugs).
+
+#### Impacto
+- Frontend: 2 dependencias nuevas; manejo de permiso de cámara (requiere HTTPS en producción).
+- Backend: sin cambios (el QR es solo un payload de URL).
+
+#### Alternativas descartadas
+- `qrcode` + `jsqr` (wiring manual, costo alto).
+- `qr-code-styling` + cámara custom (estética ornamental, anti-MVP).
+
+#### Nota de implementación
+- Agregar fallback de "ingresar token manualmente" en la UI de escaneo (cámara denegada, desktop, testing).
+
+---
+
+### D-091 — Cooldown de alias: 15 días
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product
+**Prioridad:** P1
+
+#### Decisión
+
+El alias solo puede cambiarse **cada 15 días**. El **alta inicial** (registro) es gratuita; el cooldown aplica a cambios posteriores.
+
+#### Razón
+- 15 días cubre con holgura la ventana del flujo por email (7 días) y las de QR (1h/48h).
+- 7 días es demasiado corto para disuadir churn/impersonation; 30 días es opresivo para corregir un typo.
+
+#### Impacto
+- Backend: enforcement de cooldown — 409 CONFLICT con código estable y mensaje con los días restantes.
+- Frontend: copy en perfil ("Podés cambiar tu alias cada 15 días"), contador de días restantes.
+
+#### Alternativas descartadas
+- 30 días (demasiado restrictivo para correcciones legítimas).
+- 7 días (insuficiente como disuasión).
+
+#### Nota de implementación
+- Override de soporte: post-MVP.
+
+---
+
+## Resumen de las decisiones de transferencia
+
+| ID | Decisión |
+|----|----------|
+| D-077 | Alias editable por usuario (billetera virtual) |
+| D-078 | Respuestas simétricas (fromUser + toUser) |
+| D-079 | Rechazar QR duplicado (1 QR activo por vehículo) |
+| D-080 | Deep link HTTPS `FRONTEND_URL/transfer/qr/{token}` |
+| D-081 | QR aceptado → `completed` directo (transacción atómica) |
+| D-082 | Cualquier usuario autenticado escanea + confirma identidad |
+| D-083 | Preview reutilizable; solo la aceptación consume |
+| D-084 | "Transferir" en detalle del vehículo Y en el panel |
+| D-085 | Diferencia concesionaria = solo TTL + metadata source |
+| D-086 | TTLs: Presencial 1h / Concesionaria 48h |
+| D-087 | Notificaciones: email solamente (MVP) |
+| D-088 | Expiración: auto-cancel + notificar solo al emisor (+ evento `expired`) |
+| D-089 | Tabs con `@base-ui/react` (cero dependencias nuevas) |
+| D-090 | `qrcode.react` + `html5-qrcode` |
+| D-091 | Cooldown de alias = 15 días |
+
+## Pendientes de implementación (por fase)
+
+### Fase 1 — Panel de Transferencias (backend listo; frontend a implementar)
+- D-078: ampliar includes en handlers de transferencias.
+- D-084: `TransferDialog` compartido (detalle + panel).
+- D-089: `components/ui/tabs.tsx` con `@base-ui/react`.
+
+### Fase 2 — Alias
+- D-077: migración `User.alias` + `lastAliasChangedAt`; endpoints `GET/PATCH /users/me/alias`; extender search por alias.
+- D-091: enforcement de cooldown 15 días (409).
+- D-078: incluir `alias` en respuestas de transferencias.
+
+### Fase 3 — QR
+- D-079: rechazo 409 si QR pendiente; revocación explícita del owner.
+- D-080: deep link con `FRONTEND_URL`.
+- D-081: aceptación directa `completed` en transacción atómica.
+- D-082: preview autenticado + confirmación de identidad.
+- D-083: preview idempotente; accept one-shot.
+- D-085: `source: 'presencial' | 'concesionaria'` (metadata).
+- D-086: TTLs 1h/48h server-side.
+- D-088: detección de expiración + evento `expired` + email al emisor.
+- D-090: `qrcode.react` + `html5-qrcode` en frontend.
+
+## Decisiones delegadas al Tech Lead (no resueltas por producto)
+
+1. **Mecanismo de detección de expiración** (D-088): job periódico vs lazy-on-read. El producto define el requisito; la implementación es decisión del Tech Lead sin introducir infraestructura innecesaria (AGENTS.md §6).
+2. **Contrato exacto de respuesta de mutaciones** (D-078): shape del DTO de transferencia.

@@ -138,14 +138,48 @@ export interface VehicleTransfer {
 }
 
 /**
- * F-014: GET /api/vehicles/:id/history response — 3 sources, each sorted
+ * Iteración 2-3 (D-069/D-070): CareEpisode en el timeline del vehículo.
+ *
+ * Shape ESTRICTO del 4º array de `GET /api/vehicles/:id/history` — no
+ * reutilizar el modelo `CareEpisode` de crear (RF-2): este es más estrecho
+ * y el `title` es `string | null` (el schema es nullable; el fallback de UI
+ * vive en D-071).
+ *
+ * Fuente del nombre del taller (TL): `workshop?.name ?? workshopName`
+ * (relación viva con fallback al snapshot de texto libre).
+ */
+export interface VehicleCareEpisode {
+  id: string;
+  /** NO normalizar (schema nullable) — fallback en UI (D-071). */
+  title: string | null;
+  /** DateTime? ISO — timestamp canónico del merge (D-070) vía serviceDate ?? checkedInAt ?? createdAt. */
+  serviceDate: string | null;
+  status: "open" | "delivered" | "cancelled";
+  /** D-063: fijo e inmutable en la creación. */
+  source: "owner" | "workshop";
+  /** D-064: solo talleres verifican. */
+  verification: "unverified" | "verified";
+  mileageIn: number | null;
+  customerNotes: string | null;
+  checkedInAt: string | null;
+  createdAt: string;
+  workshop: { id: string; name: string } | null;
+  /** Snapshot de texto libre (XOR con workshopId, D-066). */
+  workshopName: string | null;
+}
+
+/**
+ * F-014: GET /api/vehicles/:id/history response — 4 sources, each sorted
  * desc by its own timestamp (transfers.createdAt, mileages.recordedAt,
- * ownerships.startsAt). The frontend merges them (D-052).
+ * ownerships.startsAt, careEpisodes por D-070). The frontend merges them
+ * (D-052). La iteración 2-3 agrega `careEpisodes` (aditivo, D-069).
  */
 export interface VehicleHistoryResponse {
   transfers: VehicleTransfer[];
   mileages: VehicleMileage[];
   ownerships: VehicleOwnership[];
+  /** Iteración 2-3: episodios owner + workshop (ya ordenados por D-070). */
+  careEpisodes: VehicleCareEpisode[];
 }
 
 // ---------------------------------------------------------------------------

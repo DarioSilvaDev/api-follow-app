@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Loader2, RotateCw, Search, X } from "lucide-react";
+import { Car, Loader2, RotateCw, Search, X } from "lucide-react";
 import { vehicleApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmptyState } from "@/components/ui/empty-state";
+import { VehicleCard } from "@/components/vehicle/vehicle-card";
 import { useAuth } from "@/hooks/use-auth";
 import { useDebounce } from "@/hooks/use-debounce";
 import type { Vehicle } from "@/types/vehicle";
@@ -35,28 +35,8 @@ function isVehicleOwner(vehicle: Vehicle, userId: string | undefined): boolean {
   );
 }
 
-/**
- * Render the catalog triplet. D-038: without a catalog selection the UI
- * shows "—". The backend is migrating the list contract to denormalized
- * brand/model/version (F-010 §9), so missing values are tolerated.
- */
-function catalogLabel(vehicle: Vehicle): string {
-  const parts = [vehicle.brand, vehicle.model, vehicle.version].filter(
-    (part): part is string => Boolean(part && part.trim()),
-  );
-  return parts.length > 0 ? parts.join(" ") : "—";
-}
-
-function yearsLabel(vehicle: Vehicle): string {
-  const years = [vehicle.manufactureYear, vehicle.modelYear].filter(
-    (year): year is number => typeof year === "number",
-  );
-  return years.length > 0 ? years.join(" / ") : "—";
-}
-
 export default function VehiclesPage() {
   const { user } = useAuth();
-  const router = useRouter();
   const [searchInput, setSearchInput] = useState("");
   const debouncedInput = useDebounce(searchInput, DEBOUNCE_MS);
   const effectiveQ =
@@ -75,8 +55,7 @@ export default function VehiclesPage() {
     placeholderData: keepPreviousData,
   });
 
-  const isEmpty =
-    !query.data || query.data.data.length === 0;
+  const isEmpty = !query.data || query.data.data.length === 0;
   const showSearchEmptyState = Boolean(effectiveQ && isEmpty);
 
   return (
@@ -129,113 +108,50 @@ export default function VehiclesPage() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : query.isError ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No se pudieron cargar los vehículos</CardTitle>
-            <CardDescription>
-              Ocurrió un error al consultar tus vehículos. Intentalo nuevamente.
-            </CardDescription>
-          </CardHeader>
-          <CardFooter>
+        <EmptyState
+          icon={RotateCw}
+          title="No se pudieron cargar los vehículos"
+          description="Ocurrió un error al consultar tus vehículos. Intentalo nuevamente."
+          action={
             <Button variant="outline" onClick={() => query.refetch()}>
-              <RotateCw className="h-4 w-4" />
+              <RotateCw className="mr-1.5 h-3.5 w-3.5" />
               Reintentar
             </Button>
-          </CardFooter>
-        </Card>
+          }
+        />
       ) : isEmpty ? (
         showSearchEmptyState ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>No se encontraron vehículos con esa placa</CardTitle>
-              <CardDescription>
-                No hay vehículos que coincidan con «{effectiveQ}». Probá con
-                otra placa o limpiá la búsqueda.
-              </CardDescription>
-            </CardHeader>
-            <CardFooter>
+          <EmptyState
+            icon={Search}
+            title="No se encontraron vehículos con esa placa"
+            description={`No hay vehículos que coincidan con «${effectiveQ}». Probá con otra placa o limpiá la búsqueda.`}
+            action={
               <Button variant="outline" onClick={() => setSearchInput("")}>
-                <X className="h-4 w-4" />
+                <X className="mr-1.5 h-3.5 w-3.5" />
                 Limpiar búsqueda
               </Button>
-            </CardFooter>
-          </Card>
+            }
+          />
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>No tenés vehículos registrados</CardTitle>
-              <CardDescription>
-                Registrá tu primer vehículo para empezar a construir su historia
-                clínica digital.
-              </CardDescription>
-            </CardHeader>
-            <CardFooter>
+          <EmptyState
+            icon={Car}
+            title="No tenés vehículos registrados"
+            description="Registrá tu primer vehículo para empezar a construir su historia."
+            action={
               <Link href="/vehicles/new">
                 <Button>Registrar vehículo</Button>
               </Link>
-            </CardFooter>
-          </Card>
+            }
+          />
         )
       ) : (
         <ul className="flex flex-col gap-4">
           {query.data.data.map((vehicle) => (
             <li key={vehicle.id}>
-              {/* F-013 / D-046: TODA la card navega al detalle. PROHIBIDO
-                  <Link> anidado (Next.js no lo soporta) — usamos un <div>
-                  clickable (role="link") y la acción "Editar" (D-039, solo
-                  owner) con e.stopPropagation() para no disparar la card. */}
-              <div
-                role="link"
-                tabIndex={0}
-                aria-label={`Ver detalle de ${vehicle.licensePlate}`}
-                className="cursor-pointer rounded-xl ring-1 ring-foreground/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 hover:bg-muted/30"
-                onClick={() => router.push(`/vehicles/${vehicle.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    router.push(`/vehicles/${vehicle.id}`);
-                  }
-                }}
-              >
-                <Card className="ring-0">
-                  <CardHeader>
-                    <CardTitle className="text-base font-medium">
-                      {vehicle.licensePlate}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-1 text-sm sm:grid-cols-2">
-                    <p className="text-muted-foreground">
-                      Marca / modelo / versión:{" "}
-                      <span className="text-foreground">
-                        {catalogLabel(vehicle)}
-                      </span>
-                    </p>
-                    <p className="text-muted-foreground">
-                      Año:{" "}
-                      <span className="text-foreground">{yearsLabel(vehicle)}</span>
-                    </p>
-                    <p className="text-muted-foreground">
-                      Color:{" "}
-                      <span className="text-foreground">
-                        {vehicle.color || "—"}
-                      </span>
-                    </p>
-                  </CardContent>
-                  {/* D-039 / RF-1: "Editar" solo para owners activos. */}
-                  {isVehicleOwner(vehicle, user?.id) && (
-                    <CardFooter>
-                      <Link
-                        href={`/vehicles/${vehicle.id}/edit`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button variant="outline" size="sm">
-                          Editar
-                        </Button>
-                      </Link>
-                    </CardFooter>
-                  )}
-                </Card>
-              </div>
+              <VehicleCard
+                vehicle={vehicle}
+                isOwner={isVehicleOwner(vehicle, user?.id)}
+              />
             </li>
           ))}
         </ul>

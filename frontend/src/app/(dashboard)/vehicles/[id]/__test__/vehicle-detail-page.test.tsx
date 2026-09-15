@@ -187,6 +187,7 @@ beforeEach(async () => {
     transfers: [],
     mileages: [],
     ownerships: [],
+    careEpisodes: [],
   });
   // Dynamic import ensures mocks are resolved first
   const mod = await import("@/app/(dashboard)/vehicles/[id]/page");

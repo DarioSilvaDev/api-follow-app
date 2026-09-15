@@ -14,7 +14,7 @@
  * - Contexto WORKSHOP activo → guía a volver a "Personal" (RF-1: 403 si no).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { clearWorkshop, selectWorkshop } from "@/lib/active-context";
@@ -173,6 +173,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
       screen.getByRole("button", { name: /registrar servicio/i }),
     );
 
+    // D-074: el POST no ocurre hasta confirmar el modal.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     // Mensaje de confianza unverified (D-064)
     expect(
       await screen.findByText(
@@ -208,6 +212,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
     await user.click(
       screen.getByRole("button", { name: /registrar servicio/i }),
     );
+
+    // D-074: modal de confirmación.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
 
     expect(
       await screen.findByText(
@@ -279,6 +287,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
 
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
 
+    // D-074: modal de confirmación.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     expect(
       await screen.findByText(/quedará como "Registrado por el propietario"/i),
     ).toBeInTheDocument();
@@ -312,12 +324,18 @@ describe("Registrar servicio page (iteración 2-2)", () => {
     );
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
 
+    // D-074: modal de confirmación → Confirmar dispara el POST que falla.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     expect(
       await screen.findByText(
         /demasiadas solicitudes\. esperá unos segundos/i,
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
+    // Reintentar re-envía directamente (sin reabrir modal — D-074).
     await user.click(screen.getByRole("button", { name: /reintentar/i }));
 
     expect(
@@ -355,6 +373,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
     );
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
 
+    // D-074: modal de confirmación → Confirmar dispara el POST.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     expect(
       await screen.findByText(/vehículo o el taller seleccionado ya no está disponible/i),
     ).toBeInTheDocument();
@@ -380,6 +402,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
     );
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
 
+    // D-074: modal de confirmación → Confirmar dispara el POST.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     expect(
       await screen.findByText(/no tenés permisos para registrar servicios de este vehículo/i),
     ).toBeInTheDocument();
@@ -398,6 +424,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
       "Taller de la esquina",
     );
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
+
+    // D-074: modal de confirmación → Confirmar dispara el POST.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
 
     expect(
       await screen.findByText(/error interno del servidor/i),
@@ -418,6 +448,10 @@ describe("Registrar servicio page (iteración 2-2)", () => {
     );
     await user.click(screen.getByRole("button", { name: /registrar servicio/i }));
 
+    // D-074: modal de confirmación → Confirmar dispara el POST.
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
     expect(
       await screen.findByText(/quedará como "Registrado por el propietario"/i),
     ).toBeInTheDocument();
@@ -432,5 +466,104 @@ describe("Registrar servicio page (iteración 2-2)", () => {
       screen.queryByText(/quedará como "Registrado por el propietario"/i),
     ).not.toBeInTheDocument();
     expect(mockCreateOwner).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── D-074: modal de confirmación (iteración 2-3) ─────────────────────────────
+
+describe("Registrar servicio — modal de confirmación (D-074)", () => {
+  it("al enviar muestra el modal con el copy exacto y 'Cancelar' no llama a la API", async () => {
+    const user = userEvent.setup();
+    mockCreateOwner.mockResolvedValue({ id: "e1" });
+
+    renderPage();
+
+    await fillServiceForm(user);
+    await user.click(screen.getByRole("button", { name: /otro taller/i }));
+    await user.type(
+      screen.getByLabelText(/nombre del taller/i),
+      "Taller de la esquina",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /registrar servicio/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(
+      /no podrás editar ni cancelar este registro desde tu cuenta/i,
+    );
+    expect(mockCreateOwner).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /cancelar/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockCreateOwner).not.toHaveBeenCalled();
+    // El form sigue disponible.
+    expect(screen.getByLabelText(/título del servicio/i)).toBeInTheDocument();
+  });
+
+  it("'Confirmar' dispara el POST y muestra el mensaje de confianza", async () => {
+    const user = userEvent.setup();
+    mockCreateOwner.mockResolvedValue({ id: "e1" });
+
+    renderPage();
+
+    await fillServiceForm(user);
+    await user.click(screen.getByRole("button", { name: /otro taller/i }));
+    await user.type(
+      screen.getByLabelText(/nombre del taller/i),
+      "Taller de la esquina",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /registrar servicio/i }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
+    expect(
+      await screen.findByText(
+        /quedará como "Registrado por el propietario" hasta que Taller de la esquina lo verifique/i,
+      ),
+    ).toBeInTheDocument();
+    expect(mockCreateOwner).toHaveBeenCalledTimes(1);
+  });
+
+  it("muestra estado de envío en el modal y deshabilita 'Cancelar' mientras confirma", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (value: unknown) => void;
+    mockCreateOwner.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    renderPage();
+
+    await fillServiceForm(user);
+    await user.click(screen.getByRole("button", { name: /otro taller/i }));
+    await user.type(
+      screen.getByLabelText(/nombre del taller/i),
+      "Taller de la esquina",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /registrar servicio/i }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
+    expect(screen.getByText("Enviando...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancelar/i })).toBeDisabled();
+    expect(mockCreateOwner).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreate({ id: "e1" });
+    });
+
+    expect(
+      await screen.findByText(
+        /quedará como "Registrado por el propietario"/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

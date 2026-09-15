@@ -15,9 +15,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HCDV — Historia Clínica Digital Vehicular",
+  title: "Autentia — Historia auténtica de tu vehículo",
   description:
-    "Plataforma de gestión de historial vehicular para talleres y propietarios",
+    "Plataforma de historial vehicular confiable y trazable para talleres y propietarios.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

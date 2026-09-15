@@ -172,6 +172,16 @@ function OwnerServiceForm({ vehicleId }: { vehicleId: string }) {
     workshopName?: string;
   } | null>(null);
 
+  // ── Modal de confirmación (D-074) ────────────────────────────────────────
+  // El POST solo se dispara al confirmar el modal; "Cancelar" lo descarta y
+  // el form queda editable sin llamada de red.
+  const [confirmPending, setConfirmPending] = useState<{
+    data: OwnerServiceFormValues;
+    workshopId?: string;
+    workshopName?: string;
+  } | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+
   const mapSubmitError = (error: unknown): string | null => {
     const apiError = error as { status?: number; message?: string };
     if (apiError.status === 400) {
@@ -233,7 +243,7 @@ function OwnerServiceForm({ vehicleId }: { vehicleId: string }) {
     }
   };
 
-  const onSubmit = async (data: OwnerServiceFormValues) => {
+  const onSubmit = (data: OwnerServiceFormValues) => {
     let workshopId: string | undefined;
     let workshopName: string | undefined;
 
@@ -264,7 +274,27 @@ function OwnerServiceForm({ vehicleId }: { vehicleId: string }) {
       return;
     }
 
-    await submitOwnerService(data, { workshopId, workshopName });
+    // D-074: antes de enviar el POST, mostrar el modal de confirmación.
+    setConfirmPending({ data, workshopId, workshopName });
+  };
+
+  const handleConfirm = async () => {
+    if (!confirmPending || confirmSubmitting) return;
+    setConfirmSubmitting(true);
+    try {
+      await submitOwnerService(confirmPending.data, {
+        workshopId: confirmPending.workshopId,
+        workshopName: confirmPending.workshopName,
+      });
+    } finally {
+      setConfirmSubmitting(false);
+      setConfirmPending(null);
+    }
+  };
+
+  const handleCancelConfirm = () => {
+    if (confirmSubmitting) return;
+    setConfirmPending(null);
   };
 
   const handleRetry = async () => {
@@ -598,6 +628,16 @@ function OwnerServiceForm({ vehicleId }: { vehicleId: string }) {
           </CardFooter>
         </form>
       </Card>
+
+      {/* D-074: modal de confirmación antes del POST /care-episodes/owner.
+          Vive fuera del <form> para no anidar botones dentro del form. */}
+      {confirmPending && (
+        <ConfirmServiceModal
+          isSubmitting={confirmSubmitting}
+          onCancel={handleCancelConfirm}
+          onConfirm={() => void handleConfirm()}
+        />
+      )}
     </div>
   );
 }
@@ -640,6 +680,66 @@ function SearchErrorPanel({
         <RotateCw className="h-3.5 w-3.5" />
         Reintentar
       </Button>
+    </div>
+  );
+}
+
+/**
+ * D-074: modal de confirmación del registro de servicio (owner).
+ *
+ * Texto EXACTO aprobado (spec 2-3 §4 / D-074). "Cancelar" descarta el modal
+ * sin llamada de red (el form queda editable); "Confirmar" dispara el
+ * `POST /api/care-episodes/owner` con los datos del form.
+ */
+function ConfirmServiceModal({
+  isSubmitting,
+  onCancel,
+  onConfirm,
+}: {
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        aria-hidden="true"
+        onClick={onCancel}
+      />
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-service-title"
+        className="relative w-full max-w-md"
+      >
+        <CardContent className="grid gap-4 pt-6">
+          <p id="confirm-service-title" className="text-sm">
+            No podrás editar ni cancelar este registro desde tu cuenta. Solo el
+            taller asignado podrá gestionarlo. ¿Confirmás el registro?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={onConfirm} disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                "Confirmar"
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

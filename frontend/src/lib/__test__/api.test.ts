@@ -897,7 +897,7 @@ describe("API client — vehicleApi", () => {
 
   // ── F-014: Vehicle history ───────────────────────────────────────────────
 
-  it("getVehicleHistory GETs the history route and parses the 3-source response (F-014)", async () => {
+  it("getVehicleHistory GETs the history route and parses the 4-source response (F-014 + 2-3)", async () => {
     fetchSpy.mockImplementation(async (input, init) => {
       const { url, method } = extractFetchInfo(input, init);
       capturedRequests.push({ url, method });
@@ -919,6 +919,23 @@ describe("API client — vehicleApi", () => {
         ],
         mileages: [],
         ownerships: [],
+        careEpisodes: [
+          {
+            id: "e1",
+            vehicleId: "v1",
+            title: "Cambio de aceite",
+            serviceDate: "2026-09-12T00:00:00.000Z",
+            status: "delivered",
+            source: "owner",
+            verification: "unverified",
+            mileageIn: 68500,
+            customerNotes: null,
+            checkedInAt: null,
+            createdAt: "2026-09-12T10:00:00.000Z",
+            workshop: null,
+            workshopName: null,
+          },
+        ],
       });
     });
 
@@ -929,6 +946,13 @@ describe("API client — vehicleApi", () => {
     expect(result.transfers[0].fromUser.firstName).toBe("Juan");
     expect(result.mileages).toEqual([]);
     expect(result.ownerships).toEqual([]);
+    expect(result.careEpisodes).toHaveLength(1);
+    expect(result.careEpisodes[0]).toMatchObject({
+      id: "e1",
+      source: "owner",
+      verification: "unverified",
+      workshopName: null,
+    });
 
     const historyCalls = capturedRequests.filter((r) =>
       r.url.includes("vehicles/v1/history"),

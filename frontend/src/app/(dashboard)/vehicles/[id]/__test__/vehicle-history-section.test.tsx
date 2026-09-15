@@ -159,6 +159,55 @@ const ownershipSecond = {
   user: { id: "u2", firstName: "Maria", lastName: "Lopez" },
 };
 
+// Iteración 2-3 (D-069..D-071): episodios de atención en el timeline.
+const careOwnerUnverified = {
+  id: "e1",
+  vehicleId: "v1",
+  title: "Cambio de aceite",
+  serviceDate: "2026-09-12T00:00:00.000Z",
+  status: "delivered",
+  source: "owner",
+  verification: "unverified",
+  mileageIn: 68500,
+  customerNotes: "Aceite 5W30",
+  checkedInAt: null,
+  createdAt: "2026-09-12T10:00:00.000Z",
+  workshop: { id: "w1", name: "Lubricentro Central" },
+  workshopName: null,
+};
+
+const careOwnerVerified = {
+  id: "e2",
+  vehicleId: "v1",
+  title: "Cambio de pastillas",
+  serviceDate: "2026-09-08T00:00:00.000Z",
+  status: "delivered",
+  source: "owner",
+  verification: "verified",
+  mileageIn: 70000,
+  customerNotes: null,
+  checkedInAt: "2026-09-08T09:00:00.000Z",
+  createdAt: "2026-09-08T09:00:00.000Z",
+  workshop: { id: "w1", name: "Lubricentro Central" },
+  workshopName: null,
+};
+
+const careWorkshop = {
+  id: "e3",
+  vehicleId: "v1",
+  title: null,
+  serviceDate: "2026-09-05T00:00:00.000Z",
+  status: "cancelled",
+  source: "workshop",
+  verification: "verified",
+  mileageIn: null,
+  customerNotes: "Presupuesto no aprobado",
+  checkedInAt: null,
+  createdAt: "2026-09-05T10:00:00.000Z",
+  workshop: null,
+  workshopName: "Libertad",
+};
+
 let VehicleDetailPage: React.ComponentType;
 
 beforeEach(async () => {
@@ -170,6 +219,7 @@ beforeEach(async () => {
     transfers: [],
     mileages: [],
     ownerships: [],
+    careEpisodes: [],
   });
   const mod = await import("@/app/(dashboard)/vehicles/[id]/page");
   VehicleDetailPage = mod.default;
@@ -239,6 +289,94 @@ describe("Vehicle detail — Historial section (F-014)", () => {
     renderPage(); // default: arrays vacíos
 
     expect(await screen.findByText("Sin eventos registrados")).toBeInTheDocument();
+  });
+
+  it("describe la card Historial incluyendo las atenciones en la vista vacía (2-3)", async () => {
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        "Atenciones, transferencias, kilometraje y cambios de propiedad.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("muestra 'Del más reciente al más antiguo.' cuando el historial tiene eventos (2-3)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+      careEpisodes: [careOwnerUnverified],
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /quedará como|Cambio de aceite/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Del más reciente al más antiguo."),
+    ).toBeInTheDocument();
+  });
+
+  // ── Iteración 2-3 (D-069..D-071): care episodes ──────────────────────────
+
+  it("renderiza un episodio owner unverified con actor y badge 'Pendiente de verificación' (D-071)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+      careEpisodes: [careOwnerUnverified],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Cambio de aceite")).toBeInTheDocument();
+    expect(
+      screen.getByText("Registrado por el propietario"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Pendiente de verificación"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Aceite 5W30")).toBeInTheDocument();
+  });
+
+  it("owner verificado → actor 'Verificado por {taller}' sin badge (D-071)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+      careEpisodes: [careOwnerVerified],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Cambio de pastillas")).toBeInTheDocument();
+    expect(
+      screen.getByText("Verificado por Lubricentro Central"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Pendiente de verificación"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("episodio de taller: 'Atención de taller', actor 'Taller {name}' y '(cancelada)' (D-071)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+      careEpisodes: [careWorkshop],
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText("Atención de taller (cancelada)"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Taller Libertad")).toBeInTheDocument();
+    expect(screen.getByText("Presupuesto no aprobado")).toBeInTheDocument();
   });
 
   it("muestra el spinner mientras carga el historial (RF-6)", async () => {

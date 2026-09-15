@@ -10,14 +10,18 @@ import {
 } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ArrowRightLeft,
+  Car,
   Download,
   FileText,
+  Gauge,
   ImageIcon,
   Loader2,
   RotateCw,
   Star,
   Trash2,
   Upload,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +32,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { vehicleApi } from "@/lib/api";
+import { VehicleHeader } from "@/components/vehicle/vehicle-header";
 import {
   type TimelineEntry,
   mergeHistory,
@@ -112,10 +124,11 @@ function formatTimelineDate(iso: string): string {
   });
 }
 
-const TIMELINE_TYPE_ICONS: Record<TimelineEntry["type"], string> = {
-  transfer: "🔄",
-  mileage: "📊",
-  ownership: "🚗",
+const TIMELINE_TYPE_ICONS: Record<TimelineEntry["type"], React.ComponentType<{ className?: string }>> = {
+  transfer: ArrowRightLeft,
+  mileage: Gauge,
+  ownership: Car,
+  care: Wrench,
 };
 
 /** Detección de imagen por extensión del key (el schema NO expone mimeType). */
@@ -258,9 +271,16 @@ function PhotosSection({
     });
   };
 
+  const [photoToDelete, setPhotoToDelete] = useState<VehiclePhoto | null>(null);
+
   const handleDelete = (photo: VehiclePhoto) => {
-    if (!window.confirm("¿Eliminar esta foto?")) return;
-    remove.mutate(photo.id);
+    setPhotoToDelete(photo);
+  };
+
+  const confirmDelete = () => {
+    if (!photoToDelete) return;
+    remove.mutate(photoToDelete.id);
+    setPhotoToDelete(null);
   };
 
   return (
@@ -393,6 +413,41 @@ function PhotosSection({
           </div>
         )}
       </CardContent>
+
+      {/* Dialog de confirmación para eliminar foto */}
+      <Dialog
+        open={photoToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPhotoToDelete(null);
+        }}
+      >
+        <DialogPopup>
+          <DialogTitle>Eliminar foto</DialogTitle>
+          <DialogDescription>
+            ¿Estás seguro de que querés eliminar esta foto? Esta acción no se
+            puede deshacer.
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <DialogClose render={<Button variant="outline" disabled={remove.isPending} />}>
+              Cancelar
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={remove.isPending}
+            >
+              {remove.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                "Eliminar"
+              )}
+            </Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
     </Card>
   );
 }
@@ -418,6 +473,7 @@ function DocumentsSection({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [docToDelete, setDocToDelete] = useState<VehicleDocument | null>(null);
 
   // Upload form state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -668,13 +724,7 @@ function DocumentsSection({
                           variant="ghost"
                           size="xs"
                           aria-label={`Eliminar documento ${doc.name}`}
-                          onClick={() => {
-                            if (
-                              window.confirm(`¿Eliminar el documento "${doc.name}"?`)
-                            ) {
-                              remove.mutate(doc.id);
-                            }
-                          }}
+                          onClick={() => setDocToDelete(doc)}
                         >
                           <Trash2 className="text-destructive" />
                         </Button>
@@ -785,6 +835,46 @@ function DocumentsSection({
           </div>
         )}
       </CardContent>
+
+      {/* Dialog de confirmación para eliminar documento */}
+      <Dialog
+        open={docToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setDocToDelete(null);
+        }}
+      >
+        <DialogPopup>
+          <DialogTitle>Eliminar documento</DialogTitle>
+          <DialogDescription>
+            ¿Estás seguro de que querés eliminar &quot;{docToDelete?.name}&quot;?
+            Esta acción no se puede deshacer.
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <DialogClose render={<Button variant="outline" disabled={remove.isPending} />}>
+              Cancelar
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (docToDelete) {
+                  remove.mutate(docToDelete.id);
+                  setDocToDelete(null);
+                }
+              }}
+              disabled={remove.isPending}
+            >
+              {remove.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                "Eliminar"
+              )}
+            </Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
     </Card>
   );
 }
@@ -941,7 +1031,8 @@ function MileageSection({
 }
 
 // ---------------------------------------------------------------------------
-// F-014: Historial — merge cronológico de transfers + mileages + ownerships
+// F-014 + 2-3: Historial — merge cronológico de transfers + mileages +
+//              ownerships + care episodes (D-052 / D-069..D-071)
 // ---------------------------------------------------------------------------
 
 function HistorySection({
@@ -962,7 +1053,7 @@ function HistorySection({
         <CardDescription>
           {entries.length > 0
             ? "Del más reciente al más antiguo."
-            : "Transferencias, kilometraje y cambios de propiedad."}
+            : "Atenciones, transferencias, kilometraje y cambios de propiedad."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -995,12 +1086,12 @@ function HistorySection({
                 key={entry.id}
                 className="flex items-start gap-3 rounded-lg ring-1 ring-foreground/10 px-3 py-2 text-sm"
               >
-                <span
-                  aria-hidden="true"
-                  className="mt-0.5 text-base leading-none"
-                >
-                  {TIMELINE_TYPE_ICONS[entry.type]}
-                </span>
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
+                  {(() => {
+                    const Icon = TIMELINE_TYPE_ICONS[entry.type];
+                    return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
+                  })()}
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                     <p className="font-medium">{entry.title}</p>
@@ -1011,6 +1102,11 @@ function HistorySection({
                   {entry.actor ? (
                     <p className="text-xs text-muted-foreground">
                       {entry.actor}
+                    </p>
+                  ) : null}
+                  {entry.badge ? (
+                    <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+                      {entry.badge}
                     </p>
                   ) : null}
                   {entry.notes ? (
@@ -1125,44 +1221,20 @@ export default function VehicleDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div>
-        <Link
-          href="/vehicles"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Volver a mis vehículos
-        </Link>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">
-              {vehicle.licensePlate}
-            </h1>
-            {!isOwner && (
-              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                Acceso compartido
-              </span>
-            )}
-          </div>
-          {/* Iteración 2-2 / RF-8: "Registrar servicio" solo para el owner en
-              contexto PERSONAL (null). Con taller seleccionado (WORKSHOP) el
-              owner ve el flujo del taller. */}
-          {isOwner && activeContext === null && (
-            <Link href={`/vehicles/${vehicle.id}/servicios/nueva`}>
-              <Button variant="outline" size="sm">
-                Registrar servicio
-              </Button>
-            </Link>
-          )}
-          {/* D-039: "Editar" solo para owners activos. */}
-          {isOwner && (
-            <Link href={`/vehicles/${vehicle.id}/edit`}>
-              <Button variant="outline" size="sm">
-                Editar
-              </Button>
-            </Link>
-          )}
-        </div>
+      <VehicleHeader vehicle={vehicle} isOwner={isOwner} />
+
+      {/* Acciones específicas del contexto */}
+      <div className="flex flex-wrap gap-2">
+        {/* Iteración 2-2 / RF-8: "Registrar servicio" solo para el owner en
+            contexto PERSONAL (null). Con taller seleccionado (WORKSHOP) el
+            owner ve el flujo del taller. */}
+        {isOwner && activeContext === null && (
+          <Link href={`/vehicles/${vehicle.id}/servicios/nueva`}>
+            <Button variant="outline" size="sm">
+              Registrar servicio
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Ficha (progressive: apenas llega GET /:id) */}
