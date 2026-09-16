@@ -48,10 +48,14 @@ export class TransferVehicleHandler {
       throw new ForbiddenException('You do not own this vehicle');
     }
 
+    // D-092: an expired pending transfer must NOT block creating a new one.
+    // Only a pending that is still alive (expiresAt null or in the future)
+    // counts as an active blocker.
     const existingPending = await this.prisma.vehicleTransfer.findFirst({
       where: {
         vehicleId: command.vehicleId,
         status: 'pending',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
     });
     if (existingPending) {

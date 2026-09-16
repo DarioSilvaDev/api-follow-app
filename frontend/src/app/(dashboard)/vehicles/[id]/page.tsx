@@ -46,6 +46,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { vehicleApi } from "@/lib/api";
 import { VehicleHeader } from "@/components/vehicle/vehicle-header";
+import { TransferDialog } from "@/components/transfer/transfer-dialog";
 import {
   type TimelineEntry,
   mergeHistory,
@@ -1133,6 +1134,7 @@ export default function VehicleDetailPage() {
   const { user } = useAuth();
   const activeContext = useActiveContext();
   const queryClient = useQueryClient();
+  const [transferOpen, setTransferOpen] = useState(false);
 
   // F-013 §5: 3 llamadas en paralelo (edición también usa ["vehicle", id]).
   const vehicleQuery = useQuery({
@@ -1229,11 +1231,31 @@ export default function VehicleDetailPage() {
             contexto PERSONAL (null). Con taller seleccionado (WORKSHOP) el
             owner ve el flujo del taller. */}
         {isOwner && activeContext === null && (
-          <Link href={`/vehicles/${vehicle.id}/servicios/nueva`}>
-            <Button variant="outline" size="sm">
-              Registrar servicio
+          <>
+            <Link href={`/vehicles/${vehicle.id}/servicios/nueva`}>
+              <Button variant="outline" size="sm">
+                Registrar servicio
+              </Button>
+            </Link>
+            {/* Fase 1 / D-078: CTA de transferencia — owner + contexto PERSONAL
+                (un taller activo devolvería 403 en el flujo de propietario). */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTransferOpen(true)}
+            >
+              <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+              Transferir
             </Button>
-          </Link>
+            <TransferDialog
+              open={transferOpen}
+              onOpenChange={setTransferOpen}
+              vehicle={{
+                id: vehicle.id,
+                licensePlate: vehicle.licensePlate,
+              }}
+            />
+          </>
         )}
       </div>
 

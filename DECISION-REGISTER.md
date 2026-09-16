@@ -2974,6 +2974,45 @@ El alias solo puede cambiarse **cada 15 días**. El **alta inicial** (registro) 
 
 ---
 
+### D-092 — Transferencias vencidas no bloquean nuevas transferencias
+
+**Estado:** `ACCEPTED`
+**Tipo:** Product
+**Prioridad:** P1
+**Fecha:** 2026-09-15 (validación Fase 1 — desbloqueo de journey 6.5)
+
+#### Decisión
+
+Una transferencia `pending` vencida **NO** bloquea la creación de una nueva transferencia para el mismo vehículo. El check `existingPending` de `POST /vehicles/:id/transfer` debe filtrar solo pendientes **vigentes**: `status: 'pending' AND (expiresAt IS NULL OR expiresAt > now)`.
+
+Complementos (misma decisión):
+
+- Un item **expirado en "Enviadas" conserva la acción "Cancelar"** (el backend ya lo permite; desbloquea el vehículo para una nueva transferencia).
+- Un item **expirado en "Recibidas" es terminal y sin acciones** (ni aceptar — el backend responde 400 — ni rechazar; evitar semántica confusa "rechazar algo ya vencido").
+- El frontend **recalcula el estado client-side** (`effectiveStatus = pending && expiresAt < now ? 'expired' : status`) para que el panel muestre "Expirada" desde el día 1, sin esperar a D-088.
+
+#### Razón
+
+- Una transferencia vencida es irresoluble por el receptor (no puede aceptarla) y sin el fix bloquearía el vehículo silenciosamente hasta que el emisor la cancele manualmente — fricción y journey sin salida.
+- UX validó que el emisor desbloquee (Cancelar en expirada) y que el receptor no tenga acciones sobre lo vencido.
+- El fix es de 1 línea, no cambia contrato ni listeners.
+
+#### Impacto
+
+- Backend: `TransferVehicleHandler` — filtrar vencidas en `existingPending` (fix 1 línea) + test. Sin cambios en `cancel` (ya permite cancelar vencidas).
+- Frontend: recomputo client-side de expirada; "Cancelar" disponible en Enviadas para expiradas; sin acciones en Recibidas para expiradas.
+
+#### Alternativas descartadas
+
+- Dejar el bloqueo y exigir cancelación manual previa (fricción; journey 6.5 incompleto).
+- Implementar expiración proactiva (D-088) como requisito de Fase 1 (costo alto; la lazy ya cubre el gate de integridad — D-TL-2).
+
+#### Nota de implementación
+- Fix sugerido por Tech Lead: `where: { vehicleId, status: 'pending', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }`.
+- Deuda post-Fase 2: evaluar unificar el DTO simétrico en mutaciones (D-TL-1) — los consumidores del body no deben asumir simetría en `accept/reject/cancel`.
+
+---
+
 ## Resumen de las decisiones de transferencia
 
 | ID | Decisión |
@@ -2993,18 +3032,21 @@ El alias solo puede cambiarse **cada 15 días**. El **alta inicial** (registro) 
 | D-089 | Tabs con `@base-ui/react` (cero dependencias nuevas) |
 | D-090 | `qrcode.react` + `html5-qrcode` |
 | D-091 | Cooldown de alias = 15 días |
+| D-092 | Transferencias vencidas no bloquean nuevas (fix `existingPending`) + Cancelar en expirada (Enviadas) + expirada terminal (Recibidas) |
 
 ## Pendientes de implementación (por fase)
 
-### Fase 1 — Panel de Transferencias (backend listo; frontend a implementar)
-- D-078: ampliar includes en handlers de transferencias.
-- D-084: `TransferDialog` compartido (detalle + panel).
-- D-089: `components/ui/tabs.tsx` con `@base-ui/react`.
+### Fase 1 — Panel de Transferencias (backend por implementar; frontend implementado en paralelo ⚠)
+- D-078: ampliar includes en handlers de transferencias (+ inyectar `alias: null` post-query; el select NO debe incluir `alias` — columna aún inexistente).
+- D-092: fix `existingPending` en `POST /:id/transfer` (filtrar vencidas) + test.
+- D-084: `TransferDialog` compartido (detalle + panel) — ✅ implementado (frontend).
+- D-089: `components/ui/tabs.tsx` con `@base-ui/react` — ✅ implementado (frontend, API `Root/List/Tab/Panel`).
+- Frontend: página `/transferencias` implementada (20+ tests). **Pendiente de verificación**: los ajustes UX de la spec v2 (§6.3-6.7, RF-4/5/6: expirada recomputo, "Ver solicitud", "ya no sos titular", "no podés transferirte a vos mismo", empty states, banner inline, invalidar `vehicles` post-aceptación) — el frontend se implementó en paralelo ANTES de la validación UX final; validar contra spec v2.
 
 ### Fase 2 — Alias
-- D-077: migración `User.alias` + `lastAliasChangedAt`; endpoints `GET/PATCH /users/me/alias`; extender search por alias.
+- D-077: migración `User.alias` + `lastAliasChangedAt`; endpoints `GET/PATCH /users/me/alias`; extender search por alias; agregar `alias: true` al select de transfers y eliminar mapping `alias: null`.
 - D-091: enforcement de cooldown 15 días (409).
-- D-078: incluir `alias` en respuestas de transferencias.
+- D-078: evaluación de unificar DTO simétrico en mutaciones (D-TL-1).
 
 ### Fase 3 — QR
 - D-079: rechazo 409 si QR pendiente; revocación explícita del owner.
@@ -3017,7 +3059,9 @@ El alias solo puede cambiarse **cada 15 días**. El **alta inicial** (registro) 
 - D-088: detección de expiración + evento `expired` + email al emisor.
 - D-090: `qrcode.react` + `html5-qrcode` en frontend.
 
-## Decisiones delegadas al Tech Lead (no resueltas por producto)
+## Decisiones delegadas al Tech Lead (resueltas en validación Fase 1 — spec v2 §9)
 
-1. **Mecanismo de detección de expiración** (D-088): job periódico vs lazy-on-read. El producto define el requisito; la implementación es decisión del Tech Lead sin introducir infraestructura innecesaria (AGENTS.md §6).
-2. **Contrato exacto de respuesta de mutaciones** (D-078): shape del DTO de transferencia.
+1. **Mecanismo de detección de expiración** (D-088): **RESUELTO (D-TL-2)** — lazy-first en Fase 1; sweeper in-process opcional en Fase 3. No se introduce `@nestjs/schedule`.
+2. **Contrato exacto de respuesta de mutaciones** (D-078): **RESUELTO (D-TL-1)** — mutaciones sin DTO simétrico en Fase 1 (no exponen PII, cero consumidores del body); Fase 2 evalúa unificar con costo bajo.
+3. **API de Tabs `@base-ui/react`** (D-089): **RESUELTO (D-TL-3)** — `Root/List/Tab/Panel/Indicator` (no `Trigger/Content`).
+4. **Tipo frontend de listas** (RF-2): **RESUELTO (D-TL-4)** — tipo derivado `VehicleTransferListItem`; no se muta `VehicleTransfer` (timeline F-014).

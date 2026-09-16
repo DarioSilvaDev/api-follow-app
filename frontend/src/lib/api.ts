@@ -23,6 +23,8 @@ import type {
   VehicleMileage,
   VehicleModel,
   VehiclePhoto,
+  VehicleTransferListItem,
+  VehicleTransferRow,
   VehicleVersion,
 } from "@/types/vehicle";
 
@@ -547,6 +549,60 @@ export const vehicleApi = {
     api
       .get(`vehicles/${vehicleId}/history`)
       .json<VehicleHistoryResponse>()
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // Fase 1 — Panel de transferencias (D-078)
+  //
+  // Contrato objetivo: fromUser/toUser SIMÉTRICOS sin email (PII), con
+  // `vehicle` desnormalizado. Si el backend aún expone la forma legacy
+  // (solo un lado con email), el tipado tolerante + transferUserLabel hacen
+  // que la UI no muestre PII ni dependa del lado presente.
+  // -----------------------------------------------------------------------
+
+  /** GET vehicles/transfers/incoming → transferencias dirigidas al usuario actual. */
+  listIncomingTransfers: () =>
+    api
+      .get("vehicles/transfers/incoming")
+      .json<VehicleTransferListItem[]>()
+      .catch(toApiError),
+
+  /** GET vehicles/transfers/outgoing → transferencias iniciadas por el usuario actual. */
+  listOutgoingTransfers: () =>
+    api
+      .get("vehicles/transfers/outgoing")
+      .json<VehicleTransferListItem[]>()
+      .catch(toApiError),
+
+  /** POST vehicles/:id/transfer → crea transferencia pendiente (D-078 RF-1). */
+  transferVehicle: (
+    vehicleId: string,
+    dto: { email: string; notes?: string },
+  ) =>
+    api
+      .post(`vehicles/${vehicleId}/transfer`, { json: dto })
+      .json<VehicleTransferRow>()
+      .catch(toApiError),
+
+  /** PATCH vehicles/transfers/:id/accept → acepta y completa la transferencia. */
+  acceptTransfer: (transferId: string) =>
+    api
+      .patch(`vehicles/transfers/${transferId}/accept`)
+      .json<VehicleTransferRow>()
+      .catch(toApiError),
+
+  /** PATCH vehicles/transfers/:id/reject → rechaza la transferencia. */
+  rejectTransfer: (transferId: string) =>
+    api
+      .patch(`vehicles/transfers/${transferId}/reject`)
+      .json<VehicleTransferRow>()
+      .catch(toApiError),
+
+  /** PATCH vehicles/transfers/:id/cancel → cancela (solo el emisor). */
+  cancelTransfer: (transferId: string) =>
+    api
+      .patch(`vehicles/transfers/${transferId}/cancel`)
+      .json<VehicleTransferRow>()
       .catch(toApiError),
 };
 

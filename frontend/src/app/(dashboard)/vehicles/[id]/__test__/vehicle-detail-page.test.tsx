@@ -100,6 +100,23 @@ vi.mock("@/components/ui/textarea", () => ({
   ),
 }));
 
+// Fase 1 / D-078: stub del diálogo de transferencia — su lógica se testea en
+// src/components/transfer/__test__/transfer-dialog.test.tsx.
+vi.mock("@/components/transfer/transfer-dialog", () => ({
+  TransferDialog: ({
+    open,
+    vehicle,
+  }: {
+    open: boolean;
+    vehicle?: { id: string } | null;
+  }) => (
+    <div data-testid="transfer-dialog-stub">
+      <span data-testid="transfer-dialog-vehicle-id">{vehicle?.id ?? ""}</span>
+      <span data-testid="transfer-dialog-open">{String(open)}</span>
+    </div>
+  ),
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** GET /:id response shape (denormalized VehicleResponseDto + photos,
@@ -641,6 +658,87 @@ describe("Registrar servicio button (iteración 2-2)", () => {
     expect(await screen.findByText("Acceso compartido")).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: /registrar servicio/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ── Fase 1 / D-078: CTA "Transferir" (owner + contexto PERSONAL) ─────────────
+
+/**
+ * Mismas reglas que "Registrar servicio" (D-063 / RF-8): el flujo de
+ * transferencia es de propietario — solo owner activo y contexto PERSONAL.
+ * Al abrir, el diálogo (stub) recibe vehicle.id de la ficha.
+ */
+describe("Transferir button (Fase 1 / D-078)", () => {
+  it("se muestra para el owner en PERSONAL y abre el diálogo con el vehículo", async () => {
+    const user = userEvent.setup();
+    mockGetVehicle.mockResolvedValue(makeVehicle());
+    mockListPhotos.mockResolvedValue(makeVehicle().photos);
+    mockListDocuments.mockResolvedValue(makeVehicle().documents);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
+
+    const openStub = screen.getByTestId("transfer-dialog-open");
+    expect(openStub).toHaveTextContent("false");
+
+    await user.click(screen.getByRole("button", { name: "Transferir" }));
+
+    expect(screen.getByTestId("transfer-dialog-open")).toHaveTextContent(
+      "true",
+    );
+    expect(screen.getByTestId("transfer-dialog-vehicle-id")).toHaveTextContent(
+      "v1",
+    );
+  });
+
+  it("se oculta cuando el owner opera con un taller seleccionado (WORKSHOP)", async () => {
+    selectWorkshop("w1");
+    mockGetVehicle.mockResolvedValue(makeVehicle());
+    mockListPhotos.mockResolvedValue(makeVehicle().photos);
+    mockListDocuments.mockResolvedValue(makeVehicle().documents);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Transferir" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("se oculta para no-owners (co_owner / acceso compartido)", async () => {
+    mockGetVehicle.mockResolvedValue(
+      makeVehicle({
+        ownerships: [
+          {
+            id: "o1",
+            vehicleId: "v1",
+            userId: "other-user",
+            type: "owner",
+            startsAt: "2026-09-09T00:00:00.000Z",
+            endsAt: null,
+            user: { id: "other-user", firstName: "Otra", lastName: "Persona" },
+          },
+          {
+            id: "o2",
+            vehicleId: "v1",
+            userId: "user-1",
+            type: "co_owner",
+            startsAt: "2026-09-09T00:00:00.000Z",
+            endsAt: null,
+          },
+        ],
+      }),
+    );
+    mockListPhotos.mockResolvedValue([]);
+    mockListDocuments.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Transferir" }),
     ).not.toBeInTheDocument();
   });
 });

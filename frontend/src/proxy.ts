@@ -7,7 +7,14 @@ import { NextRequest, NextResponse } from "next/server";
 // This is purely navigation UX protection (D-001, RF-5).
 // ---------------------------------------------------------------------------
 
-const protectedRoutes = ["/dashboard", "/profile", "/vehicles", "/atenciones"];
+// Fase 1 (D-078): /transferencias es ruta protegida (panel de transferencias).
+const protectedRoutes = [
+  "/dashboard",
+  "/profile",
+  "/vehicles",
+  "/atenciones",
+  "/transferencias",
+];
 const authRoutes = ["/login", "/register"];
 
 function isProtectedRoute(pathname: string): boolean {

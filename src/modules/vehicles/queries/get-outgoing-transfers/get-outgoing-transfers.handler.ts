@@ -6,7 +6,7 @@ export class GetOutgoingTransfersHandler {
   constructor(private readonly prisma: PrismaService) {}
 
   async execute(userId: string) {
-    return this.prisma.vehicleTransfer.findMany({
+    const items = await this.prisma.vehicleTransfer.findMany({
       where: { fromUserId: userId },
       include: {
         vehicle: {
@@ -18,11 +18,23 @@ export class GetOutgoingTransfersHandler {
             color: true,
           },
         },
+        fromUser: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         toUser: {
-          select: { id: true, firstName: true, lastName: true, email: true },
+          select: { id: true, firstName: true, lastName: true },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // D-078: symmetric contract `{ id, firstName, lastName, alias }`.
+    // `User.alias` does not exist in the schema until Phase 2, so it is
+    // injected post-query (the Prisma select MUST NOT include `alias`).
+    return items.map((t) => ({
+      ...t,
+      fromUser: { ...t.fromUser, alias: null },
+      toUser: { ...t.toUser, alias: null },
+    }));
   }
 }

@@ -119,6 +119,27 @@ describe("Proxy — route protection", () => {
       expect(location).toBeNull();
       expect(res.status).not.toBe(307);
     });
+
+    // Fase 1 (D-078): /transferencias es ruta protegida.
+    it("redirects /transferencias to /login when no cookie", () => {
+      const req = makeRequest("/transferencias");
+      const res = proxy(req);
+
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.status).toBeLessThan(400);
+      expect(res.headers.get("location")).toContain("/login");
+      expect(res.headers.get("location")).toContain(
+        encodeURIComponent("/transferencias"),
+      );
+    });
+
+    it("allows /transferencias when access_token cookie is present", () => {
+      const req = makeRequest("/transferencias", { access_token: "valid" });
+      const res = proxy(req);
+
+      const location = res.headers.get("location");
+      expect(location).toBeNull();
+    });
   });
 
   describe("auth routes", () => {

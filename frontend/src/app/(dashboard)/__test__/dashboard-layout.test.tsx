@@ -18,6 +18,7 @@ vi.mock("next/navigation", () => ({
     push: mockPush,
     replace: mockPush,
   }),
+  usePathname: () => "/dashboard",
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -110,14 +111,39 @@ describe("Dashboard header links por contexto activo (iteración 2-2)", () => {
       screen.queryByRole("link", { name: "Nueva atención" }),
     ).not.toBeInTheDocument();
 
-    // Links permanentes intactos.
-    expect(screen.getByRole("link", { name: "HCDV" })).toHaveAttribute(
+    // Links permanentes intactos (incl. Fase 1: "Transferencias" en base).
+    expect(screen.getByRole("link", { name: "Autentia" })).toHaveAttribute(
       "href",
       "/dashboard",
     );
     expect(screen.getByRole("link", { name: "Mi perfil" })).toHaveAttribute(
       "href",
       "/profile",
+    );
+    expect(screen.getByRole("link", { name: "Transferencias" })).toHaveAttribute(
+      "href",
+      "/transferencias",
+    );
+  });
+});
+
+// ── Fase 1 / D-078: "Transferencias" es un link BASE (todos los contextos) ──
+
+describe("Dashboard header — link Transferencias (Fase 1 / D-078)", () => {
+  it("se muestra en contexto PERSONAL apuntando al panel", async () => {
+    renderLayout();
+
+    const link = screen.getByRole("link", { name: "Transferencias" });
+    expect(link).toHaveAttribute("href", "/transferencias");
+  });
+
+  it("se muestra también con taller seleccionado (WORKSHOP)", async () => {
+    selectWorkshop("w1");
+    renderLayout();
+
+    expect(screen.getByRole("link", { name: "Transferencias" })).toHaveAttribute(
+      "href",
+      "/transferencias",
     );
   });
 });

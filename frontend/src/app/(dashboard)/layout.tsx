@@ -13,6 +13,8 @@ import { cn } from "cn";
 
 const NAV_ITEMS_BASE = [
   { href: "/dashboard", label: "Inicio" },
+  // Fase 1 / D-078: panel de transferencias (base — owner en contexto PERSONAL).
+  { href: "/transferencias", label: "Transferencias" },
 ] as const;
 
 const NAV_ITEMS_WORKSHOP = [

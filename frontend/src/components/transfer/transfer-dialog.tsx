@@ -1,0 +1,315 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { Car, Loader2, Send } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogPopup,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/hooks/use-auth";
+import { vehicleApi } from "@/lib/api";
+import {
+  createTransferErrorMessage,
+  pendingTransferMessage,
+  transferErrorStatus,
+} from "@/lib/transfer-errors";
+import type { Vehicle } from "@/types/vehicle";
+
+// ---------------------------------------------------------------------------
+// Fase 1 / D-084: diálogo compartido de transferencia.
+//
+// Dos modos de entrada:
+// - `vehicle` (fijo): desde el detalle del vehículo — sin selector, el
+//   vehículo es el de la ficha.
+// - `vehicles` (selector): desde el panel de transferencias — lista de
+//   vehículos de propiedad del usuario actual (filtrada con isVehicleOwner).
+//
+// Errores: nunca se muestra el mensaje crudo del backend (anti-enumeración /
+// PII). Casos §5.3:
+// - email propio → error inline (detectado client-side contra la sesión y
+//   también contra el 400 del backend), diálogo abierto con datos intactos.
+// - ya hay una transferencia pendiente (RF-6) → error inline + CTA
+//   "Ver solicitud" que navega al panel.
+// - ya no sos owner (raza) → error inline + invalidación de queries.
+//
+// Ajuste 4 UX (§6.7): en modo panel sin vehículos propios mostra un estado
+// guiado "No tenés vehículos para transferir" con link a /vehicles/new.
+// ---------------------------------------------------------------------------
+
+export const transferFormSchema = z.object({
+  vehicleId: z.string().min(1, "Seleccioná un vehículo."),
+  email: z.email("Ingresá un email válido."),
+  notes: z
+    .string()
+    .trim()
+    .max(500, "Las notas no pueden superar los 500 caracteres.")
+    .optional(),
+});
+
+export type TransferFormValues = z.infer<typeof transferFormSchema>;
+
+interface TransferDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Modo detalle: vehículo fijo (solo id + placa). */
+  vehicle?: { id: string; licensePlate: string } | null;
+  /** Modo panel: vehículos de propiedad del usuario (selector). */
+  vehicles?: Vehicle[];
+  /** Callback post-éxito (refetch de listas del llamador). */
+  onSuccess?: () => void;
+}
+
+function transferVehicleLabel(vehicle: Vehicle): string {
+  const years = [vehicle.manufactureYear, vehicle.modelYear]
+    .filter((year): year is number => typeof year === "number")
+    .join(" · ");
+  return [vehicle.licensePlate, years, vehicle.color].filter(Boolean).join(" — ");
+}
+
+export function TransferDialog({
+  open,
+  onOpenChange,
+  vehicle,
+  vehicles,
+  onSuccess,
+}: TransferDialogProps) {
+  const isPanelMode = Boolean(vehicles);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="sm:max-w-md">
+        <DialogTitle className="flex items-center gap-2">
+          <Send className="h-4 w-4 text-primary" />
+          Transferir vehículo
+        </DialogTitle>
+        <DialogDescription>
+          {isPanelMode
+            ? "Seleccioná el vehículo y el email de la persona que recibirá la titularidad."
+            : vehicle
+              ? `Transferí la titularidad de ${vehicle.licensePlate} a otro usuario de Autentia.`
+              : "Transferí la titularidad de tu vehículo a otro usuario de Autentia."}
+        </DialogDescription>
+
+        <TransferDialogForm
+          vehicle={vehicle}
+          vehicles={vehicles}
+          onOpenChange={onOpenChange}
+          onSuccess={onSuccess}
+        />
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+/**
+ * Formulario interno. Se monta cada vez que se abre el diálogo (el Popup de
+ * Base UI monta su contenido solo cuando `open` es true), por lo que `useForm`
+ * se inicializa con los defaults del contexto actual sin necesidad de
+ * resetear con efectos.
+ */
+function TransferDialogForm({
+  vehicle,
+  vehicles,
+  onOpenChange,
+  onSuccess,
+}: Pick<TransferDialogProps, "vehicle" | "vehicles" | "onOpenChange" | "onSuccess">) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [submitError, setSubmitError] = useState<unknown>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<TransferFormValues>({
+    resolver: zodResolver(transferFormSchema),
+    defaultValues: {
+      vehicleId: vehicle?.id ?? vehicles?.[0]?.id ?? "",
+      email: "",
+      notes: "",
+    },
+  });
+
+  const isPanelMode = Boolean(vehicles);
+
+  // Ajuste 3a/4 UX (§6.7): sin vehículos propios el form no aplica → estado
+  // guiado con link a /vehicles/new. (Los hooks ya corrieron arriba.)
+  if (isPanelMode && (!vehicles || vehicles.length === 0)) {
+    return (
+      <EmptyState
+        icon={Car}
+        title="No tenés vehículos para transferir"
+        description="Registrá un vehículo primero para poder transferir su titularidad."
+        action={
+          <Link
+            href="/vehicles/new"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            Registrar un vehículo
+          </Link>
+        }
+      />
+    );
+  }
+
+  const pendingMessage = submitError
+    ? pendingTransferMessage(submitError)
+    : null;
+  const errorMessage = submitError
+    ? createTransferErrorMessage(submitError)
+    : null;
+
+  const onSubmit = handleSubmit(async (values) => {
+    setSubmitError(null);
+
+    // Ajuste 3a UX: email propio detectado client-side (sin round-trip).
+    // Validado también por el backend (400 self); el mapper cubre ambos.
+    const ownEmail = user?.email?.trim().toLowerCase();
+    if (ownEmail && values.email.trim().toLowerCase() === ownEmail) {
+      setSubmitError({
+        status: 400,
+        message: "Cannot transfer vehicle to yourself",
+      });
+      return;
+    }
+
+    try {
+      await vehicleApi.transferVehicle(values.vehicleId, {
+        email: values.email,
+        notes: values.notes?.trim() ? values.notes.trim() : undefined,
+      });
+      // Refresca listas del panel + timeline del detalle (la nueva
+      // transferencia pendiente aparece en el historial del vehículo).
+      queryClient.invalidateQueries({ queryKey: ["transfers"] });
+      queryClient.invalidateQueries({ queryKey: ["vehicle"] });
+      onSuccess?.();
+      onOpenChange(false);
+    } catch (error) {
+      setSubmitError(error);
+      // Ajuste 3c UX: ya no sos owner (raza) → invalidar para que el CTA y
+      // la lista de vehículos propios se resincronicen.
+      if (transferErrorStatus(error) === 403) {
+        queryClient.invalidateQueries({ queryKey: ["vehicle"] });
+        queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      }
+    }
+  });
+
+  return (
+    <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+      {isPanelMode && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="transfer-vehicle">Vehículo</Label>
+              <Select
+                id="transfer-vehicle"
+                aria-invalid={Boolean(errors.vehicleId)}
+                {...register("vehicleId")}
+              >
+                {vehicles?.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {transferVehicleLabel(v)}
+                  </option>
+                ))}
+              </Select>
+              {errors.vehicleId && (
+                <p className="text-xs text-destructive" role="alert">
+                  {errors.vehicleId.message}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="transfer-email">Email del nuevo titular</Label>
+            <Input
+              id="transfer-email"
+              type="email"
+              autoComplete="off"
+              placeholder="titular@ejemplo.com"
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby="transfer-email-helper"
+              {...register("email")}
+            />
+            {/* Ajuste 8 UX (§6.1): helper pre-submit validado por UX. */}
+            <p
+              id="transfer-email-helper"
+              className="text-xs text-muted-foreground"
+            >
+              El destinatario debe tener una cuenta en Autentia.
+            </p>
+            {errors.email && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.email.message}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="transfer-notes">Notas (opcional)</Label>
+            <Textarea
+              id="transfer-notes"
+              placeholder="Detalle de la entrega, kilometraje, etc."
+              aria-invalid={Boolean(errors.notes)}
+              {...register("notes")}
+            />
+            {errors.notes && (
+              <p className="text-xs text-destructive" role="alert">
+                {errors.notes.message}
+              </p>
+            )}
+          </div>
+
+          {pendingMessage ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-warning bg-warning/10 px-3 py-2 text-sm text-warning-foreground"
+            >
+              <p>{pendingMessage}</p>
+              {/* Ajuste 3b UX (§5.3/RF-4): CTA "Ver solicitud" → panel Enviadas. */}
+              <Link
+                href="/transferencias#enviadas"
+                className="mt-1 inline-block font-medium underline underline-offset-4"
+              >
+                Ver solicitud
+              </Link>
+            </div>
+          ) : errorMessage ? (
+            <p
+              role="alert"
+              className="rounded-lg border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {errorMessage}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
+              {isSubmitting ? "Enviando..." : "Enviar solicitud"}
+            </Button>
+          </div>
+        </form>
+    );
+}

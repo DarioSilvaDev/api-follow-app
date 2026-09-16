@@ -120,14 +120,27 @@ export type VehicleTransferStatus =
   | "expired";
 
 /**
+ * Usuario de contraparte en una transferencia (emisor/receptor) — SIN email
+ * (PII). D-077: `alias` se incorpora en Fase 1 como nullable (null en el
+ * backend hasta D-XXX; la UI muestra el fallback nombre completo).
+ */
+export interface VehicleTransferUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  /** D-077: alias de usuario (null en Fase 1; se puebla en Fase 2+). */
+  alias?: string | null;
+}
+
+/**
  * F-014: Vehicle transfer. Backend GET :id/history includes nested
- * `fromUser`/`toUser` as { id, firstName, lastName } (no email — PII).
+ * `fromUser`/`toUser` (no email — PII).
  */
 export interface VehicleTransfer {
   id: string;
   vehicleId: string;
-  fromUser: { id: string; firstName: string; lastName: string };
-  toUser: { id: string; firstName: string; lastName: string };
+  fromUser: VehicleTransferUser;
+  toUser: VehicleTransferUser;
   status: VehicleTransferStatus;
   requestedAt: string;
   respondedAt: string | null;
@@ -135,6 +148,49 @@ export interface VehicleTransfer {
   expiresAt: string | null;
   notes: string | null;
   createdAt: string;
+}
+
+/**
+ * Panel de transferencias (Fase 1 / D-078): item de las listas
+ * `GET vehicles/transfers/incoming|outgoing`.
+ *
+ * Contrato objetivo D-078: `fromUser`/`toUser` simétricos sin email, con
+ * `vehicle` anidado desnormalizado. Tolerancia de contrato: los campos que la
+ * UI no lee son opcionales (el backend en migración puede devolver filas
+ * crudas de Prisma con campos extra).
+ */
+export interface VehicleTransferListItem {
+  id: string;
+  status: VehicleTransferStatus;
+  requestedAt: string;
+  expiresAt?: string | null;
+  notes?: string | null;
+  createdAt?: string;
+  respondedAt?: string | null;
+  completedAt?: string | null;
+  /** Desnormalizado (Fase 1 / RF-1): los campos del listado NO cambian. */
+  vehicle: {
+    id: string;
+    licensePlate: string;
+    manufactureYear?: number | null;
+    modelYear?: number | null;
+    color?: string | null;
+  };
+  fromUser: VehicleTransferUser;
+  toUser: VehicleTransferUser;
+}
+
+/**
+ * Fase 1: respuesta de las mutaciones de transferencia (accept/reject/cancel/
+ * POST :id/transfer). El backend devuelve la fila cruda de Prisma (sin
+ * `vehicle`/`fromUser`/`toUser` anidados) — el frontend NO consume esta
+ * respuesta: invalida queries y refetchea.
+ */
+export interface VehicleTransferRow {
+  id: string;
+  status: VehicleTransferStatus;
+  requestedAt: string;
+  [key: string]: unknown;
 }
 
 /**
