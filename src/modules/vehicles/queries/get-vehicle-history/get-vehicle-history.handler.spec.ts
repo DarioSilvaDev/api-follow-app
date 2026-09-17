@@ -77,7 +77,12 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
     prismaMock.vehicleOwnership.findMany.mockResolvedValue([
       {
         startsAt: new Date(),
-        user: { id: 'owner-1', firstName: 'X', lastName: 'Y', email: 'o@x.com' },
+        user: {
+          id: 'owner-1',
+          firstName: 'X',
+          lastName: 'Y',
+          email: 'o@x.com',
+        },
       },
     ]);
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([]);
@@ -112,7 +117,12 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
     prismaMock.vehicleOwnership.findMany.mockResolvedValue([
       {
         startsAt: new Date(),
-        user: { id: 'owner-1', firstName: 'X', lastName: 'Y', email: 'o@x.com' },
+        user: {
+          id: 'owner-1',
+          firstName: 'X',
+          lastName: 'Y',
+          email: 'o@x.com',
+        },
       },
     ]);
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([]);
@@ -263,9 +273,18 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
 
     // Must contain the expected keys
     const expected = [
-      'id', 'title', 'serviceDate', 'status', 'source', 'verification',
-      'mileageIn', 'customerNotes', 'checkedInAt', 'createdAt',
-      'workshopName', 'workshop',
+      'id',
+      'title',
+      'serviceDate',
+      'status',
+      'source',
+      'verification',
+      'mileageIn',
+      'customerNotes',
+      'checkedInAt',
+      'createdAt',
+      'workshopName',
+      'workshop',
     ];
     for (const key of expected) {
       expect(selectKeys).toContain(key);
@@ -298,7 +317,10 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
 
     const result = await handler.execute('v1');
 
-    expect(result.careEpisodes[0].workshop).toEqual({ id: 'w-1', name: 'Taller X' });
+    expect(result.careEpisodes[0].workshop).toEqual({
+      id: 'w-1',
+      name: 'Taller X',
+    });
   });
 
   it('includes careEpisodes with status cancelled in the result', async () => {

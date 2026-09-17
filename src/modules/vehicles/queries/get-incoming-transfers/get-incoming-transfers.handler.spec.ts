@@ -35,7 +35,12 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([
       {
         ...baseTransfer,
-        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez', alias: 'ana_p' },
+        fromUser: {
+          id: 'u-ana',
+          firstName: 'Ana',
+          lastName: 'Pérez',
+          alias: 'ana_p',
+        },
         toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo', alias: null },
       },
     ]);
@@ -93,7 +98,12 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([
       {
         ...baseTransfer,
-        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez', alias: null },
+        fromUser: {
+          id: 'u-ana',
+          firstName: 'Ana',
+          lastName: 'Pérez',
+          alias: null,
+        },
         toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo', alias: null },
       },
     ]);

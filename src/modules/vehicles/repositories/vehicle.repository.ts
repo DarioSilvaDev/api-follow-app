@@ -16,8 +16,7 @@ export type RegisterVehicleData = RegisterVehicleDto & { ownerId: string };
  */
 export type HydratedVehicle = Vehicle & {
   version:
-    | (VehicleVersion & { model: VehicleModel & { brand: VehicleBrand } })
-    | null;
+    (VehicleVersion & { model: VehicleModel & { brand: VehicleBrand } }) | null;
 };
 
 export interface VehicleRepository {

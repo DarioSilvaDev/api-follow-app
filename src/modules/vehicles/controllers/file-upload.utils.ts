@@ -17,7 +17,10 @@ export const ALLOWED_IMAGE_MIMES = [
   'image/avif',
 ];
 
-export const ALLOWED_DOCUMENT_MIMES = [...ALLOWED_IMAGE_MIMES, 'application/pdf'];
+export const ALLOWED_DOCUMENT_MIMES = [
+  ...ALLOWED_IMAGE_MIMES,
+  'application/pdf',
+];
 
 /**
  * Multer fileFilter factory: rejects files whose mimetype is not in the

@@ -34,9 +34,7 @@ export class ListVehiclesHandler {
     const where: Prisma.VehicleWhereInput | undefined = query.userId
       ? {
           ownerships: { some: { userId: query.userId, endsAt: null } },
-          ...(q
-            ? { licensePlate: { contains: q, mode: 'insensitive' } }
-            : {}),
+          ...(q ? { licensePlate: { contains: q, mode: 'insensitive' } } : {}),
         }
       : undefined;
 

@@ -115,7 +115,8 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037)', () => {
       'vehicle.registered',
       expect.any(VehicleRegisteredEvent),
     );
-    const event = eventEmitterMock.emit.mock.calls[0][1] as VehicleRegisteredEvent;
+    const event = eventEmitterMock.emit.mock
+      .calls[0][1] as VehicleRegisteredEvent;
     expect(event.vehicleId).toBe('v1');
     expect(event.ownerId).toBe('user-1');
     expect(event.licensePlate).toBe('ABC123');

@@ -83,7 +83,11 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
     prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
     prismaMock.vehicle.count.mockResolvedValue(1);
 
-    const result = await handler.execute({ userId: 'user-1', page: 1, limit: 20 });
+    const result = await handler.execute({
+      userId: 'user-1',
+      page: 1,
+      limit: 20,
+    });
 
     expect(prismaMock.vehicle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -91,7 +95,12 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
       }),
     );
 
-    expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
+    expect(result.meta).toEqual({
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    });
     expect(result.data).toHaveLength(1);
 
     const item = result.data[0];
@@ -132,12 +141,21 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
     prismaMock.vehicle.findMany.mockResolvedValue([]);
     prismaMock.vehicle.count.mockResolvedValue(12);
 
-    const result = await handler.execute({ userId: 'user-1', page: 2, limit: 5 });
+    const result = await handler.execute({
+      userId: 'user-1',
+      page: 2,
+      limit: 5,
+    });
 
     expect(prismaMock.vehicle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ skip: 5, take: 5 }),
     );
-    expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
+    expect(result.meta).toEqual({
+      total: 12,
+      page: 2,
+      limit: 5,
+      totalPages: 3,
+    });
   });
 
   describe('F-012 — búsqueda por placa (q)', () => {

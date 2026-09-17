@@ -35,7 +35,7 @@ describe('fileTypeFilter (Wave P2 — B3)', () => {
       destination: '',
       filename: '',
       path: '',
-    } as Express.Multer.File;
+    };
   }
 
   describe('ALLOWED_IMAGE_MIMES', () => {

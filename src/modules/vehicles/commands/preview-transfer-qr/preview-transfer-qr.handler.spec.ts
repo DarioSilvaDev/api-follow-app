@@ -23,6 +23,9 @@ describe('PreviewTransferQrHandler', () => {
     vehicle: {
       id: 'vehicle-1',
       licensePlate: 'ABC123',
+      manufactureYear: 2018,
+      modelYear: 2019,
+      color: 'Rojo',
       version: {
         model: { brand: { name: 'Toyota' }, name: 'Corolla' },
         name: '1.8',
@@ -55,6 +58,37 @@ describe('PreviewTransferQrHandler', () => {
     expect(result.vehicle.licensePlate).toBe('ABC123');
     expect(result.fromUser.alias).toBe('jperez');
     expect(result.secondsRemaining).toBeGreaterThan(0);
+  });
+
+  it('H2: preview exposes manufactureYear, modelYear and color additively', async () => {
+    prismaMock.vehicleTransferQr.findUnique.mockResolvedValue(pendingQr);
+
+    const result = await handler.execute(cmd);
+
+    expect(result.vehicle.manufactureYear).toBe(2018);
+    expect(result.vehicle.modelYear).toBe(2019);
+    expect(result.vehicle.color).toBe('Rojo');
+  });
+
+  it('H2: catalog-less vehicles expose null for the additive fields (no crash)', async () => {
+    const { manufactureYear, modelYear, color, ...vehicleWithoutCatalog } =
+      pendingQr.vehicle;
+    prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+      ...pendingQr,
+      vehicle: {
+        ...vehicleWithoutCatalog,
+        manufactureYear: null,
+        modelYear: null,
+        color: null,
+      },
+    });
+
+    const result = await handler.execute(cmd);
+
+    expect(result.vehicle.manufactureYear).toBeNull();
+    expect(result.vehicle.modelYear).toBeNull();
+    expect(result.vehicle.color).toBeNull();
+    expect(result.vehicle.id).toBe('vehicle-1');
   });
 
   it('D-088: lazily marks a pending QR as expired when expiresAt passed', async () => {

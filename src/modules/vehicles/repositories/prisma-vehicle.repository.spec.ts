@@ -216,7 +216,10 @@ describe('PrismaVehicleRepository — P2002 → 409, include hydration and plate
       licensePlate: 'ABC123',
     });
 
-    await repository.update('v1', { licensePlate: '  aBc123  ', ...updateData });
+    await repository.update('v1', {
+      licensePlate: '  aBc123  ',
+      ...updateData,
+    });
 
     expect(prismaMock.vehicle.update).toHaveBeenCalledWith(
       expect.objectContaining({

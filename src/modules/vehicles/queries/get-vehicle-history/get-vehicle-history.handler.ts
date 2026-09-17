@@ -37,10 +37,20 @@ export class GetVehicleHistoryHandler {
           where: { vehicleId },
           include: {
             fromUser: {
-              select: { id: true, firstName: true, lastName: true, alias: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                alias: true,
+              },
             },
             toUser: {
-              select: { id: true, firstName: true, lastName: true, alias: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                alias: true,
+              },
             },
           },
           orderBy: { createdAt: 'desc' },
@@ -91,12 +101,20 @@ export class GetVehicleHistoryHandler {
    * replicate the coalesce semantics when serviceDate is null and
    * checkedInAt is set (TL rejection of Prisma orderBy approach).
    */
-  private sortCareEpisodes<T extends { serviceDate: Date | null; checkedInAt: Date | null; createdAt: Date }>(
-    episodes: T[],
-  ): T[] {
+  private sortCareEpisodes<
+    T extends {
+      serviceDate: Date | null;
+      checkedInAt: Date | null;
+      createdAt: Date;
+    },
+  >(episodes: T[]): T[] {
     return [...episodes].sort((a, b) => {
-      const keyA = new Date(a.serviceDate ?? a.checkedInAt ?? a.createdAt).getTime();
-      const keyB = new Date(b.serviceDate ?? b.checkedInAt ?? b.createdAt).getTime();
+      const keyA = new Date(
+        a.serviceDate ?? a.checkedInAt ?? a.createdAt,
+      ).getTime();
+      const keyB = new Date(
+        b.serviceDate ?? b.checkedInAt ?? b.createdAt,
+      ).getTime();
       if (keyB !== keyA) return keyB - keyA; // desc by canonical timestamp
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(); // tiebreak: createdAt desc
     });

@@ -42,6 +42,23 @@ export class AcceptTransferHandler {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // P2 (mismo patrón que accept-transfer-qr H1): re-chequeo idempotente de
+      // status='pending' DENTRO de la transacción. Dos accepts concurrentes se
+      // serializan aquí; solo el primero matchea → count=1. El perdedor ve
+      // count=0 → 400 y rollback (sin duplicar ownership/eventos).
+      const gate = await tx.vehicleTransfer.updateMany({
+        where: { id: transfer.id, status: 'pending' },
+        data: {
+          status: 'completed',
+          respondedAt: new Date(),
+          completedAt: new Date(),
+        },
+      });
+
+      if (gate.count !== 1) {
+        throw new BadRequestException('Transfer is not pending');
+      }
+
       const currentOwnership = await tx.vehicleOwnership.findFirst({
         where: { vehicleId: transfer.vehicleId, endsAt: null },
       });
@@ -79,13 +96,8 @@ export class AcceptTransferHandler {
         },
       });
 
-      const updated = await tx.vehicleTransfer.update({
+      const updated = await tx.vehicleTransfer.findUnique({
         where: { id: transfer.id },
-        data: {
-          status: 'completed',
-          respondedAt: new Date(),
-          completedAt: new Date(),
-        },
       });
 
       await tx.vehicleTransferEvent.create({

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma, QrSource } from '@prisma/client';
 import { GenerateTransferQrHandler } from './generate-transfer-qr.handler';
 import { GenerateTransferQrCommand } from './generate-transfer-qr.command';
 
@@ -11,11 +12,16 @@ describe('GenerateTransferQrHandler', () => {
   let prismaMock: any;
   let eventEmitterMock: { emit: jest.Mock };
 
-  const cmd = new GenerateTransferQrCommand(
-    'vehicle-1',
-    'user-1',
-    { source: 'presencial' },
-  );
+  const cmd = new GenerateTransferQrCommand('vehicle-1', 'user-1', {
+    source: QrSource.presencial,
+  });
+
+  const p2002 = () =>
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['vehicle_transfer_qrs_one_active_per_vehicle'] },
+    });
 
   beforeEach(() => {
     prismaMock = {
@@ -28,7 +34,10 @@ describe('GenerateTransferQrHandler', () => {
       vehicleTransfer: { findFirst: jest.fn() },
     };
     eventEmitterMock = { emit: jest.fn() };
-    handler = new GenerateTransferQrHandler(prismaMock, eventEmitterMock as any);
+    handler = new GenerateTransferQrHandler(
+      prismaMock,
+      eventEmitterMock as any,
+    );
   });
 
   it('D-079: generates a pending QR with 1h TTL for source=presencial', async () => {
@@ -55,7 +64,10 @@ describe('GenerateTransferQrHandler', () => {
     expect(result.url).toContain(`/transfer/qr/${result.token}`);
     expect(prismaMock.vehicleTransferQr.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'pending', source: 'presencial' }),
+        data: expect.objectContaining({
+          status: 'pending',
+          source: 'presencial',
+        }),
       }),
     );
   });
@@ -79,11 +91,48 @@ describe('GenerateTransferQrHandler', () => {
 
     const result = await handler.execute(
       new GenerateTransferQrCommand('vehicle-1', 'user-1', {
-        source: 'concesionaria',
+        source: QrSource.concesionaria,
       }),
     );
 
     expect(result.secondsRemaining).toBe(172800);
+  });
+
+  it('P2002 on the partial unique index (concurrent generate) → 409, not 500', async () => {
+    prismaMock.vehicle.findUnique.mockResolvedValue({
+      id: 'vehicle-1',
+      ownerships: [{ userId: 'user-1' }],
+    });
+    prismaMock.vehicleTransferQr.findFirst.mockResolvedValue(null);
+    prismaMock.vehicleTransfer.findFirst.mockResolvedValue(null);
+    // Carrera concurrente: otro request crea el QR pending entre el pre-check
+    // y el create → el índice parcial único revienta con P2002.
+    prismaMock.vehicleTransferQr.create.mockRejectedValue(p2002());
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect(thrown.message).toBe(
+      'Ya existe un QR de transferencia pendiente para este vehículo',
+    );
+  });
+
+  it('rethrows non-P2002 create errors as-is', async () => {
+    prismaMock.vehicle.findUnique.mockResolvedValue({
+      id: 'vehicle-1',
+      ownerships: [{ userId: 'user-1' }],
+    });
+    prismaMock.vehicleTransferQr.findFirst.mockResolvedValue(null);
+    prismaMock.vehicleTransfer.findFirst.mockResolvedValue(null);
+    const boom = new Error('boom');
+    prismaMock.vehicleTransferQr.create.mockRejectedValue(boom);
+
+    await expect(handler.execute(cmd)).rejects.toBe(boom);
   });
 
   it('D-079: rejects when an active pending QR already exists', async () => {

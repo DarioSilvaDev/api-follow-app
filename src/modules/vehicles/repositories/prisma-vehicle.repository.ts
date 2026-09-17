@@ -115,7 +115,9 @@ export class PrismaVehicleRepository implements VehicleRepository {
       );
     }
     if (target.includes('vin')) {
-      return new ConflictException('Ya existe un vehículo registrado con ese VIN');
+      return new ConflictException(
+        'Ya existe un vehículo registrado con ese VIN',
+      );
     }
     if (target.some((t) => t === 'engine_number' || t === 'engineNumber')) {
       return new ConflictException(

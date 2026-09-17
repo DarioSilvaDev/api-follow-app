@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { envs } from '../../../../config/envs';
 import { VehicleTransferQrExpiredEvent } from '../../events/vehicle-transfer-qr-expired.event';
@@ -66,13 +67,14 @@ export class GenerateTransferQrHandler {
     }
 
     // AC7.5 §1: no existing alive pending email transfer for this vehicle.
-    const existingPendingEmailTransfer = await this.prisma.vehicleTransfer.findFirst({
-      where: {
-        vehicleId: command.vehicleId,
-        status: 'pending',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-    });
+    const existingPendingEmailTransfer =
+      await this.prisma.vehicleTransfer.findFirst({
+        where: {
+          vehicleId: command.vehicleId,
+          status: 'pending',
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      });
 
     if (existingPendingEmailTransfer) {
       throw new ConflictException(
@@ -99,16 +101,33 @@ export class GenerateTransferQrHandler {
     const ttlSeconds = QR_TTL_SECONDS[command.dto.source];
     const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
 
-    const qr = await this.prisma.vehicleTransferQr.create({
-      data: {
-        vehicleId: command.vehicleId,
-        createdByUserId: command.userId,
-        token,
-        status: 'pending',
-        source: command.dto.source,
-        expiresAt,
-      },
-    });
+    let qr;
+    try {
+      qr = await this.prisma.vehicleTransferQr.create({
+        data: {
+          vehicleId: command.vehicleId,
+          createdByUserId: command.userId,
+          token,
+          status: 'pending',
+          source: command.dto.source,
+          expiresAt,
+        },
+      });
+    } catch (error) {
+      // D-079: el índice único parcial `vehicle_transfer_qrs_one_active_per_vehicle`
+      // (vehicle_id WHERE status='pending') respalda el invariante ante carreras
+      // concurrentes del mismo vehículo. El pre-check del handler ya responde 409
+      // en el caso común; el constraint actúa como red de seguridad → 409 (no 500).
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Ya existe un QR de transferencia pendiente para este vehículo',
+        );
+      }
+      throw error;
+    }
 
     const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
 

@@ -1101,6 +1101,12 @@ enum QrStatus {
   revoked
 }
 
+// D-095 (D-085): origen del QR de transferencia.
+enum QrSource {
+  presencial
+  concesionaria
+}
+
 model VehicleTransferQr {
   id String @id @default(uuid()) @db.Uuid
 
@@ -1112,7 +1118,7 @@ model VehicleTransferQr {
 
   status QrStatus @default(pending)
 
-  source String @default("presencial") @db.VarChar(20) // 'presencial' | 'concesionaria' (D-085)
+  source QrSource @default(presencial) @map("source") // 'presencial' | 'concesionaria' (D-085, D-095)
 
   expiresAt DateTime @map("expires_at")
 

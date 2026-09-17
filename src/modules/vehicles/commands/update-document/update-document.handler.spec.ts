@@ -29,7 +29,9 @@ describe('UpdateDocumentHandler — F-013 document metadata (D-043 / D-049)', ()
 
     const cmd = new UpdateDocumentCommand('v1', 'doc-1', { name: 'X' });
 
-    await expect(handler.execute(cmd)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(handler.execute(cmd)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(prismaMock.vehicleDocument.update).not.toHaveBeenCalled();
   });
 

@@ -79,6 +79,11 @@ export class PreviewTransferQrHandler {
         id: qr.vehicle.id,
         name: vehicleName,
         licensePlate: qr.vehicle.licensePlate,
+        // H2 (spec §6.2): campos aditivos requeridos por contrato. Siguen el
+        // patrón de VehicleResponseDto: null cuando el dato no existe.
+        manufactureYear: qr.vehicle.manufactureYear ?? null,
+        modelYear: qr.vehicle.modelYear ?? null,
+        color: qr.vehicle.color ?? null,
       },
       fromUser: qr.createdBy,
       source: qr.source,

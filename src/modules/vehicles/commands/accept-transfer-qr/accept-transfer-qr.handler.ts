@@ -69,13 +69,14 @@ export class AcceptTransferQrHandler {
     }
 
     // AC7.5 §2: no existing alive pending email transfer for this vehicle.
-    const existingPendingEmailTransfer = await this.prisma.vehicleTransfer.findFirst({
-      where: {
-        vehicleId: qr.vehicleId,
-        status: 'pending',
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-      },
-    });
+    const existingPendingEmailTransfer =
+      await this.prisma.vehicleTransfer.findFirst({
+        where: {
+          vehicleId: qr.vehicleId,
+          status: 'pending',
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      });
 
     if (existingPendingEmailTransfer) {
       throw new ConflictException(
@@ -84,6 +85,23 @@ export class AcceptTransferQrHandler {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // H1 (race fix): el gate `status='pending'` vive DENTRO de la transacción.
+      // Dos accepts concurrentes con el mismo token se serializan en este
+      // updateMany: solo el primero matchea status='pending' → count=1. El
+      // perdedor ve count=0 → 409 y hace rollback (sin duplicar transfer/ownership).
+      const { count } = await tx.vehicleTransferQr.updateMany({
+        where: { id: qr.id, status: 'pending' },
+        data: {
+          status: 'consumed',
+          consumedAt: now,
+          consumedByUserId: command.userId,
+        },
+      });
+
+      if (count !== 1) {
+        throw new ConflictException('Este QR ya fue utilizado');
+      }
+
       const currentOwnership = await tx.vehicleOwnership.findFirst({
         where: { vehicleId: qr.vehicleId, endsAt: null },
       });
@@ -148,15 +166,6 @@ export class AcceptTransferQrHandler {
           transferId: transfer.id,
           type: 'completed',
           performedByUserId: command.userId,
-        },
-      });
-
-      await tx.vehicleTransferQr.update({
-        where: { id: qr.id },
-        data: {
-          status: 'consumed',
-          consumedAt: now,
-          consumedByUserId: command.userId,
         },
       });
 

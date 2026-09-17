@@ -22,21 +22,24 @@ describe('AcceptTransferQrHandler', () => {
     expiresAt: new Date(Date.now() + 3600_000),
   };
 
-  const cmd = new AcceptTransferQrCommand(
-    'token-1',
-    'user-buyer',
-    { confirmation: true },
-  );
+  const cmd = new AcceptTransferQrCommand('token-1', 'user-buyer', {
+    confirmation: true,
+  });
 
   beforeEach(() => {
     prismaMock = {
       vehicleTransferQr: {
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       vehicleTransfer: { findFirst: jest.fn(), create: jest.fn() },
       vehicleTransferEvent: { create: jest.fn() },
-      vehicleOwnership: { findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
+      vehicleOwnership: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
       $transaction: jest.fn((cb) => cb(prismaMock)),
     };
     eventEmitterMock = { emit: jest.fn() };
@@ -45,6 +48,7 @@ describe('AcceptTransferQrHandler', () => {
 
   it('D-081: completes the transfer in one transaction (ownership closed+created, events, QR consumed)', async () => {
     prismaMock.vehicleTransferQr.findUnique.mockResolvedValue(pendingQr);
+    prismaMock.vehicleTransferQr.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.vehicleTransfer.findFirst.mockResolvedValue(null);
     prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
       id: 'ownership-current',
@@ -57,10 +61,14 @@ describe('AcceptTransferQrHandler', () => {
 
     const result = await handler.execute(cmd);
 
-    // QR consumed
-    expect(prismaMock.vehicleTransferQr.update).toHaveBeenCalledWith({
-      where: { id: 'qr-1' },
-      data: expect.objectContaining({ status: 'consumed', consumedByUserId: 'user-buyer' }),
+    // H1: el gate de consumo vive DENTRO de la transacción, idempotente
+    // (solo matchea status='pending').
+    expect(prismaMock.vehicleTransferQr.updateMany).toHaveBeenCalledWith({
+      where: { id: 'qr-1', status: 'pending' },
+      data: expect.objectContaining({
+        status: 'consumed',
+        consumedByUserId: 'user-buyer',
+      }),
     });
     // Transfer created completed
     expect(prismaMock.vehicleTransfer.create).toHaveBeenCalledWith(
@@ -86,6 +94,41 @@ describe('AcceptTransferQrHandler', () => {
       expect.any(Object),
     );
     expect(result.status).toBe('completed');
+  });
+
+  it('H1 race: two concurrent accepts with the same token → exactly 1 success + 1 Conflict, single transfer row', async () => {
+    prismaMock.vehicleTransferQr.findUnique.mockResolvedValue(pendingQr);
+    prismaMock.vehicleTransfer.findFirst.mockResolvedValue(null);
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+      id: 'ownership-current',
+      vehicleId: 'vehicle-1',
+    });
+    prismaMock.vehicleTransfer.create.mockResolvedValue({
+      id: 'transfer-1',
+      status: 'completed',
+    });
+
+    // Simula la serialización en PostgreSQL: el primer execute matchea el gate
+    // (count=1); el segundo ya ve el QR consumido (count=0) → 409 + rollback.
+    prismaMock.vehicleTransferQr.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    const first = await handler.execute(cmd);
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(first.status).toBe('completed');
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect(thrown.message).toBe('Este QR ya fue utilizado');
+    // Una sola transferencia creada / una sola ownership creada (el perdedor hace rollback).
+    expect(prismaMock.vehicleTransfer.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.vehicleOwnership.create).toHaveBeenCalledTimes(1);
   });
 
   it('400: emisor cannot accept their own QR', async () => {

@@ -16,7 +16,7 @@ describe('RevokeTransferQrHandler', () => {
         update: jest.fn(),
       },
     };
-    handler = new RevokeTransferQrHandler(prismaMock as any);
+    handler = new RevokeTransferQrHandler(prismaMock);
   });
 
   it('D-079: owner revokes the pending QR (status → revoked)', async () => {

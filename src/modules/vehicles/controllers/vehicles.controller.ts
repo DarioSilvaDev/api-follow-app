@@ -110,12 +110,12 @@ export class VehiclesController {
     private readonly getOutgoingTransfersHandler: GetOutgoingTransfersHandler,
     private readonly acceptTransferHandler: AcceptTransferHandler,
     private readonly rejectTransferHandler: RejectTransferHandler,
-private readonly cancelTransferHandler: CancelTransferHandler,
-  private readonly generateTransferQrHandler: GenerateTransferQrHandler,
-  private readonly previewTransferQrHandler: PreviewTransferQrHandler,
-  private readonly acceptTransferQrHandler: AcceptTransferQrHandler,
-  private readonly revokeTransferQrHandler: RevokeTransferQrHandler,
-  private readonly uploadPhotoHandler: UploadPhotoHandler,
+    private readonly cancelTransferHandler: CancelTransferHandler,
+    private readonly generateTransferQrHandler: GenerateTransferQrHandler,
+    private readonly previewTransferQrHandler: PreviewTransferQrHandler,
+    private readonly acceptTransferQrHandler: AcceptTransferQrHandler,
+    private readonly revokeTransferQrHandler: RevokeTransferQrHandler,
+    private readonly uploadPhotoHandler: UploadPhotoHandler,
     private readonly setPrimaryPhotoHandler: SetPrimaryPhotoHandler,
     private readonly deletePhotoHandler: DeletePhotoHandler,
     private readonly listPhotosHandler: ListPhotosHandler,
@@ -286,7 +286,7 @@ private readonly cancelTransferHandler: CancelTransferHandler,
       return Promise.all(
         photos.map(async (p) => ({
           ...PhotoResponseDto.from(p),
-          url: await this.storage.getSignedUrl!(p.key),
+          url: await this.storage.getSignedUrl(p.key),
           expiresAt: new Date(
             Date.now() + envs.SIGNED_URL_EXPIRES_SECONDS * 1000,
           ),
@@ -306,7 +306,7 @@ private readonly cancelTransferHandler: CancelTransferHandler,
     await this.assertVehicleAccess(vehicleId, user);
     const photo = await this.getPhotoHandler.execute(vehicleId, photoId);
     if (signed === 'true') {
-      const url = await this.storage.getSignedUrl!(photo.key);
+      const url = await this.storage.getSignedUrl(photo.key);
       return {
         url,
         expiresAt: new Date(
@@ -374,7 +374,7 @@ private readonly cancelTransferHandler: CancelTransferHandler,
       return Promise.all(
         docs.map(async (d) => ({
           ...DocumentResponseDto.from(d),
-          url: await this.storage.getSignedUrl!(d.key),
+          url: await this.storage.getSignedUrl(d.key),
           urlExpiresAt: new Date(
             Date.now() + envs.SIGNED_URL_EXPIRES_SECONDS * 1000,
           ),
@@ -394,7 +394,7 @@ private readonly cancelTransferHandler: CancelTransferHandler,
     await this.assertVehicleAccess(vehicleId, user);
     const doc = await this.getDocumentHandler.execute(vehicleId, docId);
     if (signed === 'true') {
-      const url = await this.storage.getSignedUrl!(doc.key);
+      const url = await this.storage.getSignedUrl(doc.key);
       return {
         url,
         expiresAt: new Date(

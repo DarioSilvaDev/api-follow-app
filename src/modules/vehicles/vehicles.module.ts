@@ -24,6 +24,7 @@ import { GenerateTransferQrHandler } from './commands/generate-transfer-qr/gener
 import { PreviewTransferQrHandler } from './commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrHandler } from './commands/accept-transfer-qr/accept-transfer-qr.handler';
 import { RevokeTransferQrHandler } from './commands/revoke-transfer-qr/revoke-transfer-qr.handler';
+import { QrExpirySweeperService } from './services/qr-expiry-sweeper.service';
 import { UploadPhotoHandler } from './commands/upload-photo/upload-photo.handler';
 import { SetPrimaryPhotoHandler } from './commands/set-primary-photo/set-primary-photo.handler';
 import { DeletePhotoHandler } from './commands/delete-photo/delete-photo.handler';
@@ -70,6 +71,7 @@ import { GetDocumentHandler } from './queries/get-document/get-document.handler'
     PreviewTransferQrHandler,
     AcceptTransferQrHandler,
     RevokeTransferQrHandler,
+    QrExpirySweeperService,
     { provide: VEHICLE_REPOSITORY, useClass: PrismaVehicleRepository },
   ],
   exports: [VEHICLE_REPOSITORY],
