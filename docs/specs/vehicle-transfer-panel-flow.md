@@ -64,7 +64,7 @@ La expiración lazy ya existe en `AcceptTransferHandler` (marca `expired` al int
 
 | Endpoint | Guard / Autorización | Comportamiento |
 |----------|---------------------|----------------|
-| `POST /vehicles/:id/transfer` | Handler valida ownership (`ownerships[0].userId === fromUserId`) | Crea `pending`, `expiresAt` = 7 días, evento `vehicle.transfer.requested` (email). 400 genérico si el email no existe (anti-enumeración). 400 si ya hay pendiente **vigente** (D-092 — cambio). 400 si auto-transferencia. |
+| `POST /vehicles/:id/transfer` | Handler valida ownership (`ownerships[0].userId === fromUserId`) | Crea `pending`, `expiresAt` = 7 días, evento `vehicle.transfer.requested` (email). Body `{ recipient: { type: 'email'\|'alias', value }, notes? }` (D-096). 400 genérico si el email o alias no existe (anti-enumeración idéntica para ambos canales). 400 si ya hay pendiente **vigente** (D-092 — cambio). 400 si auto-transferencia. |
 | `GET /vehicles/transfers/incoming` | JWT (cualquier autenticado) | `where: { toUserId: userId }`, incluye `vehicle` (placa/años/color) + `fromUser` (id, first, last, **email** — a eliminar) |
 | `GET /vehicles/transfers/outgoing` | JWT | `where: { fromUserId: userId }`, incluye `vehicle` + `toUser` (id, first, last, **email** — a eliminar) |
 | `PATCH /vehicles/transfers/:id/accept` | Handler: `toUserId === userId` | Transacción: cierra ownership, crea ownership nuevo, `completed`, eventos `ownership_closed/ownership_created/completed`. Lazy-expiry (`expired` + 400). Email `vehicle.transfer.accepted`. |

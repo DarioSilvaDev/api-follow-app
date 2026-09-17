@@ -3188,3 +3188,225 @@ Consistencia con `QrStatus`, enforcement en DB, columna solo contiene valores v�
 ## Resumen de tests (triage 2026-09-16)
 
 - Frontend: **231/231 PASS** (21 archivos) + build OK. Cambios en working tree (sin commit): `vehicle-header.tsx` (restaura badge "Acceso compartido" para no-owners — F-013 §20; regresión real del refactor 2-3; autorización intacta), `vehicles-page.test.tsx`, `vehicle-detail-page.test.tsx` (delete flows reescritos al patrón Base UI Dialog; `getAllByText` para duplicados header+ficha; `window.confirm` removido).
+
+---
+
+# 26. Registro (2026-09-17): Transferencia por email o alias, fixes frontend y contrato de cooldown (D-096..D-100, D-TL-7)
+
+## Objetivo
+
+Cerrar la iteración sobre el alias y el panel de transferencias: agregar el **alias como canal de destino** de transferencia (además del email), corregir dos bugs de frontend (mapeo de errores ky 2.1.0 y toggle email/QR inalcanzable) y ajustar el contrato de cooldown del alias para que la UI no habilite acciones que el backend rechaza.
+
+## Contexto
+
+- El email en el diálogo de transferencia es un input obligatorio desde Fase 1. `alias-user-flow.md` §10.5 registraba como criterio que "el alias nunca sustituye al email en el diálogo de transferencia (email sigue siendo el input)" — nota de MVP que esta sección **anula**.
+- **Bug 1 (sistémico):** ky 2.1.0 consume el body de errores al poblar `error.data`; `toApiError` y los 8 bloques de auth leían `error.response.json()` → "Body has already been read" → todos los errores de API mostraban fallbacks genéricos. Los tests pasaban porque happy-dom permite releer bodies (no conforme a spec).
+- **Bug 2:** el toggle `[Por email] | [QR]` solo se renderizaba dentro del branch `mode === "qr"` → modo QR inalcanzable desde el diálogo.
+- **Contrato de cooldown (D-091):** la spec hacía `nextChangeAllowedAt = null` cuando alias era null, pero el backend devuelve 409 al re-crear tras eliminar dentro del cooldown → UI habilitaba una acción que el backend rechaza (D-098 corrige el contrato).
+
+---
+
+### D-096 — Destinatario de transferencia por email o alias (anti-enumeración idéntica)
+
+**Tipo:** Product / Backend Contract
+**Prioridad:** P1
+**Fecha:** 2026-09-17
+
+#### Decisión
+
+`POST /vehicles/:id/transfer` acepta un destinatario identificado por **email o alias**. El body pasa de `{ email, notes? }` a:
+
+```jsonc
+{ "recipient": { "type": "email" | "alias", "value": string }, "notes"?: string }
+```
+
+- `type: 'email'` → valor validado como email (comportamiento de Fase 1 conservado).
+- `type: 'alias'` → valor normalizado `trim().toLowerCase()` y resuelto con `findUnique({ where: { alias } })`; la unicidad case-insensitive ya está garantizada por el índice funcional `LOWER(alias)` (sin migración).
+- **Anti-enumeración (extiende SR#12):** destinatario inexistente responde **400 genérico idéntico** para email y alias (el mensaje no revela cuál canal falló ni el valor ingresado).
+- 400 self (email o alias propios), 400 pending vigente (D-092) y 403/404 se conservan sin cambios.
+- Sub-códigos **aditivos** en `errors.code` (no rompen el envelope D-025): `TRANSFER_RECIPIENT_NOT_FOUND`, `TRANSFER_SELF`, `TRANSFER_PENDING`.
+- El evento `VehicleTransferRequestedEvent` sigue transportando IDs (nunca email/alias); el listener resuelve el email por `toUserId`.
+- **Sin autocomplete ni búsqueda de usuarios** en el campo (anti-enumeración).
+
+#### Razón
+
+El email es el único canal de destino hoy, pero expone PII y obliga al emisor a conocer la cuenta exacta del receptor. El alias (D-077, formato público no-PII) es un identificador humano suficiente y estable para el journey de transferencia.
+
+#### Impacto
+
+- Backend: `transfer-vehicle.dto.ts` (recipient anidado discriminado), `transfer-vehicle.handler.ts` (doble canal de resolución), tests parametrizados por canal.
+- Frontend: `transfer-vehicle` payload `{ recipient: { type, value }, notes }`, helper `parseTransferRecipient`, microcopy, self-check por email y alias.
+- Docs: **anula** el criterio RF "email sigue siendo el input" de `alias-user-flow.md` §10.5 y actualiza `vehicle-transfer-panel-flow.md` §5.1.
+
+#### Alternativas descartadas
+
+- Mantener solo email (no resuelve el journey con alias).
+- Autocomplete/búsqueda de usuarios por alias (riesgo de enumeración de cuentas; SR#12).
+- Un solo campo sin discriminador y parsing por "contiene @" ambiguous (separación `recipient.type` explícita para validación y mapeo deterministas).
+
+---
+
+### D-097 — Envelope de error 409 de cooldown de alias (`ALIAS_COOLDOWN`)
+
+**Tipo:** Backend Contract
+**Prioridad:** P1
+**Fecha:** 2026-09-17
+
+#### Decisión
+
+El 409 de cooldown del alias (`PATCH /users/me/alias`) pasa de `ConflictException` a `CodedHttpException` con envelope **aditivo** (top-level `code: CONFLICT` inalterado, `errors` nuevo):
+
+```jsonc
+{
+  "statusCode": 409,
+  "message": "Solo podés cambiar tu alias cada 15 días. Podés cambiarlo el 2026-10-02",
+  "code": "CONFLICT",
+  "errors": {
+    "code": "ALIAS_COOLDOWN",
+    "nextChangeAllowedAt": "2026-10-02T00:00:00.000Z",
+    "nextChangeAllowedDate": "2026-10-02"
+  }
+}
+```
+
+- `message` **byte-idéntico** al actual (clasificación por substring "15 días" intacta).
+- `errors.nextChangeAllowedAt` ISO completo; `errors.nextChangeAllowedDate` = `YYYY-MM-DD` (la misma fecha del mensaje).
+- `AllExceptionsFilter` ya propaga `errors` sin cambios.
+
+#### Razón
+
+Elimina el acoplamiento del frontend al texto del mensaje para conocer la fecha de liberación; da un contrato determinista para clasificación fina (fuerza bruta, UI cooldown, testing).
+
+#### Impacto
+
+- `update-my-alias.handler.ts` (`cooldownException`), tests de envelope.
+
+#### Alternativas descartadas
+
+- Mantener `ConflictException` simple (sin datos estructurados; frontend parseaba el texto).
+- Agregar códigos nuevos al set top-level D-025 (breaking innecesario).
+
+---
+
+### D-098 — Contrato de alias: `nextChangeAllowedAt` visible tras eliminación
+
+**Tipo:** Backend Contract
+**Prioridad:** P1
+**Fecha:** 2026-09-17
+
+#### Decisión
+
+`GET /users/me/alias` devuelve `nextChangeAllowedAt` **siempre que exista `lastAliasChangedAt`**, incluso cuando `alias` es null (post-eliminación dentro del cooldown). `nextChangeAllowedAt = null` **solo** en alta inicial (nunca tuvo alias). Regla: `nextChangeAllowedAt !== null ⟺ lastAliasChangedAt !== null`.
+
+#### Razón
+
+D-091 impone cooldown también para re-crear tras eliminar: sin este cambio la UI habilita el alta (alias null → sin cooldown) y el backend la rechaza con 409 — journey sin salida.
+
+#### Impacto
+
+- `get-my-alias.handler.ts` (condición `lastAliasChangedAt !== null`), tests (alias null + lastAliasChangedAt presente → fecha; nunca tuvo alias → null).
+
+#### Alternativas descartadas
+
+- Mantener `nextChangeAllowedAt = null` cuando alias es null (rompe el journey post-eliminación).
+- Devolver un flag separado `cooldownActive` (redundante: derivable de `nextChangeAllowedAt`).
+
+---
+
+### D-099 — UI de cooldown del alias: deshabilitar input, Guardar y Eliminar
+
+**Tipo:** Frontend / UX
+**Prioridad:** P1
+**Fecha:** 2026-09-17 (validación UX)
+
+#### Decisión
+
+Con cooldown activo (`nextChangeAllowedAt` futuro), la AliasCard deshabilita el input, el botón "Guardar" **y** el botón "Eliminar alias" (extiende a eliminación el alcance de §6.2). Copy según estado:
+
+- Con alias existente: "Podés volver a cambiarlo el {fecha}." (existente).
+- Sin alias (post-eliminación): "Podés configurar un alias nuevo el {fecha}."
+
+#### Razón
+
+El backend ya rechaza con 409 tanto el cambio como la eliminación/alta dentro del cooldown (D-091 + D-098). La UI no debe ofrecer acciones que el backend rechaza; el 409 sigue siendo el enforcement real.
+
+#### Impacto
+
+- `frontend/src/app/(dashboard)/profile/page.tsx` (AliasCard: `inCooldown`, copy condicional, `disabled` en input/Guardar/Eliminar), tests.
+
+#### Alternativas descartadas
+
+- Permitir el intento y mostrar el 409 (el pattern de cooldown deshabilitado es la norma UX y reduce fricción).
+- Deshabilitar solo cambio sin Eliminar (inconsistente: eliminar también tiene cooldown).
+
+---
+
+### D-100 — Campo único "Email o alias" en transferencia + toggle hoisteado
+
+**Tipo:** Frontend / UX
+**Prioridad:** P1
+**Fecha:** 2026-09-17 (validación UX)
+
+#### Decisión
+
+El diálogo de transferencia usa un **campo único inteligente** "Email o alias del nuevo titular": si el valor contiene `@` (no inicial) → email; si arranca con `@` o no contiene `@` → alias (se quita el `@` decorativo, lowercase, regex D-077 `^[a-zA-Z0-9._-]{3,30}$`). El toggle `[Email o alias] | [QR]` se **hoistea** fuera del condicional de modo (siempre visible; corrige el Bug 2). Sin autocomplete/búsqueda (anti-enumeración, D-096). Microcopy aprobado: helper "El destinatario debe tener una cuenta en Autentia…", self-check "No podés transferir el vehículo a vos mismo. Ingresá el email o alias de otra persona."
+
+#### Razón
+
+Un campo único reduce pasos y ambigüedad visual frente a dos campos condicionales; el toggle hoisteado garantiza alcanzabilidad del modo QR (bug bloqueante de Fase 3). El self-check client-side por email y alias evita round-trips innecesarios.
+
+#### Impacto
+
+- `frontend/src/components/transfer/transfer-dialog.tsx` (schema zod con `superRefine` + `parseTransferRecipient`, payload tipado, toggle hoisteado, selector de vehículo deduplicado).
+- Nuevo `frontend/src/lib/transfer-recipient.ts` (parsing puro).
+- `frontend/src/lib/transfer-errors.ts` (mensajes anti-enumeración y self), `types/vehicle.ts` (`TransferRecipient`).
+- Tests del diálogo y del helper.
+
+#### Alternativas descartadas
+
+- Dos campos segmentados (email / alias) (más decisiones de UI, más estados).
+- Toggle duplicado dentro del branch QR (deja el email sin acceso a QR — el bug que se corrige).
+
+---
+
+### D-TL-7 — Fix sistémico de mapeo de errores ky 2.1.0 (`error.data`)
+
+**Tipo:** Technical (Frontend)
+**Prioridad:** P1
+**Fecha:** 2026-09-17 (Tech Lead + PM)
+
+#### Decisión
+
+Los 9 bloques que leían `error.response.json()` en `frontend/src/lib/api.ts` (`toApiError` + login/logout/me/register/verifyEmail/forgotPassword/resetPassword/changePassword) se migran a **`error.data`** (ky 2.1.0 ya consume el body). Nuevo helper `normalizeErrorBody`: `data` string → `message`; objeto → `message` (string o array unido con `" "`) + `code`; vacío → shape mínimo. Tests nuevos en entorno node (spec-compliant, body consumido).
+
+#### Razón
+
+ky 2.1.0 consume el body al poblar `error.data`; releer `response.json()` lanza "Body has already been read" y `toApiError` lo tragaba → **todos** los mensajes de error reales se reemplazaban por fallbacks genéricos. Los tests previos pasaban por happy-dom no conforme a spec (permite releer bodies).
+
+#### Impacto
+
+- `frontend/src/lib/api.ts`, nuevo `frontend/src/lib/__test__/api-error-map.test.ts`, regresión del resto de la suite.
+
+#### Alternativas descartadas
+
+- Releer el body con manejo defensivo (`try/catch` sobre `response.json()`) (frágil y dependiente del comportamiento del runtime).
+- Fixear en ky (fuera de alcance; dependency upgrade pendiente de decisión TL).
+
+---
+
+## Resumen de las decisiones de la iteración
+
+| ID | Decisión |
+|----|----------|
+| D-096 | Destinatario por email o alias (`recipient.type`); anti-enumeración idéntica; sin autocomplete |
+| D-097 | Envelope 409 de cooldown: `errors.code ALIAS_COOLDOWN` + fechas de liberación |
+| D-098 | `nextChangeAllowedAt` visible post-eliminación (si existe `lastAliasChangedAt`) |
+| D-099 | UI cooldown perfil: input + Guardar + Eliminar deshabilitados |
+| D-100 | Campo único "Email o alias" + toggle email/QR hoisteado |
+| D-TL-7 | Frontend: mapeo de errores ky vía `error.data` (fix sistémico) |
+
+## Estado de implementación (2026-09-17)
+
+- D-096, D-097, D-098, D-099, D-100, D-TL-7: ✅ implementados y verificados (backend 48 suites / 408 tests PASS; frontend 263 PASS; build OK).
+- Pendiente de robustez (no bloqueante): migrar clasificación de errores de transferencia de substring de message a `errors.code` (D-096): `TRANSFER_RECIPIENT_NOT_FOUND`, `TRANSFER_SELF`, `TRANSFER_PENDING` ya disponibles.
+- Note de specs: `alias-user-flow.md` §10.5 queda anulada por D-096 (el alias SÍ es input de transferencia desde esta iteración).
