@@ -30,7 +30,8 @@ export interface PlatformContext {
   userId: string;
 }
 
-export type CurrentContext = PersonalContext | WorkshopContext | PlatformContext;
+export type CurrentContext =
+  PersonalContext | WorkshopContext | PlatformContext;
 
 /**
  * Request extension: el ContextGuard coloca el contexto resuelto en request.context.

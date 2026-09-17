@@ -25,43 +25,25 @@ export class CodedHttpException extends HttpException {
 // ─── Factory exceptions ──────────────────────────────────────────────
 
 export class InvalidContextException extends CodedHttpException {
-  constructor(
-    message = 'Invalid or unauthorized active context',
-  ) {
-    super(
-      HttpStatus.FORBIDDEN,
-      message,
-      ERROR_CODES.INVALID_CONTEXT,
-    );
+  constructor(message = 'Invalid or unauthorized active context') {
+    super(HttpStatus.FORBIDDEN, message, ERROR_CODES.INVALID_CONTEXT);
   }
 }
 
 export class SessionExpiredException extends CodedHttpException {
   constructor(message = 'Session expired') {
-    super(
-      HttpStatus.UNAUTHORIZED,
-      message,
-      ERROR_CODES.SESSION_EXPIRED,
-    );
+    super(HttpStatus.UNAUTHORIZED, message, ERROR_CODES.SESSION_EXPIRED);
   }
 }
 
 export class ImpersonationExpiredException extends CodedHttpException {
   constructor(message = 'Impersonation session expired') {
-    super(
-      HttpStatus.UNAUTHORIZED,
-      message,
-      ERROR_CODES.IMPERSONATION_EXPIRED,
-    );
+    super(HttpStatus.UNAUTHORIZED, message, ERROR_CODES.IMPERSONATION_EXPIRED);
   }
 }
 
 export class InvalidCredentialsException extends CodedHttpException {
   constructor(message = 'Invalid credentials') {
-    super(
-      HttpStatus.UNAUTHORIZED,
-      message,
-      ERROR_CODES.INVALID_CREDENTIALS,
-    );
+    super(HttpStatus.UNAUTHORIZED, message, ERROR_CODES.INVALID_CREDENTIALS);
   }
 }

@@ -66,7 +66,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const obj = res as Record<string, unknown>;
 
         // ValidationPipe: message is string[]
-        if (status === HttpStatus.BAD_REQUEST && Array.isArray(obj['message'])) {
+        if (
+          status === HttpStatus.BAD_REQUEST &&
+          Array.isArray(obj['message'])
+        ) {
           return {
             statusCode: HttpStatus.BAD_REQUEST,
             message: 'Validation failed',
@@ -109,7 +112,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
-      code: 'INTERNAL_ERROR' as ErrorCode,
+      code: 'INTERNAL_ERROR',
     };
   }
 
@@ -131,7 +134,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       case HttpStatus.TOO_MANY_REQUESTS:
         return ERROR_CODES.RATE_LIMITED;
       default:
-        return 'INTERNAL_ERROR' as ErrorCode;
+        return 'INTERNAL_ERROR';
     }
   }
 

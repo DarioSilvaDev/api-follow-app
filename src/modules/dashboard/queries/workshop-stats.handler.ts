@@ -203,6 +203,6 @@ export class WorkshopStatsHandler {
       ordersByStatus,
       alerts,
       recentActivity,
-    } as WorkshopDashboardResponseDto);
+    });
   }
 }

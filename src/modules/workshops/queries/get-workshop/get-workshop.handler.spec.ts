@@ -33,7 +33,10 @@ describe('GetWorkshopHandler — workshop detail visibility (Security Review #9)
   });
 
   it('allows reading the detail when no user id is provided (admin module path)', async () => {
-    prismaMock.workshop.findUnique.mockResolvedValue({ id: 'w1', branches: [] });
+    prismaMock.workshop.findUnique.mockResolvedValue({
+      id: 'w1',
+      branches: [],
+    });
 
     const result = await handler.execute('w1');
 
@@ -47,7 +50,10 @@ describe('GetWorkshopHandler — workshop detail visibility (Security Review #9)
     prismaMock.workshopMember.findUnique.mockResolvedValue({
       status: MemberStatus.active,
     });
-    prismaMock.workshop.findUnique.mockResolvedValue({ id: 'w1', branches: [] });
+    prismaMock.workshop.findUnique.mockResolvedValue({
+      id: 'w1',
+      branches: [],
+    });
 
     const result = await handler.execute('w1', 'member-1');
 
@@ -59,7 +65,10 @@ describe('GetWorkshopHandler — workshop detail visibility (Security Review #9)
     prismaMock.systemRoleAssignment.findFirst.mockResolvedValue({
       id: 'assign-1',
     });
-    prismaMock.workshop.findUnique.mockResolvedValue({ id: 'w1', branches: [] });
+    prismaMock.workshop.findUnique.mockResolvedValue({
+      id: 'w1',
+      branches: [],
+    });
 
     const result = await handler.execute('w1', 'sa-1');
 

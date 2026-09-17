@@ -67,7 +67,10 @@ describe('ContextResolver', () => {
 
   it('should throw InvalidContextException for case-insensitive unknown type', async () => {
     await expect(
-      resolver.resolve(mockUser, makeRequest({ 'x-context-type': 'something' })),
+      resolver.resolve(
+        mockUser,
+        makeRequest({ 'x-context-type': 'something' }),
+      ),
     ).rejects.toThrow(InvalidContextException);
   });
 
@@ -87,10 +90,7 @@ describe('ContextResolver', () => {
   // ─── WORKSHOP ───
   it('should throw InvalidContextException when WORKSHOP has no X-Context-Id', async () => {
     await expect(
-      resolver.resolve(
-        mockUser,
-        makeRequest({ 'x-context-type': 'WORKSHOP' }),
-      ),
+      resolver.resolve(mockUser, makeRequest({ 'x-context-type': 'WORKSHOP' })),
     ).rejects.toThrow(InvalidContextException);
   });
 
@@ -152,20 +152,14 @@ describe('ContextResolver', () => {
   it('should throw InvalidContextException when PLATFORM has no system role', async () => {
     prismaMock.systemRoleAssignment.findFirst.mockResolvedValue(null);
     await expect(
-      resolver.resolve(
-        mockUser,
-        makeRequest({ 'x-context-type': 'PLATFORM' }),
-      ),
+      resolver.resolve(mockUser, makeRequest({ 'x-context-type': 'PLATFORM' })),
     ).rejects.toThrow(InvalidContextException);
   });
 
   it('should throw InvalidContextException when user has only "user" system role', async () => {
     prismaMock.systemRoleAssignment.findFirst.mockResolvedValue(null); // filtered out 'user'
     await expect(
-      resolver.resolve(
-        mockUser,
-        makeRequest({ 'x-context-type': 'PLATFORM' }),
-      ),
+      resolver.resolve(mockUser, makeRequest({ 'x-context-type': 'PLATFORM' })),
     ).rejects.toThrow(InvalidContextException);
   });
 
@@ -207,10 +201,7 @@ describe('ContextResolver', () => {
 
   // ─── Path fallback removed ───
   it('should NOT resolve from path params (path fallback removed)', async () => {
-    const result = await resolver.resolve(
-      mockUser,
-      makeRequest({}),
-    );
+    const result = await resolver.resolve(mockUser, makeRequest({}));
     // Even if we could pass params, the resolver no longer uses them
     expect(result).toEqual({ type: 'PERSONAL', userId: 'user-1' });
   });

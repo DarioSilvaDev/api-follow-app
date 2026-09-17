@@ -29,10 +29,10 @@ describe('RequestPasswordResetHandler', () => {
     };
 
     handler = new RequestPasswordResetHandler(
-      loggerMock as any,
-      prismaMock as any,
-      authRepositoryMock as any,
-      eventEmitterMock as any,
+      loggerMock,
+      prismaMock,
+      authRepositoryMock,
+      eventEmitterMock,
     );
   });
 
@@ -43,7 +43,9 @@ describe('RequestPasswordResetHandler', () => {
       new RequestPasswordResetCommand('nonexistent@example.com'),
     );
 
-    expect(authRepositoryMock.revokeUnusedPasswordResets).not.toHaveBeenCalled();
+    expect(
+      authRepositoryMock.revokeUnusedPasswordResets,
+    ).not.toHaveBeenCalled();
     expect(
       authRepositoryMock.deleteCleanupPasswordResets,
     ).not.toHaveBeenCalled();
@@ -57,9 +59,7 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
     expect(authRepositoryMock.revokeUnusedPasswordResets).toHaveBeenCalledWith(
       'user-1',
@@ -79,9 +79,7 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
     const call = authRepositoryMock.createPasswordReset.mock.calls[0][0];
     expect(call.token).toMatch(/^[0-9a-f]{64}$/);
@@ -93,9 +91,7 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
     expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
     const emitCall = eventEmitterMock.emit.mock.calls[0];
@@ -111,15 +107,9 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
     expect(authRepositoryMock.revokeUnusedPasswordResets).toHaveBeenCalledTimes(
       3,
@@ -134,9 +124,7 @@ describe('RequestPasswordResetHandler', () => {
     });
 
     const before = Date.now();
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
     const after = Date.now();
 
     const call = authRepositoryMock.createPasswordReset.mock.calls[0][0];
@@ -151,13 +139,11 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
-    expect(
-      authRepositoryMock.deleteCleanupPasswordResets,
-    ).toHaveBeenCalledWith('user-1');
+    expect(authRepositoryMock.deleteCleanupPasswordResets).toHaveBeenCalledWith(
+      'user-1',
+    );
   });
 
   it('creates the new token only AFTER the opportunistic cleanup (D-033)', async () => {
@@ -166,14 +152,13 @@ describe('RequestPasswordResetHandler', () => {
       email: 'user@example.com',
     });
 
-    await handler.execute(
-      new RequestPasswordResetCommand('user@example.com'),
-    );
+    await handler.execute(new RequestPasswordResetCommand('user@example.com'));
 
     const revokeOrder =
       authRepositoryMock.revokeUnusedPasswordResets.mock.invocationCallOrder[0];
     const cleanupOrder =
-      authRepositoryMock.deleteCleanupPasswordResets.mock.invocationCallOrder[0];
+      authRepositoryMock.deleteCleanupPasswordResets.mock
+        .invocationCallOrder[0];
     const createOrder =
       authRepositoryMock.createPasswordReset.mock.invocationCallOrder[0];
 

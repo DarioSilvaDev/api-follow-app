@@ -19,7 +19,18 @@ import { VehicleAccessService } from './authorization/vehicle-access.service';
  */
 @Module({
   imports: [ContextModule],
-  providers: [PermissionCache, PermissionsGuard, WorkshopGuard, VehicleAccessService],
-  exports: [PermissionCache, PermissionsGuard, WorkshopGuard, ContextModule, VehicleAccessService],
+  providers: [
+    PermissionCache,
+    PermissionsGuard,
+    WorkshopGuard,
+    VehicleAccessService,
+  ],
+  exports: [
+    PermissionCache,
+    PermissionsGuard,
+    WorkshopGuard,
+    ContextModule,
+    VehicleAccessService,
+  ],
 })
 export class AuthorizationModule {}

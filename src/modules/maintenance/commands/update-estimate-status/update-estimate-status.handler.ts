@@ -32,7 +32,7 @@ export class UpdateEstimateStatusHandler {
       throw new NotFoundException('Estimate not found');
     }
 
-    const allowed = VALID_TRANSITIONS[estimate.status as EstimateStatus];
+    const allowed = VALID_TRANSITIONS[estimate.status];
     if (!allowed || !allowed.includes(command.status)) {
       throw new BadRequestException(
         `Cannot transition from '${estimate.status}' to '${command.status}'`,

@@ -61,8 +61,8 @@ export class LoginHandler {
     if (
       !user ||
       !user.credential ||
-      user.credential.lockedUntil !== null &&
-        new Date() < user.credential.lockedUntil ||
+      (user.credential.lockedUntil !== null &&
+        new Date() < user.credential.lockedUntil) ||
       user.status !== 'active'
     ) {
       const targetHash = user?.credential?.passwordHash ?? 'a';

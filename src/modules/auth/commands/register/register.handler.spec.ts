@@ -35,7 +35,7 @@ describe('RegisterHandler', () => {
       password: 'Secret1!',
       firstName: 'Ana',
       lastName: 'Pérez',
-    } as any);
+    });
 
   beforeEach(() => {
     userRepositoryMock = {
@@ -52,8 +52,8 @@ describe('RegisterHandler', () => {
     };
 
     handler = new RegisterHandler(
-      userRepositoryMock as any,
-      prismaMock as any,
+      userRepositoryMock,
+      prismaMock,
       eventEmitterMock as EventEmitter2,
     );
   });
@@ -124,12 +124,15 @@ describe('RegisterHandler', () => {
       }),
     );
     expect(prismaMock.emailVerification.create).toHaveBeenCalledTimes(1);
-    const verificationCall = prismaMock.emailVerification.create.mock.calls[0][0];
+    const verificationCall =
+      prismaMock.emailVerification.create.mock.calls[0][0];
     expect(verificationCall.data.userId).toBe('u1');
     expect(verificationCall.data.token).toEqual(expect.any(String));
 
     expect(eventEmitterMock.emit).toHaveBeenCalledTimes(2);
-    const emitted = eventEmitterMock.emit.mock.calls.map((call: any[]) => call[1]);
+    const emitted = eventEmitterMock.emit.mock.calls.map(
+      (call: any[]) => call[1],
+    );
     expect(emitted[0]).toBeInstanceOf(UserRegisteredEvent);
     expect(emitted[0].email).toBe('new@example.com');
     expect(emitted[1]).toBeInstanceOf(EmailVerificationSentEvent);

@@ -44,7 +44,9 @@ export class WorkshopGuard implements CanActivate {
     });
 
     if (!member || member.status !== 'active') {
-      throw new ForbiddenException('You are not an active member of this workshop');
+      throw new ForbiddenException(
+        'You are not an active member of this workshop',
+      );
     }
 
     return true;

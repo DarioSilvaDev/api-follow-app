@@ -31,20 +31,16 @@ describe('MaintenanceController — D-024 A2 (Opción A): maintenance writes are
   function permissionsFor(method: string): string[] | undefined {
     const target = controller.prototype[method];
     return (target as Function | undefined) !== undefined
-      ? (Reflect.getMetadata(
-          PERMISSIONS_KEY,
-          target as object,
-        ) as string[] | undefined)
+      ? (Reflect.getMetadata(PERMISSIONS_KEY, target as object) as
+          string[] | undefined)
       : undefined;
   }
 
   function guardsFor(method: string): Function[] | undefined {
     const target = controller.prototype[method];
     return (target as Function | undefined) !== undefined
-      ? (Reflect.getMetadata(
-          GUARDS_METADATA,
-          target as object,
-        ) as Function[] | undefined)
+      ? (Reflect.getMetadata(GUARDS_METADATA, target as object) as
+          Function[] | undefined)
       : undefined;
   }
 

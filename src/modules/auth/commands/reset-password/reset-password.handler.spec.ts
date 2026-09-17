@@ -44,10 +44,10 @@ describe('ResetPasswordHandler', () => {
     };
 
     handler = new ResetPasswordHandler(
-      loggerMock as any,
-      prismaMock as any,
-      authRepositoryMock as any,
-      eventEmitterMock as any,
+      loggerMock,
+      prismaMock,
+      authRepositoryMock,
+      eventEmitterMock,
     );
 
     bcrypt.hash.mockReset();
@@ -102,9 +102,7 @@ describe('ResetPasswordHandler', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await handler.execute(
-      new ResetPasswordCommand('valid-token', 'NewPass1!'),
-    );
+    await handler.execute(new ResetPasswordCommand('valid-token', 'NewPass1!'));
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
 
@@ -137,9 +135,7 @@ describe('ResetPasswordHandler', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await handler.execute(
-      new ResetPasswordCommand('valid-token', 'NewPass1!'),
-    );
+    await handler.execute(new ResetPasswordCommand('valid-token', 'NewPass1!'));
 
     const updateCall = txMock.userCredential.update.mock.calls[0][0];
     expect(updateCall.data.failedAttempts).toBe(0);
@@ -154,9 +150,7 @@ describe('ResetPasswordHandler', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await handler.execute(
-      new ResetPasswordCommand('valid-token', 'NewPass1!'),
-    );
+    await handler.execute(new ResetPasswordCommand('valid-token', 'NewPass1!'));
 
     expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
     const emitCall = eventEmitterMock.emit.mock.calls[0];
@@ -173,9 +167,7 @@ describe('ResetPasswordHandler', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await handler.execute(
-      new ResetPasswordCommand('valid-token', 'NewPass1!'),
-    );
+    await handler.execute(new ResetPasswordCommand('valid-token', 'NewPass1!'));
 
     expect(bcrypt.hash).toHaveBeenCalledWith('NewPass1!', 10);
   });

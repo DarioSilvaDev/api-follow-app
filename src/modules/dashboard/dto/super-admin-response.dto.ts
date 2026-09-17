@@ -22,6 +22,6 @@ export class SuperAdminDashboardResponseDto {
   }): SuperAdminDashboardResponseDto {
     return new SuperAdminDashboardResponseDto({
       overview: stats,
-    } as SuperAdminDashboardResponseDto);
+    });
   }
 }

@@ -75,7 +75,11 @@ describe('ListWorkshopsHandler — workshop visibility (Security Review #9)', ()
     ]);
     prismaMock.workshop.count.mockResolvedValue(2);
 
-    const result = await handler.execute({ userId: 'sa-1', page: 1, limit: 20 });
+    const result = await handler.execute({
+      userId: 'sa-1',
+      page: 1,
+      limit: 20,
+    });
 
     expect(result.data).toHaveLength(2);
     // Super admin does not hit membership nor requires active-membership filter

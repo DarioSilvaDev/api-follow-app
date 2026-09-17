@@ -36,7 +36,7 @@ describe('LoginHandler — account enumeration (Security Review #12)', () => {
   const bcrypt = require('bcrypt') as { compare: jest.Mock };
 
   const loginCommand = (email = 'x@example.com', password = 'secret') =>
-    new LoginCommand({ email, password } as any);
+    new LoginCommand({ email, password });
 
   beforeEach(() => {
     prismaMock = {
@@ -72,9 +72,9 @@ describe('LoginHandler — account enumeration (Security Review #12)', () => {
 
     await handler.execute(loginCommand()).catch(() => undefined);
 
-    const logged = loggerMock.info.mock.calls.flat().map((c: any) =>
-      typeof c === 'string' ? c : JSON.stringify(c),
-    );
+    const logged = loggerMock.info.mock.calls
+      .flat()
+      .map((c: any) => (typeof c === 'string' ? c : JSON.stringify(c)));
     const joined = logged.join(' ');
     expect(joined).not.toContain('x@example.com');
   });

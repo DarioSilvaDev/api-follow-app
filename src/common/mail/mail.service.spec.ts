@@ -32,8 +32,9 @@ describe('MailService', () => {
     jest.clearAllMocks();
     service = new MailService();
     sendMailMock = (
-      (createTransport as unknown as jest.Mock).mock.results[0]
-        .value as { sendMail: jest.Mock }
+      (createTransport as unknown as jest.Mock).mock.results[0].value as {
+        sendMail: jest.Mock;
+      }
     ).sendMail;
   });
 

@@ -60,6 +60,6 @@ export class OwnerStatsHandler {
     return new OwnerDashboardResponseDto({
       vehicles,
       upcomingMaintenance: [],
-    } as OwnerDashboardResponseDto);
+    });
   }
 }

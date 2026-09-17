@@ -17,8 +17,8 @@ describe('SendPasswordResetCompletedEmailListener', () => {
     };
 
     listener = new SendPasswordResetCompletedEmailListener(
-      prismaMock as any,
-      mailServiceMock as any,
+      prismaMock,
+      mailServiceMock,
     );
   });
 

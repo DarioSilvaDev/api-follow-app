@@ -123,6 +123,6 @@ export class MechanicStatsHandler {
         pendingDiagnosis,
       },
       recentVehicles: Array.from(seenVehicles.values()),
-    } as MechanicDashboardResponseDto);
+    });
   }
 }

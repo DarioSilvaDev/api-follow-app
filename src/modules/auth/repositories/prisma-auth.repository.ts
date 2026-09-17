@@ -1,6 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { hashRefreshToken, hashPasswordResetToken } from '../utils/token-hash.util';
+import {
+  hashRefreshToken,
+  hashPasswordResetToken,
+} from '../utils/token-hash.util';
 import { AuthRepository } from './auth.repository';
 
 @Injectable()

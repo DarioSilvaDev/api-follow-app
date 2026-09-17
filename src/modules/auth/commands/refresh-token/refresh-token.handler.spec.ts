@@ -33,11 +33,7 @@ describe('RefreshTokenHandler — atomic rotation (TOCTOU, Security Review #3)',
         updateMany: jest.fn(),
       },
     };
-    handler = new RefreshTokenHandler(
-      authRepository as any,
-      jwtService as any,
-      prisma as any,
-    );
+    handler = new RefreshTokenHandler(authRepository, jwtService, prisma);
   });
 
   function session(overrides: Partial<Record<string, unknown>> = {}) {

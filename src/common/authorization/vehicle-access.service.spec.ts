@@ -114,7 +114,9 @@ describe('VehicleAccessService', () => {
         id: 'member-1',
         status: 'active',
       });
-      prismaMock.$queryRawUnsafe.mockResolvedValue([{ workshop_id: 'workshop-1' }]);
+      prismaMock.$queryRawUnsafe.mockResolvedValue([
+        { workshop_id: 'workshop-1' },
+      ]);
       await expect(
         service.assertVehicleAccess({
           vehicleId: 'v1',
@@ -151,9 +153,7 @@ describe('VehicleAccessService', () => {
         id: 'member-1',
         status: 'active',
       });
-      prismaMock.$queryRawUnsafe.mockResolvedValue(
-        [] as unknown[],
-      );
+      prismaMock.$queryRawUnsafe.mockResolvedValue([] as unknown[]);
       prismaMock.systemRole.findUnique.mockResolvedValue(null);
 
       await expect(

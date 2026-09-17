@@ -40,7 +40,9 @@ describe('AcceptInvitationHandler — email binding (Security Review #5)', () =>
   });
 
   it('rejects with 403 PERMISSION_DENIED when invitation email does not match the authenticated user', async () => {
-    prismaMock.workshopInvitation.findUnique.mockResolvedValue(pendingInvitation);
+    prismaMock.workshopInvitation.findUnique.mockResolvedValue(
+      pendingInvitation,
+    );
 
     const cmd = new AcceptInvitationCommand(
       'tok-1',
@@ -54,7 +56,9 @@ describe('AcceptInvitationHandler — email binding (Security Review #5)', () =>
   });
 
   it('accepts the invitation when the emails match (case-insensitive)', async () => {
-    prismaMock.workshopInvitation.findUnique.mockResolvedValue(pendingInvitation);
+    prismaMock.workshopInvitation.findUnique.mockResolvedValue(
+      pendingInvitation,
+    );
     prismaMock.workshopMember.create.mockResolvedValue({ id: 'member-1' });
     prismaMock.workshopInvitation.update.mockResolvedValue({});
 
@@ -68,9 +72,10 @@ describe('AcceptInvitationHandler — email binding (Security Review #5)', () =>
 
     expect(member).toEqual({ id: 'member-1' });
     expect(prismaMock.workshopMember.create).toHaveBeenCalledTimes(1);
-    expect(prismaMock.workshopInvitation.update).toHaveBeenCalledWith(
-      { where: { id: 'inv-1' }, data: { status: 'accepted', acceptedAt: expect.any(Date) } },
-    );
+    expect(prismaMock.workshopInvitation.update).toHaveBeenCalledWith({
+      where: { id: 'inv-1' },
+      data: { status: 'accepted', acceptedAt: expect.any(Date) },
+    });
     expect(eventEmitterMock.emit).toHaveBeenCalled();
     expect(permissionCacheMock.invalidateUser).toHaveBeenCalledWith('user-1');
   });

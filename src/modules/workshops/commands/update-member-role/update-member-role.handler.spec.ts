@@ -1,7 +1,4 @@
-import {
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UpdateMemberRoleHandler } from './update-member-role.handler';
 import { UpdateMemberRoleCommand } from './update-member-role.command';
 
@@ -56,11 +53,13 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
       }
       return Promise.resolve(null);
     });
-    prisma.workshopRole.findUnique.mockResolvedValue(
-      opts.targetRole ?? null,
-    );
+    prisma.workshopRole.findUnique.mockResolvedValue(opts.targetRole ?? null);
     prisma.workshopMember.update.mockImplementation(({ data, where }: any) =>
-      Promise.resolve({ id: where.id, ...opts.targetMember, roleId: data.roleId }),
+      Promise.resolve({
+        id: where.id,
+        ...opts.targetMember,
+        roleId: data.roleId,
+      }),
     );
   }
 
@@ -76,7 +75,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: ownerRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-owner')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-owner'),
+        ),
       ).resolves.toBeDefined();
     });
 
@@ -87,7 +88,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: ownerRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-mech')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-mech'),
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -98,7 +101,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: employeeRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-mech')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-mech'),
+        ),
       ).resolves.toBeDefined();
     });
 
@@ -109,7 +114,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: ownerRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-mech')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-mech'),
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -120,7 +127,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: mechanicRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', mechanicRole.id, 'user-mech')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', mechanicRole.id, 'user-mech'),
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -131,7 +140,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: employeeRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-mech')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-mech'),
+        ),
       ).resolves.toBeDefined();
     });
 
@@ -152,7 +163,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
     it('throws NotFound when the target member does not exist', async () => {
       mockQueries({ targetMember: null, actorMember: null, targetRole: null });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('nope', mechanicRole.id, 'user-a')),
+        handler.execute(
+          new UpdateMemberRoleCommand('nope', mechanicRole.id, 'user-a'),
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -163,7 +176,9 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: null,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', 'nope', 'user-owner')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', 'nope', 'user-owner'),
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -174,18 +189,26 @@ describe('UpdateMemberRoleHandler — workshop role hierarchy (item 8)', () => {
         targetRole: { ...ownerRole, workshopId: 'w-other' },
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-owner')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', ownerRole.id, 'user-owner'),
+        ),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('throws Forbidden when the actor is not an active member of the workshop', async () => {
       mockQueries({
         targetMember: member('user-a'),
-        actorMember: { ...member('user-x'), status: 'inactive', role: mechanicRole },
+        actorMember: {
+          ...member('user-x'),
+          status: 'inactive',
+          role: mechanicRole,
+        },
         targetRole: employeeRole,
       });
       await expect(
-        handler.execute(new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-x')),
+        handler.execute(
+          new UpdateMemberRoleCommand('member-x', employeeRole.id, 'user-x'),
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
   });

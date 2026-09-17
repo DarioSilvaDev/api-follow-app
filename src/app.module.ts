@@ -48,9 +48,6 @@ import { envs } from './config/envs';
     DashboardModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    SuperadminBootstrapService,
-  ],
+  providers: [AppService, SuperadminBootstrapService],
 })
 export class AppModule {}

@@ -433,9 +433,7 @@ export class MaintenanceController {
       throw new NotFoundException('Estimate', id);
     }
     if (ctx.type === 'WORKSHOP' && existing.workshopId !== ctx.workshopId) {
-      throw new ForbiddenException(
-        'Estimate does not belong to this workshop',
-      );
+      throw new ForbiddenException('Estimate does not belong to this workshop');
     }
     await this.assertVehicleAccess(existing.vehicleId, user, ctx);
     return this.updateEstimateStatusHandler.execute(
@@ -455,10 +453,12 @@ export class MaintenanceController {
       where: { id },
       select: { workshopId: true, vehicleId: true },
     });
-    if (existing && ctx.type === 'WORKSHOP' && existing.workshopId !== ctx.workshopId) {
-      throw new ForbiddenException(
-        'Estimate does not belong to this workshop',
-      );
+    if (
+      existing &&
+      ctx.type === 'WORKSHOP' &&
+      existing.workshopId !== ctx.workshopId
+    ) {
+      throw new ForbiddenException('Estimate does not belong to this workshop');
     }
     if (existing) {
       await this.assertVehicleAccess(existing.vehicleId, user, ctx);
