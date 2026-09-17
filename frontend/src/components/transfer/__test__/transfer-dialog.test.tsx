@@ -1,14 +1,15 @@
 /**
- * Tests for TransferDialog (Fase 1 / D-078 / D-084).
+ * Tests for TransferDialog (Fase 1 / D-078 / D-084 + Fase 4 email/alias).
  *
  * Comportamientos críticos:
  * - Modo detalle (`vehicle` fijo): sin selector, envía el vehicle.id.
  * - Modo panel (`vehicles`): selector de vehículos propios (default = primero).
- * - Validación zod: email inválido → error y NO llama a la API.
+ * - Destinatario libre: email O alias (`parseTransferRecipient`).
+ * - Validación zod: email/alias inválido → error y NO llama a la API.
+ * - Toggle email ↔ QR siempre visible (Fase 4: ambos modos alcanzables).
  * - Errores normalizados (nunca mensaje crudo del backend):
  *   400 "self", 400 "pending" (RF-6 → link al panel), 403/404/genérico.
- * - Éxito: cierra el diálogo e invalida ["transfers"] y ["vehicle"] (el
- *   timeline de la ficha refleja la transferencia pendiente).
+ * - Éxito: cierra el diálogo e invalida ["transfers"] y ["vehicle"].
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -24,10 +25,10 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-// Sesión del usuario actual (necesaria para el self-check client-side de §6.1).
+// Sesión del usuario actual (self-check client-side email + alias).
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
-    user: { id: "u-me", email: "yo@autentia.com" },
+    user: { id: "u-me", email: "yo@autentia.com", alias: "yoalias" },
     status: "authenticated",
   }),
 }));
@@ -47,6 +48,8 @@ vi.mock("next/link", () => ({
 }));
 
 const VEHICLE = { id: "v1", licensePlate: "ABC123" };
+
+const RECIPIENT_LABEL = "Email o alias del nuevo titular";
 
 function makeVehicle(overrides: Record<string, unknown> = {}) {
   return {
@@ -93,11 +96,8 @@ function renderDialog({
   return { ...utils, invalidateSpy, onOpenChange, onSuccess, queryClient };
 }
 
-async function submitValidForm(email = "ana@test.com", notes?: string) {
-  await userEvent.type(
-    screen.getByLabelText("Email del nuevo titular"),
-    email,
-  );
+async function submitValidForm(recipient = "ana@test.com", notes?: string) {
+  await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), recipient);
   if (notes !== undefined) {
     await userEvent.type(screen.getByLabelText("Notas (opcional)"), notes);
   }
@@ -109,7 +109,7 @@ beforeEach(() => {
 });
 
 describe("TransferDialog", () => {
-  it("modo detalle: muestra email + notas y envía el vehicle.id fijo", async () => {
+  it("modo detalle: muestra email/alias + notas y envía el vehicle.id fijo", async () => {
     renderDialog({ vehicle: VEHICLE });
 
     expect(screen.getByText("Transferir vehículo")).toBeInTheDocument();
@@ -121,10 +121,7 @@ describe("TransferDialog", () => {
 
     mockTransferVehicle.mockResolvedValue({ id: "t1", status: "pending" });
 
-    await userEvent.type(
-      screen.getByLabelText("Email del nuevo titular"),
-      "ana@test.com",
-    );
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "ana@test.com");
     await userEvent.type(
       screen.getByLabelText("Notas (opcional)"),
       "Entrega de llaves",
@@ -135,7 +132,7 @@ describe("TransferDialog", () => {
 
     await waitFor(() => {
       expect(mockTransferVehicle).toHaveBeenCalledWith("v1", {
-        email: "ana@test.com",
+        recipient: { type: "email", value: "ana@test.com" },
         notes: "Entrega de llaves",
       });
     });
@@ -158,7 +155,24 @@ describe("TransferDialog", () => {
 
     await waitFor(() => {
       expect(mockTransferVehicle).toHaveBeenCalledWith("v2", {
-        email: "ana@test.com",
+        recipient: { type: "email", value: "ana@test.com" },
+        notes: undefined,
+      });
+    });
+  });
+
+  it("alias válido: envía { type: 'alias', value } normalizado (sin @, lowercase)", async () => {
+    renderDialog({ vehicle: VEHICLE });
+    mockTransferVehicle.mockResolvedValue({ id: "t1", status: "pending" });
+
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "@Ana.2026");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Enviar solicitud" }),
+    );
+
+    await waitFor(() => {
+      expect(mockTransferVehicle).toHaveBeenCalledWith("v1", {
+        recipient: { type: "alias", value: "ana.2026" },
         notes: undefined,
       });
     });
@@ -167,10 +181,7 @@ describe("TransferDialog", () => {
   it("email inválido: error zod y NO llama a la API", async () => {
     renderDialog({ vehicle: VEHICLE });
 
-    await userEvent.type(
-      screen.getByLabelText("Email del nuevo titular"),
-      "no-es-un-email",
-    );
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "juan@");
     await userEvent.click(
       screen.getByRole("button", { name: "Enviar solicitud" }),
     );
@@ -181,14 +192,40 @@ describe("TransferDialog", () => {
     expect(mockTransferVehicle).not.toHaveBeenCalled();
   });
 
+  it("alias inválido: error zod y NO llama a la API", async () => {
+    renderDialog({ vehicle: VEHICLE });
+
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "@ab");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Enviar solicitud" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "El alias debe tener entre 3 y 30 caracteres y solo puede contener letras, números, puntos, guiones y guiones bajos.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockTransferVehicle).not.toHaveBeenCalled();
+  });
+
+  it("destinatario vacío: error de campo requerido y NO llama a la API", async () => {
+    renderDialog({ vehicle: VEHICLE });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Enviar solicitud" }),
+    );
+
+    expect(
+      await screen.findByText("Ingresá el email o el @alias del destinatario."),
+    ).toBeInTheDocument();
+    expect(mockTransferVehicle).not.toHaveBeenCalled();
+  });
+
   it("notas vacías se omiten del payload (undefined)", async () => {
     renderDialog({ vehicle: VEHICLE });
     mockTransferVehicle.mockResolvedValue({ id: "t1", status: "pending" });
 
-    await userEvent.type(
-      screen.getByLabelText("Email del nuevo titular"),
-      "ana@test.com",
-    );
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "ana@test.com");
     await userEvent.type(screen.getByLabelText("Notas (opcional)"), "   ");
     await userEvent.click(
       screen.getByRole("button", { name: "Enviar solicitud" }),
@@ -196,7 +233,7 @@ describe("TransferDialog", () => {
 
     await waitFor(() => {
       expect(mockTransferVehicle).toHaveBeenCalledWith("v1", {
-        email: "ana@test.com",
+        recipient: { type: "email", value: "ana@test.com" },
         notes: undefined,
       });
     });
@@ -213,7 +250,7 @@ describe("TransferDialog", () => {
 
     expect(
       await screen.findByText(
-        "No podés transferir el vehículo a vos mismo. Ingresá el email de otra persona.",
+        "No podés transferir el vehículo a vos mismo. Ingresá el email o alias de otra persona.",
       ),
     ).toBeInTheDocument();
     expect(mockTransferVehicle).toHaveBeenCalledTimes(1);
@@ -222,32 +259,46 @@ describe("TransferDialog", () => {
   it("Ajuste 3a UX: email propio detectado client-side (sin llamar a la API)", async () => {
     renderDialog({ vehicle: VEHICLE });
 
-    await userEvent.type(
-      screen.getByLabelText("Email del nuevo titular"),
-      "YO@autentia.com",
-    );
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "YO@autentia.com");
     await userEvent.click(
       screen.getByRole("button", { name: "Enviar solicitud" }),
     );
 
     expect(
       await screen.findByText(
-        "No podés transferir el vehículo a vos mismo. Ingresá el email de otra persona.",
+        "No podés transferir el vehículo a vos mismo. Ingresá el email o alias de otra persona.",
       ),
     ).toBeInTheDocument();
     expect(mockTransferVehicle).not.toHaveBeenCalled();
     // El diálogo permanece abierto con los datos intactos.
     expect(
-      (screen.getByLabelText("Email del nuevo titular") as HTMLInputElement)
-        .value,
+      (screen.getByLabelText(RECIPIENT_LABEL) as HTMLInputElement).value,
     ).toBe("YO@autentia.com");
   });
 
-  it("Ajuste 8 UX: helper del email (cuenta en Autentia)", async () => {
+  it("Fase 4: alias propio detectado client-side (sin llamar a la API)", async () => {
+    renderDialog({ vehicle: VEHICLE });
+
+    await userEvent.type(screen.getByLabelText(RECIPIENT_LABEL), "@YOALIAS");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Enviar solicitud" }),
+    );
+
+    expect(
+      await screen.findByText(
+        "No podés transferir el vehículo a vos mismo. Ingresá el email o alias de otra persona.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockTransferVehicle).not.toHaveBeenCalled();
+  });
+
+  it("Ajuste 8 UX: helper de email/alias (cuenta en Autentia)", async () => {
     renderDialog({ vehicle: VEHICLE });
 
     expect(
-      screen.getByText("El destinatario debe tener una cuenta en Autentia."),
+      screen.getByText(
+        "El destinatario debe tener una cuenta en Autentia. Podés identificarlo por su email o por su alias (por ej. @juan).",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -307,7 +358,7 @@ describe("TransferDialog", () => {
     expect(link).toHaveAttribute("href", "/vehicles/new");
     // Sin email ni submit: no hay nada que enviar.
     expect(
-      screen.queryByLabelText("Email del nuevo titular"),
+      screen.queryByLabelText(RECIPIENT_LABEL),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Enviar solicitud" }),
@@ -358,5 +409,50 @@ describe("TransferDialog", () => {
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
+  });
+
+  // ── Fase 4 (b): toggle email ↔ QR siempre visible ─────────────────────────
+
+  it("toggle visible en modo email (ambos modos alcanzables)", () => {
+    renderDialog({ vehicle: VEHICLE });
+
+    expect(
+      screen.getByRole("button", { name: "Email o alias" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "QR" })).toBeInTheDocument();
+    // Modo inicial = email.
+    expect(screen.getByLabelText(RECIPIENT_LABEL)).toBeInTheDocument();
+  });
+
+  it("click en QR muestra el panel QR y volver a Email restaura el formulario", async () => {
+    renderDialog({ vehicle: VEHICLE });
+
+    await userEvent.click(screen.getByRole("button", { name: "QR" }));
+
+    expect(
+      await screen.findByText("Origen de la transferencia"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generar QR" })).toBeInTheDocument();
+    expect(screen.queryByLabelText(RECIPIENT_LABEL)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Email o alias" }),
+    );
+
+    expect(await screen.findByLabelText(RECIPIENT_LABEL)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Origen de la transferencia"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("regresión: en modo panel el selector de vehículo sigue visible con QR", async () => {
+    renderDialog({
+      vehicles: [makeVehicle(), makeVehicle({ id: "v2", licensePlate: "XYZ789" })],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "QR" }));
+
+    expect(await screen.findByText("Origen de la transferencia")).toBeInTheDocument();
+    expect(screen.getByLabelText("Vehículo")).toBeInTheDocument();
   });
 });

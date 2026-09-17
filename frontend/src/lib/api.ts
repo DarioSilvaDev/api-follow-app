@@ -28,6 +28,7 @@ import type {
   TransferQrAcceptResult,
   TransferQrPreview,
   TransferQrRevokeResult,
+  TransferRecipient,
   GeneratedTransferQr,
   VehicleVersion,
 } from "@/types/vehicle";
@@ -177,16 +178,57 @@ export const api = ky.create({
 // Used so the UI can read API errors without importing ky internals.
 // ---------------------------------------------------------------------------
 
+/**
+ * ky 2.x consume el body HTTP al poblar `error.data`; por eso `error.response
+ * .json()` / `.text()` lanzan "Body has already been read". Este helper lee
+ * `error.data` y lo normaliza al shape de UI `{ message?, code? }`:
+ * - string (body text/plain) → `{ message }`.
+ * - objeto → `message` string, o array de mensajes (validación NestJS) unido
+ *   con espacio; `code` solo si es string.
+ * - `undefined` / vacío / no parseable → `{}`.
+ */
+function normalizeErrorBody(error: HTTPError): {
+  message?: string;
+  code?: string;
+} {
+  const data: unknown = error.data;
+
+  if (typeof data === "string") {
+    const message = data.trim();
+    return message ? { message } : {};
+  }
+
+  if (data && typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    const normalized: { message?: string; code?: string } = {};
+
+    if (typeof record.message === "string") {
+      normalized.message = record.message;
+    } else if (Array.isArray(record.message)) {
+      const message = record.message
+        .filter((item): item is string => typeof item === "string")
+        .join(" ");
+      if (message) {
+        normalized.message = message;
+      }
+    }
+
+    if (typeof record.code === "string") {
+      normalized.code = record.code;
+    }
+
+    return normalized;
+  }
+
+  return {};
+}
+
 async function toApiError(error: unknown): Promise<never> {
   if (isHTTPError(error)) {
-    const status = error.response.status;
-    let body: { message?: string; code?: string } = {};
-    try {
-      body = await error.response.json();
-    } catch {
-      // Response not JSON
-    }
-    throw { status, message: body.message, code: body.code };
+    throw {
+      status: error.response.status,
+      ...normalizeErrorBody(error),
+    };
   }
   throw error;
 }
@@ -208,37 +250,13 @@ export const authApi = {
     api
       .post("auth/login", { json: { email, password } })
       .json<LoginResponse>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string; code?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message, code: body.code };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   logout: () =>
     api
       .post("auth/logout")
       .json<{ message: string }>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message };
-        }
-        throw error;
-      })
+      .catch(toApiError)
       // F-020 / RF-3: el logout SIEMPRE resetea el contexto a null (PERSONAL),
       // incluso si la API falla — un workshopId stale rompería el próximo login.
       .finally(() => clearWorkshop()),
@@ -247,19 +265,7 @@ export const authApi = {
     api
       .get("auth/me")
       .json<SessionUser>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string; code?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message, code: body.code };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   register: (data: {
     firstName: string;
@@ -270,97 +276,31 @@ export const authApi = {
     api
       .post("auth/register", { json: data })
       .json<{ message: string }>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string; code?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message, code: body.code };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   verifyEmail: (token: string) =>
     api
       .get("auth/verify-email", { searchParams: { token } })
       .text()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string; code?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON — might be plain text
-            try {
-              const text = await error.response.text();
-              throw { status, message: text };
-            } catch {
-              // Already thrown or not parseable
-            }
-          }
-          throw { status, message: body.message, code: body.code };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   forgotPassword: (email: string) =>
     api
       .post("auth/forgot-password", { json: { email } })
       .json<{ message: string }>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   resetPassword: (token: string, password: string) =>
     api
       .post("auth/reset-password", { json: { token, password } })
       .json<{ message: string }>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     api
       .post("auth/change-password", { json: { currentPassword, newPassword } })
       .json<{ message: string }>()
-      .catch(async (error) => {
-        if (isHTTPError(error)) {
-          const status = error.response.status;
-          let body: { message?: string } = {};
-          try {
-            body = await error.response.json();
-          } catch {
-            // Response not JSON
-          }
-          throw { status, message: body.message };
-        }
-        throw error;
-      }),
+      .catch(toApiError),
 };
 
 // ---------------------------------------------------------------------------
@@ -607,10 +547,14 @@ export const vehicleApi = {
       .json<VehicleTransferListItem[]>()
       .catch(toApiError),
 
-  /** POST vehicles/:id/transfer → crea transferencia pendiente (D-078 RF-1). */
+  /**
+   * POST vehicles/:id/transfer → crea transferencia pendiente (D-078 RF-1).
+   * Fase 4: el destinatario se identifica por email o alias (contrato congelado
+   * `{ recipient: { type, value }, notes? }`).
+   */
   transferVehicle: (
     vehicleId: string,
-    dto: { email: string; notes?: string },
+    dto: { recipient: TransferRecipient; notes?: string },
   ) =>
     api
       .post(`vehicles/${vehicleId}/transfer`, { json: dto })

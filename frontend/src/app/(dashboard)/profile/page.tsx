@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useChangePassword } from "@/hooks/use-password-reset";
+import { useAuth } from "@/hooks/use-auth";
 import { usersApi } from "@/lib/api";
 import { resolveAliasErrorMessage } from "@/lib/transfer-errors";
 
@@ -70,6 +71,7 @@ function formatCooldownDate(value: string | null): string | null {
 
 function AliasCard() {
   const queryClient = useQueryClient();
+  const { refreshSession } = useAuth();
   const { data, isLoading } = useQuery({
     queryKey: ["my-alias"],
     queryFn: () => usersApi.getMyAlias(),
@@ -95,6 +97,10 @@ function AliasCard() {
     mutationFn: (alias: string | null) => usersApi.updateMyAlias(alias),
     onSuccess: (result) => {
       queryClient.setQueryData(["my-alias"], result);
+      // Item 4 (fase de ajustes): SessionUser.alias queda stale tras PATCH
+      // /users/me/alias; refreshSession() recarga GET /auth/me (setUser).
+      // Cubre actualizar Y eliminar (ambos usan este mismo onSuccess).
+      void refreshSession();
       reset({ alias: "" });
       setActionFeedback({
         kind: "success",
@@ -125,6 +131,14 @@ function AliasCard() {
   };
 
   const cooldownDate = formatCooldownDate(data?.nextChangeAllowedAt ?? null);
+  // D-077/D-091 + contrato backend: `nextChangeAllowedAt` se devuelve tanto con
+  // alias existente como tras una eliminación (null solo en alta inicial). El
+  // cooldown bloquea cambiar, guardar y eliminar; el 409 sigue siendo el
+  // enforcement real server-side.
+  const inCooldown = Boolean(
+    data?.nextChangeAllowedAt &&
+      new Date(data.nextChangeAllowedAt).getTime() > Date.now(),
+  );
 
   return (
     <Card className="w-full max-w-lg">
@@ -165,7 +179,9 @@ function AliasCard() {
             </p>
             {cooldownDate && (
               <p className="text-xs text-muted-foreground">
-                Podés volver a cambiarlo el {cooldownDate}.
+                {data?.alias
+                  ? `Podés volver a cambiarlo el ${cooldownDate}.`
+                  : `Podés configurar un alias nuevo el ${cooldownDate}.`}
               </p>
             )}
           </div>
@@ -179,10 +195,13 @@ function AliasCard() {
                 id="alias"
                 placeholder="juan-2026"
                 maxLength={30}
-                disabled={isSubmitting}
+                disabled={isSubmitting || inCooldown}
                 {...register("alias")}
               />
-              <Button type="submit" disabled={isSubmitting || isLoading}>
+              <Button
+                type="submit"
+                disabled={isSubmitting || isLoading || inCooldown}
+              >
                 {isSubmitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -203,7 +222,7 @@ function AliasCard() {
           <Button
             type="button"
             variant="ghost"
-            disabled={deleting || isSubmitting}
+            disabled={deleting || isSubmitting || inCooldown}
             onClick={onDelete}
           >
             {deleting ? (

@@ -26,7 +26,12 @@ import {
   pendingTransferMessage,
   transferErrorStatus,
 } from "@/lib/transfer-errors";
-import type { Vehicle } from "@/types/vehicle";
+import {
+  parseTransferRecipient,
+  TransferRecipientError,
+  TRANSFER_RECIPIENT_EMPTY_MESSAGE,
+} from "@/lib/transfer-recipient";
+import type { TransferRecipient, Vehicle } from "@/types/vehicle";
 import { cn } from "cn";
 import { QrTransferPanel } from "@/components/transfer/qr-transfer-panel";
 
@@ -39,10 +44,15 @@ import { QrTransferPanel } from "@/components/transfer/qr-transfer-panel";
 // - `vehicles` (selector): desde el panel de transferencias — lista de
 //   vehículos de propiedad del usuario actual (filtrada con isVehicleOwner).
 //
+// Fase 4: el destinatario se identifica por email O alias en un único campo
+// (`parseTransferRecipient`). Sin autocomplete/búsqueda de usuarios
+// (anti-enumeración SR#12, fuera de alcance). El toggle email ↔ QR vive
+// fuera del condicional, por lo que ambos modos son siempre alcanzables.
+//
 // Errores: nunca se muestra el mensaje crudo del backend (anti-enumeración /
 // PII). Casos §5.3:
-// - email propio → error inline (detectado client-side contra la sesión y
-//   también contra el 400 del backend), diálogo abierto con datos intactos.
+// - destinatario propio (email o alias) → error inline (client-side contra la
+//   sesión + 400 self del backend), diálogo abierto con datos intactos.
 // - ya hay una transferencia pendiente (RF-6) → error inline + CTA
 //   "Ver solicitud" que navega al panel.
 // - ya no sos owner (raza) → error inline + invalidación de queries.
@@ -53,7 +63,25 @@ import { QrTransferPanel } from "@/components/transfer/qr-transfer-panel";
 
 export const transferFormSchema = z.object({
   vehicleId: z.string().min(1, "Seleccioná un vehículo."),
-  email: z.email("Ingresá un email válido."),
+  recipient: z
+    .string()
+    .trim()
+    .min(1, TRANSFER_RECIPIENT_EMPTY_MESSAGE)
+    .superRefine((value, ctx) => {
+      // El min ya cubre el vacío; acá se valida el formato email/alias.
+      if (!value) return;
+      try {
+        parseTransferRecipient(value);
+      } catch (error) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            error instanceof TransferRecipientError
+              ? error.message
+              : "Ingresá un email o alias válido.",
+        });
+      }
+    }),
   notes: z
     .string()
     .trim()
@@ -99,7 +127,7 @@ export function TransferDialog({
         </DialogTitle>
         <DialogDescription>
           {isPanelMode
-            ? "Seleccioná el vehículo y el email de la persona que recibirá la titularidad."
+            ? "Seleccioná el vehículo y el email o alias de la persona que recibirá la titularidad."
             : vehicle
               ? `Transferí la titularidad de ${vehicle.licensePlate} a otro usuario de Autentia.`
               : "Transferí la titularidad de tu vehículo a otro usuario de Autentia."}
@@ -142,7 +170,7 @@ function TransferDialogForm({
     resolver: zodResolver(transferFormSchema),
     defaultValues: {
       vehicleId: vehicle?.id ?? vehicles?.[0]?.id ?? "",
-      email: "",
+      recipient: "",
       notes: "",
     },
   });
@@ -206,7 +234,7 @@ function TransferDialogForm({
         aria-pressed={mode === "email"}
       >
         <Mail className="h-3.5 w-3.5" />
-        Por email
+        Email o alias
       </button>
       <button
         type="button"
@@ -225,26 +253,11 @@ function TransferDialogForm({
     </div>
   );
 
-  if (mode === "qr") {
-    const watchedVehicleId = vehicle?.id ?? (isPanelMode ? watch("vehicleId") : undefined);
-    const qrVehicle =
-      vehicle ?? vehicles?.find((v) => v.id === watchedVehicleId) ?? null;
-    return (
-      <div className="flex flex-col gap-4">
-        {modeToggle}
-        {isPanelMode && vehicleSelector}
-        <QrTransferPanel
-          key={`qr-${qrVehicle?.id ?? "no-vehicle"}`}
-          vehicle={qrVehicle}
-          onMutationEnd={() => {
-            queryClient.invalidateQueries({ queryKey: ["vehicle"] });
-            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-            onSuccess?.();
-          }}
-        />
-      </div>
-    );
-  }
+  // Vehículo activo del modo QR (detalle: fijo; panel: el seleccionado).
+  const watchedVehicleId =
+    vehicle?.id ?? (isPanelMode ? watch("vehicleId") : undefined);
+  const qrVehicle =
+    vehicle ?? vehicles?.find((v) => v.id === watchedVehicleId) ?? null;
 
   const pendingMessage = submitError
     ? pendingTransferMessage(submitError)
@@ -256,10 +269,33 @@ function TransferDialogForm({
   const onSubmit = handleSubmit(async (values) => {
     setSubmitError(null);
 
-    // Ajuste 3a UX: email propio detectado client-side (sin round-trip).
-    // Validado también por el backend (400 self); el mapper cubre ambos.
+    // El schema ya validó el formato; se parsea de nuevo de forma defensiva
+    // para obtener el `TransferRecipient` normalizado (alias sin "@").
+    let recipient: TransferRecipient;
+    try {
+      recipient = parseTransferRecipient(values.recipient);
+    } catch (error) {
+      setSubmitError({
+        status: 400,
+        message:
+          error instanceof TransferRecipientError
+            ? error.message
+            : "Invalid recipient",
+      });
+      return;
+    }
+
+    // Ajuste 3a UX (ampliado Fase 4): destinatario propio detectado
+    // client-side (email o alias) sin round-trip. El backend también
+    // responde 400 self; el mapper cubre ambos.
     const ownEmail = user?.email?.trim().toLowerCase();
-    if (ownEmail && values.email.trim().toLowerCase() === ownEmail) {
+    const ownAlias = user?.alias?.trim().toLowerCase();
+    const isSelf =
+      recipient.type === "email"
+        ? Boolean(ownEmail && recipient.value.trim().toLowerCase() === ownEmail)
+        : Boolean(ownAlias && recipient.value.toLowerCase() === ownAlias);
+
+    if (isSelf) {
       setSubmitError({
         status: 400,
         message: "Cannot transfer vehicle to yourself",
@@ -269,7 +305,7 @@ function TransferDialogForm({
 
     try {
       await vehicleApi.transferVehicle(values.vehicleId, {
-        email: values.email,
+        recipient,
         notes: values.notes?.trim() ? values.notes.trim() : undefined,
       });
       // Refresca listas del panel + timeline del detalle (la nueva
@@ -290,50 +326,48 @@ function TransferDialogForm({
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
-      {isPanelMode && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="transfer-vehicle">Vehículo</Label>
-              <Select
-                id="transfer-vehicle"
-                aria-invalid={Boolean(errors.vehicleId)}
-                {...register("vehicleId")}
-              >
-                {vehicles?.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {transferVehicleLabel(v)}
-                  </option>
-                ))}
-              </Select>
-              {errors.vehicleId && (
-                <p className="text-xs text-destructive" role="alert">
-                  {errors.vehicleId.message}
-                </p>
-              )}
-            </div>
-          )}
+    <div className="flex flex-col gap-4">
+      {/* Ajuste UX: el toggle vive fuera del condicional — ambos modos
+          (email ↔ QR) son alcanzables en todo momento. */}
+      {modeToggle}
+      {isPanelMode && vehicleSelector}
 
+      {mode === "qr" ? (
+        <QrTransferPanel
+          key={`qr-${qrVehicle?.id ?? "no-vehicle"}`}
+          vehicle={qrVehicle}
+          onMutationEnd={() => {
+            queryClient.invalidateQueries({ queryKey: ["vehicle"] });
+            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+            onSuccess?.();
+          }}
+        />
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="transfer-email">Email del nuevo titular</Label>
+            <Label htmlFor="transfer-recipient">
+              Email o alias del nuevo titular
+            </Label>
             <Input
-              id="transfer-email"
-              type="email"
+              id="transfer-recipient"
+              type="text"
               autoComplete="off"
-              placeholder="titular@ejemplo.com"
-              aria-invalid={Boolean(errors.email)}
-              aria-describedby="transfer-email-helper"
-              {...register("email")}
+              placeholder="titular@ejemplo.com o @alias"
+              aria-invalid={Boolean(errors.recipient)}
+              aria-describedby="transfer-recipient-helper"
+              {...register("recipient")}
             />
             {/* Ajuste 8 UX (§6.1): helper pre-submit validado por UX. */}
             <p
-              id="transfer-email-helper"
+              id="transfer-recipient-helper"
               className="text-xs text-muted-foreground"
             >
-              El destinatario debe tener una cuenta en Autentia.
+              El destinatario debe tener una cuenta en Autentia. Podés
+              identificarlo por su email o por su alias (por ej. @juan).
             </p>
-            {errors.email && (
+            {errors.recipient && (
               <p className="text-xs text-destructive" role="alert">
-                {errors.email.message}
+                {errors.recipient.message}
               </p>
             )}
           </div>
@@ -392,5 +426,7 @@ function TransferDialogForm({
             </Button>
           </div>
         </form>
-    );
+      )}
+    </div>
+  );
 }

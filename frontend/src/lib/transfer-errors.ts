@@ -54,6 +54,17 @@ export function isPendingTransferError(error: unknown): boolean {
 export const PENDING_TRANSFER_MESSAGE =
   "Ya existe una solicitud pendiente para este vehículo.";
 
+/**
+ * Fase 4 / §5.3 — 400 genérico de destinatario inexistente. MISMO copy para
+ * email y alias (anti-enumeración SR#12: nunca revelar por qué canal falló).
+ */
+export const TRANSFER_RECIPIENT_NOT_FOUND_MESSAGE =
+  "No se pudo enviar la solicitud. Verificá que el destinatario tenga una cuenta e intentá nuevamente.";
+
+/** Fase 4 / §5.3 — 400 self (el destinatario es el propio usuario). */
+export const TRANSFER_SELF_MESSAGE =
+  "No podés transferir el vehículo a vos mismo. Ingresá el email o alias de otra persona.";
+
 /** Copy de UI si el error es "400 pending" (null = no es ese error). */
 export function pendingTransferMessage(error: unknown): string | null {
   return isPendingTransferError(error) ? PENDING_TRANSFER_MESSAGE : null;
@@ -74,10 +85,11 @@ export function createTransferErrorMessage(error: unknown): string {
   if (isStatus(error, 400)) {
     const text = lowerMessage(error);
     if (text.includes("yourself")) {
-      return "No podés transferir el vehículo a vos mismo. Ingresá el email de otra persona.";
+      return TRANSFER_SELF_MESSAGE;
     }
-    // 400 genérico (anti-enumeración): no revelar si el email existe.
-    return "No se pudo enviar la solicitud. Verificá que el destinatario tenga una cuenta e intentá nuevamente.";
+    // 400 genérico (anti-enumeración): mismo copy para email o alias
+    // inexistente — nunca revelar si el destinatario existe ni por qué canal.
+    return TRANSFER_RECIPIENT_NOT_FOUND_MESSAGE;
   }
   if (isStatus(error, 403)) {
     return "Ya no sos el titular de este vehículo. La transferencia no se pudo realizar.";

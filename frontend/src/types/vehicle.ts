@@ -193,6 +193,22 @@ export interface VehicleTransferRow {
   [key: string]: unknown;
 }
 
+/**
+ * Fase 4 — transferencia por email o alias.
+ *
+ * Contrato congelado: `POST /vehicles/:id/transfer` recibe
+ * `{ recipient: { type, value }, notes? }`.
+ * - `type: "email"` → `value` es un email.
+ * - `type: "alias"` → `value` es el alias SIN "@" (el backend normaliza
+ *   lowercase igualmente; el frontend ya lo envía normalizado).
+ */
+export type TransferRecipientType = "email" | "alias";
+
+export interface TransferRecipient {
+  type: TransferRecipientType;
+  value: string;
+}
+
 // ---------------------------------------------------------------------------
 // Fase 3 — QR de transferencia presencial / concesionaria (D-079..D-088, D-090)
 // ---------------------------------------------------------------------------

@@ -960,6 +960,75 @@ describe("API client — vehicleApi", () => {
     expect(historyCalls).toHaveLength(1);
     expect(historyCalls[0].method).toBe("GET");
   });
+
+  // ── Fase 4: transferencia por email o alias ──────────────────────────────
+
+  it("transferVehicle POSTs el contrato congelado { recipient, notes } (email)", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(201, {
+        id: "t1",
+        status: "pending",
+        requestedAt: "2026-09-17T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    const result = await vehicleApi.transferVehicle("v1", {
+      recipient: { type: "email", value: "ana@test.com" },
+      notes: "Entrega",
+    });
+
+    expect(result.status).toBe("pending");
+    const calls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v1/transfer"),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("POST");
+    expect(requestBody).toEqual({
+      recipient: { type: "email", value: "ana@test.com" },
+      notes: "Entrega",
+    });
+  });
+
+  it("transferVehicle envía recipient alias sin '@' y omite notes vacío", async () => {
+    let requestBody: unknown;
+    fetchSpy.mockImplementation(async (input, init) => {
+      const { url, method } = extractFetchInfo(input, init);
+      capturedRequests.push({ url, method });
+      if (input instanceof Request) {
+        requestBody = JSON.parse(await input.clone().text());
+      } else if (init?.body) {
+        requestBody = JSON.parse(String(init.body));
+      }
+      return makeResponse(201, {
+        id: "t2",
+        status: "pending",
+        requestedAt: "2026-09-17T00:00:00.000Z",
+      });
+    });
+
+    const { vehicleApi } = await import("@/lib/api");
+    await vehicleApi.transferVehicle("v2", {
+      recipient: { type: "alias", value: "juan" },
+    });
+
+    expect(requestBody).toEqual({
+      recipient: { type: "alias", value: "juan" },
+    });
+    const calls = capturedRequests.filter((r) =>
+      r.url.includes("vehicles/v2/transfer"),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("POST");
+  });
 });
 
 // ── Iteración 2-2: owner service + verification (spec 2-2 §7) ───────────────
