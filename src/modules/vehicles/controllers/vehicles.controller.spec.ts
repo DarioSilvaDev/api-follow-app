@@ -33,6 +33,10 @@ import { GrantAccessHandler } from '../commands/grant-access/grant-access.handle
 import { AcceptTransferHandler } from '../commands/accept-transfer/accept-transfer.handler';
 import { RejectTransferHandler } from '../commands/reject-transfer/reject-transfer.handler';
 import { CancelTransferHandler } from '../commands/cancel-transfer/cancel-transfer.handler';
+import { GenerateTransferQrHandler } from '../commands/generate-transfer-qr/generate-transfer-qr.handler';
+import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
+import { AcceptTransferQrHandler } from '../commands/accept-transfer-qr/accept-transfer-qr.handler';
+import { RevokeTransferQrHandler } from '../commands/revoke-transfer-qr/revoke-transfer-qr.handler';
 import { StorageR2Service } from '../../../common/storage/storage-r2.service';
 
 /**
@@ -128,6 +132,10 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       stubHandler as unknown as AcceptTransferHandler,
       stubHandler as unknown as RejectTransferHandler,
       stubHandler as unknown as CancelTransferHandler,
+      stubHandler as unknown as GenerateTransferQrHandler,
+      stubHandler as unknown as PreviewTransferQrHandler,
+      stubHandler as unknown as AcceptTransferQrHandler,
+      stubHandler as unknown as RevokeTransferQrHandler,
       uploadPhotoHandler as unknown as UploadPhotoHandler,
       setPrimaryPhotoHandler as unknown as SetPrimaryPhotoHandler,
       deletePhotoHandler as unknown as DeletePhotoHandler,

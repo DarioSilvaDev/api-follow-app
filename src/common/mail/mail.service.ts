@@ -137,4 +137,25 @@ export class MailService {
       `,
     });
   }
+
+  async sendTransferQrExpiredEmail(
+    to: string,
+    toFirstName: string,
+    vehicleName: string,
+    licensePlate: string,
+  ): Promise<void> {
+    const appUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    await this.send({
+      to,
+      // D-094: copy voseo consistente con el frontend; no nombra al destinatario (D-082).
+      subject: 'Tu QR de transferencia venció - FollowApp',
+      html: `
+        <h2>Tu QR de transferencia venció</h2>
+        <p>Hola ${toFirstName},</p>
+        <p>Tu QR de transferencia para el vehículo <strong>${vehicleName}</strong> (patente ${licensePlate}) venció.</p>
+        <p>Si todavía querés transferir el vehículo, generá uno nuevo desde el vehículo.</p>
+        <p><a href="${appUrl}/vehicles">Ir a Mis Vehículos</a></p>
+      `,
+    });
+  }
 }

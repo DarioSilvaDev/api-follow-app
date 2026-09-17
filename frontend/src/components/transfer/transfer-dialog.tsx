@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Car, Loader2, Send } from "lucide-react";
+import { Car, Loader2, Mail, QrCode, Send } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,6 +27,8 @@ import {
   transferErrorStatus,
 } from "@/lib/transfer-errors";
 import type { Vehicle } from "@/types/vehicle";
+import { cn } from "cn";
+import { QrTransferPanel } from "@/components/transfer/qr-transfer-panel";
 
 // ---------------------------------------------------------------------------
 // Fase 1 / D-084: diálogo compartido de transferencia.
@@ -129,10 +131,12 @@ function TransferDialogForm({
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [submitError, setSubmitError] = useState<unknown>(null);
+  const [mode, setMode] = useState<"email" | "qr">("email");
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<TransferFormValues>({
     resolver: zodResolver(transferFormSchema),
@@ -162,6 +166,83 @@ function TransferDialogForm({
           </Link>
         }
       />
+    );
+  }
+
+  // Selector del vehículo (modo panel) — compartido por ambos modos.
+  const vehicleSelector = (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="transfer-vehicle">Vehículo</Label>
+      <Select
+        id="transfer-vehicle"
+        aria-invalid={Boolean(errors.vehicleId)}
+        {...register("vehicleId")}
+      >
+        {vehicles?.map((v) => (
+          <option key={v.id} value={v.id}>
+            {transferVehicleLabel(v)}
+          </option>
+        ))}
+      </Select>
+      {errors.vehicleId && (
+        <p className="text-xs text-destructive" role="alert">
+          {errors.vehicleId.message}
+        </p>
+      )}
+    </div>
+  );
+
+  const modeToggle = (
+    <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+      <button
+        type="button"
+        onClick={() => setMode("email")}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+          mode === "email"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+        aria-pressed={mode === "email"}
+      >
+        <Mail className="h-3.5 w-3.5" />
+        Por email
+      </button>
+      <button
+        type="button"
+        onClick={() => setMode("qr")}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+          mode === "qr"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+        aria-pressed={mode === "qr"}
+      >
+        <QrCode className="h-3.5 w-3.5" />
+        QR
+      </button>
+    </div>
+  );
+
+  if (mode === "qr") {
+    const watchedVehicleId = vehicle?.id ?? (isPanelMode ? watch("vehicleId") : undefined);
+    const qrVehicle =
+      vehicle ?? vehicles?.find((v) => v.id === watchedVehicleId) ?? null;
+    return (
+      <div className="flex flex-col gap-4">
+        {modeToggle}
+        {isPanelMode && vehicleSelector}
+        <QrTransferPanel
+          key={`qr-${qrVehicle?.id ?? "no-vehicle"}`}
+          vehicle={qrVehicle}
+          onMutationEnd={() => {
+            queryClient.invalidateQueries({ queryKey: ["vehicle"] });
+            queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+            onSuccess?.();
+          }}
+        />
+      </div>
     );
   }
 

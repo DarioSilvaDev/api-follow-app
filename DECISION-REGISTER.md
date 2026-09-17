@@ -3013,6 +3013,60 @@ Complementos (misma decisión):
 
 ---
 
+### D-093 — El email del emisor NO se muestra en la preview del QR (extiende D-078 al flujo QR)
+
+**Tipo:** Product
+**Prioridad:** P1
+**Fecha:** 2026-09-16 (validación UX Fase 2/3 — PDP-1)
+
+#### Decisión
+
+El email del emisor NUNCA se muestra en la preview del QR, ni en ninguna superficie del flujo QR. El emisor se identifica por `@alias` o por nombre completo (patrón `transferUserLabel`: alias → nombre → "Usuario").
+
+#### Razón
+
+Anti-PII (SR#12) y consistencia con D-078: la contraparte se identifica por alias/nombre, no por email.
+
+#### Impacto
+
+- Frontend: preview del QR sin sección de email.
+- Backend: el preview NO devuelve email del emisor (verificar D-078 en `preview-transfer-qr`).
+
+#### Alternativas descartadas
+
+- Mostrar email del emisor en la preview (viola D-078 / anti-PII).
+
+---
+
+### D-094 — Copy del email "QR expirado" al emisor (D-088)
+
+**Tipo:** Product
+**Prioridad:** P3
+**Fecha:** 2026-09-16 (validación UX Fase 2/3 — PDP-3)
+
+#### Decisión
+
+Email de expiración de QR al emisor (disparado por intento de accept del receptor, D-088 lazy):
+
+> Tu QR de transferencia para el vehículo {placa} venció. Si necesitás transferirlo, generá uno nuevo desde el vehículo.
+
+(voseo, consistente con el copy del frontend; no nombra al destinatario).
+
+#### Razón
+
+Coherencia de copy entre email y UI; el QR jamás nombra al destinatario (D-082).
+
+#### Impacto
+
+- Listener `transfer-qr-expired-email.listener.ts` — copy del email.
+
+#### Alternativas descartadas
+
+- Sin email (pierde la notificación de D-088).
+- Email con datos del receptor (viola D-082).
+
+---
+
 ## Resumen de las decisiones de transferencia
 
 | ID | Decisión |
@@ -3033,31 +3087,34 @@ Complementos (misma decisión):
 | D-090 | `qrcode.react` + `html5-qrcode` |
 | D-091 | Cooldown de alias = 15 días |
 | D-092 | Transferencias vencidas no bloquean nuevas (fix `existingPending`) + Cancelar en expirada (Enviadas) + expirada terminal (Recibidas) |
+| D-093 | El email del emisor NO se muestra en la preview del QR (extiende D-078 al flujo QR; validado UX) |
+| D-094 | Copy del email "QR expirado" al emisor (voseo, sin datos del receptor) |
 
 ## Pendientes de implementación (por fase)
 
-### Fase 1 — Panel de Transferencias (backend por implementar; frontend implementado en paralelo ⚠)
-- D-078: ampliar includes en handlers de transferencias (+ inyectar `alias: null` post-query; el select NO debe incluir `alias` — columna aún inexistente).
-- D-092: fix `existingPending` en `POST /:id/transfer` (filtrar vencidas) + test.
+### Fase 1 — Panel de Transferencias ✅ implementado (commit 791c800)
+- D-078 (Fase 1): includes simétricos `fromUser`+`toUser` + inyección `alias: null` post-query (columna inexistente) — ✅ implementado. **Fase 2**: select `alias: true` + eliminación del mapping — ✅ implementado.
+- D-092: fix `existingPending` (filtrar vencidas) + 3 tests — ✅ implementado (791c800).
 - D-084: `TransferDialog` compartido (detalle + panel) — ✅ implementado (frontend).
 - D-089: `components/ui/tabs.tsx` con `@base-ui/react` — ✅ implementado (frontend, API `Root/List/Tab/Panel`).
-- Frontend: página `/transferencias` implementada (20+ tests). **Pendiente de verificación**: los ajustes UX de la spec v2 (§6.3-6.7, RF-4/5/6: expirada recomputo, "Ver solicitud", "ya no sos titular", "no podés transferirte a vos mismo", empty states, banner inline, invalidar `vehicles` post-aceptación) — el frontend se implementó en paralelo ANTES de la validación UX final; validar contra spec v2.
+- Frontend: página `/transferencias` implementada (225 PASS en Fase 2/3; 6 fallos stale preexistentes). ✅ Ajustes UX de spec v2 (§6.3-6.7: recomputo expirada, "Ver solicitud", "ya no sos titular", auto-transferencia, empty states, banner inline, invalidar `vehicles`) validados e implementados — era verificación pendiente y quedó cerrada en Fase 2/3.
 
-### Fase 2 — Alias
-- D-077: migración `User.alias` + `lastAliasChangedAt`; endpoints `GET/PATCH /users/me/alias`; extender search por alias; agregar `alias: true` al select de transfers y eliminar mapping `alias: null`.
-- D-091: enforcement de cooldown 15 días (409).
-- D-078: evaluación de unificar DTO simétrico en mutaciones (D-TL-1).
+### Fase 2 — Alias ✅ implementado (pendiente commit)
+- D-077: migración `User.alias` (VarChar 30, unique + índice `LOWER`) + `lastAliasChangedAt`; `GET/PATCH /users/me/alias` (incl. eliminar con cooldown); search por alias; select `alias: true` en transfers y `get-vehicle-history`; `/auth/me` incluye `alias` — ✅ implementado + tests (cooldown verificado = 15 días, `ALIAS_COOLDOWN_DAYS`).
+- D-091: cooldown 15 días (409 con fecha de liberación) + eliminación respeta cooldown — ✅ implementado + tests.
+- D-078: unificación DTO simétrico en mutaciones — aún pendiente (D-TL-1, baja prioridad).
 
-### Fase 3 — QR
-- D-079: rechazo 409 si QR pendiente; revocación explícita del owner.
-- D-080: deep link con `FRONTEND_URL`.
-- D-081: aceptación directa `completed` en transacción atómica.
-- D-082: preview autenticado + confirmación de identidad.
-- D-083: preview idempotente; accept one-shot.
-- D-085: `source: 'presencial' | 'concesionaria'` (metadata).
-- D-086: TTLs 1h/48h server-side.
-- D-088: detección de expiración + evento `expired` + email al emisor.
-- D-090: `qrcode.react` + `html5-qrcode` en frontend.
+### Fase 3 — QR ✅ implementado (pendiente commit)
+- D-079: 1 QR activo por vehículo (índice único parcial + 409 si ya existe pendiente) — ✅.
+- D-080: deep link `FRONTEND_URL/transfer/qr/{token}`; ruta en `app/transfer/qr/[token]` (plano, URL idéntica, layout sin centrado auth; requiere confirmación TL) — ✅.
+- D-081: accept → `completed` directo en transacción atómica + evento `transfer.accepted` (email) — ✅.
+- D-082: preview autenticado (redirect a `/login?next=...`) + confirmación explícita de identidad (checkbox) — ✅.
+- D-083: preview idempotente (reutilizable; throttle 10/60s); accept one-shot — ✅.
+- D-085: `source` String `presencial|concesionaria` (default `presencial`) — ✅ (TL: validar enum Prisma).
+- D-086: TTLs 1h/48h server-side — ✅.
+- D-088: expiración lazy (marcado al preview/accept + evento `expired` + email al emisor, copy D-094); sweeper in-process NO implementado (opcional TL) — ✅ parcial.
+- D-090: `qrcode.react` + `html5-qrcode` (escáner con fallback token manual) — ✅.
+- Trazabilidad pre-accept: QR revoked/expired NO emite `VehicleTransferEvent` (sin `transferId`) — aceptado para MVP (registro `VehicleTransferQr` como trazabilidad); evaluar evento/migración en futuro.
 
 ## Decisiones delegadas al Tech Lead (resueltas en validación Fase 1 — spec v2 §9)
 
@@ -3065,3 +3122,14 @@ Complementos (misma decisión):
 2. **Contrato exacto de respuesta de mutaciones** (D-078): **RESUELTO (D-TL-1)** — mutaciones sin DTO simétrico en Fase 1 (no exponen PII, cero consumidores del body); Fase 2 evalúa unificar con costo bajo.
 3. **API de Tabs `@base-ui/react`** (D-089): **RESUELTO (D-TL-3)** — `Root/List/Tab/Panel/Indicator` (no `Trigger/Content`).
 4. **Tipo frontend de listas** (RF-2): **RESUELTO (D-TL-4)** — tipo derivado `VehicleTransferListItem`; no se muta `VehicleTransfer` (timeline F-014).
+
+## Decisiones delegadas al Tech Lead / revisión pendiente (validación Fase 2/3 — 2026-09-16)
+
+1. **Trazabilidad QR pre-accept**: QR revoked/expired no emite `VehicleTransferEvent` (sin `transferId`). Aceptado para MVP por PM; evaluar evento/migración si el historial debiera mostrarlo.
+2. **Sweeper de QRs expirados**: D-088 lazy-only hoy (email al emisor solo en intento de accept). Opción in-process (setInterval sin dependencia nueva) o bien dejar lazy — definir con TL.
+3. **`source` como enum Prisma vs String** en `VehicleTransferQr` — definir.
+4. **Ruta del deep link**: implementada en `app/transfer/qr/[token]` (grupo plano, sin layout `(auth)`); URL idéntica a la del contrato D-080 — validar que no se pierde el layout/protección esperados.
+5. **`AliasCard` no refresca la sesión** tras actualizar alias (puede quedar stale el `alias` en `SessionUser`) — pendiente frontend menor.
+6. **Fix P0 UX (`transferUserLabel`)**: devuelve `alias` sin `@` (transferencias/page.tsx:97) — RF-5 requiere `@alias`; 1 línea, pendiente antes de commit.
+7. **6 tests frontend stale** (baseline previo a Fase 1: vehicles-page y vehicle-detail-page) — triage/higiene en iteración aparte.
+8. **`db:deploy`** en ambientes superiores (14 migraciones locales aplicadas; pendientes en upper environments).

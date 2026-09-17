@@ -20,6 +20,7 @@ export class GetSessionHandler {
         email: true,
         firstName: true,
         lastName: true,
+        alias: true,
         avatarUrl: true,
         language: true,
         status: true,

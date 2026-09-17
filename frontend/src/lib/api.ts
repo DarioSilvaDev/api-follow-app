@@ -25,6 +25,10 @@ import type {
   VehiclePhoto,
   VehicleTransferListItem,
   VehicleTransferRow,
+  TransferQrAcceptResult,
+  TransferQrPreview,
+  TransferQrRevokeResult,
+  GeneratedTransferQr,
   VehicleVersion,
 } from "@/types/vehicle";
 
@@ -360,6 +364,35 @@ export const authApi = {
 };
 
 // ---------------------------------------------------------------------------
+// User API methods (Fase 2 — Alias, D-077/D-091)
+// ---------------------------------------------------------------------------
+
+export interface MyAlias {
+  alias: string | null;
+  lastAliasChangedAt: string | null;
+  nextChangeAllowedAt: string | null;
+}
+
+export const usersApi = {
+  /** GET /users/me/alias → alias actual + cooldown info. */
+  getMyAlias: () =>
+    api
+      .get("users/me/alias")
+      .json<MyAlias>()
+      .catch(toApiError),
+
+  /**
+   * PATCH /users/me/alias → establece, cambia o elimina (null) el alias.
+   * 409s: cooldown 15d / transferencia pendiente / alias en uso.
+   */
+  updateMyAlias: (alias: string | null) =>
+    api
+      .patch("users/me/alias", { json: { alias } })
+      .json<MyAlias>()
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
 // Vehicle API methods
 //
 // D-035 (MVP): vehicle calls run in PERSONAL context — no X-Context-Type
@@ -603,6 +636,43 @@ export const vehicleApi = {
     api
       .patch(`vehicles/transfers/${transferId}/cancel`)
       .json<VehicleTransferRow>()
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // Fase 3 — QR de transferencia presencial/concesionaria (D-079..D-088)
+  // -----------------------------------------------------------------------
+
+  /** POST vehicles/:id/qr → genera QR de transferencia (owner-only). */
+  generateTransferQr: (
+    vehicleId: string,
+    dto: { source: "presencial" | "concesionaria" },
+  ) =>
+    api
+      .post(`vehicles/${vehicleId}/qr`, { json: dto })
+      .json<GeneratedTransferQr>()
+      .catch(toApiError),
+
+  /** GET vehicles/transfer/qr/:token → preview antes de aceptar. */
+  previewTransferQr: (token: string) =>
+    api
+      .get(`vehicles/transfer/qr/${token}`)
+      .json<TransferQrPreview>()
+      .catch(toApiError),
+
+  /** POST vehicles/transfer/qr/:token/accept → acepta (one-shot, body { confirmation: true }). */
+  acceptTransferQr: (token: string) =>
+    api
+      .post(`vehicles/transfer/qr/${token}/accept`, {
+        json: { confirmation: true },
+      })
+      .json<TransferQrAcceptResult>()
+      .catch(toApiError),
+
+  /** DELETE vehicles/:id/qr → revoca el QR pendiente (owner-only, idempotente). */
+  revokeTransferQr: (vehicleId: string) =>
+    api
+      .delete(`vehicles/${vehicleId}/qr`)
+      .json<TransferQrRevokeResult>()
       .catch(toApiError),
 };
 

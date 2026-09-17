@@ -119,3 +119,102 @@ export function resolveTransferErrorMessage(
   // 409 (defensivo — §5.3) y cualquier otro (5xx, red) → genérico.
   return GENERIC_TRANSFER_ERROR_MESSAGE;
 }
+
+// ---------------------------------------------------------------------------
+// Fase 3 — QR de transferencia (D-079..D-088). Copy en español/voseo derivado
+// de los contratos REALES del backend (messages en español):
+// - GET vehicles/transfer/qr/:token → 404 "QR inválido o expirado",
+//   410 "Este QR ha sido revocado", 409 "Este QR ya fue utilizado".
+// - POST .../accept → 400 "Debés confirmar la transferencia" /
+//   "No podés aceptar tu propio QR", 409 coexistencia "pendiente".
+// - POST vehicles/:id/qr → 403 not owner, 409 "Ya existe un QR...".
+// - DELETE vehicles/:id/qr → idempotente.
+// ---------------------------------------------------------------------------
+
+export function resolveQrPreviewErrorMessage(error: unknown): string {
+  if (isStatus(error, 404)) {
+    return "El QR es inválido o ya expiró.";
+  }
+  if (isStatus(error, 410)) {
+    return "Este QR fue revocado y ya no está vigente.";
+  }
+  if (isStatus(error, 409)) {
+    return "Este QR ya fue utilizado.";
+  }
+  if (isStatus(error, 401) || isStatus(error, 403)) {
+    return "Iniciá sesión para aceptar la transferencia.";
+  }
+  return GENERIC_TRANSFER_ERROR_MESSAGE;
+}
+
+export function resolveQrAcceptErrorMessage(error: unknown): string {
+  if (isStatus(error, 404)) {
+    return "El QR es inválido o ya expiró.";
+  }
+  if (isStatus(error, 410)) {
+    return "Este QR fue revocado y ya no está vigente.";
+  }
+  if (isStatus(error, 409)) {
+    const text = lowerMessage(error);
+    if (text.includes("pendiente")) {
+      return "Ya existe una solicitud de transferencia pendiente para este vehículo.";
+    }
+    return "Este QR ya fue utilizado.";
+  }
+  if (isStatus(error, 400)) {
+    const text = lowerMessage(error);
+    if (text.includes("propio")) {
+      return "No podés aceptar tu propio QR de transferencia.";
+    }
+    return "No se pudo completar la transferencia. Intentá nuevamente.";
+  }
+  return GENERIC_TRANSFER_ERROR_MESSAGE;
+}
+
+export function resolveQrGenerateErrorMessage(error: unknown): string {
+  if (isStatus(error, 409)) {
+    const text = lowerMessage(error);
+    if (text.includes("solicitud de transferencia pendiente")) {
+      return PENDING_TRANSFER_MESSAGE;
+    }
+    return "Ya existe un QR de transferencia pendiente para este vehículo.";
+  }
+  if (isStatus(error, 403)) {
+    return "Solo el titular del vehículo puede generar el QR.";
+  }
+  if (isStatus(error, 404)) {
+    return "El vehículo ya no existe o fue eliminado.";
+  }
+  return GENERIC_TRANSFER_ERROR_MESSAGE;
+}
+
+// ---------------------------------------------------------------------------
+// Fase 2 — Alias (D-077/D-091). Copy en español deriva de los contratos
+// REALES del backend (messages en español):
+// - PATCH /users/me/alias → 400 regex/validación, 409 cooldown
+//   ("Solo podés cambiar tu alias cada 15 días..."), 409 transferencia
+//   pendiente, 409 "El alias ya está en uso".
+// ---------------------------------------------------------------------------
+
+export const ALIAS_COOLDOWN_MESSAGE =
+  "Solo podés cambiar tu alias cada 15 días.";
+
+export function resolveAliasErrorMessage(error: unknown): string {
+  if (isStatus(error, 409)) {
+    const text = lowerMessage(error);
+    if (text.includes("15 días") || text.includes("15 dias")) {
+      return ALIAS_COOLDOWN_MESSAGE;
+    }
+    if (text.includes("transferencia pendiente")) {
+      return "Tu alias no puede cambiarse mientras tengas una transferencia pendiente.";
+    }
+    if (text.includes("en uso")) {
+      return "Ese alias ya está en uso. Elegí otro.";
+    }
+    return "No se pudo actualizar el alias. Intentá nuevamente.";
+  }
+  if (isStatus(error, 400)) {
+    return "El alias debe tener entre 3 y 30 caracteres y solo puede contener letras, números, puntos, guiones y guiones bajos.";
+  }
+  return GENERIC_TRANSFER_ERROR_MESSAGE;
+}

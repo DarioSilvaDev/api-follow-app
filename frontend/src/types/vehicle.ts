@@ -193,6 +193,52 @@ export interface VehicleTransferRow {
   [key: string]: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Fase 3 — QR de transferencia presencial / concesionaria (D-079..D-088, D-090)
+// ---------------------------------------------------------------------------
+
+export type TransferQrSource = "presencial" | "concesionaria";
+
+/** POST vehicles/:id/qr → QR generado (url deep link + TTL). */
+export interface GeneratedTransferQr {
+  id: string;
+  token: string;
+  url: string;
+  source: TransferQrSource;
+  expiresAt: string;
+  secondsRemaining: number;
+}
+
+/** GET vehicles/transfer/qr/:token → preview (vehicle + emisor, sin PII). */
+export interface TransferQrPreview {
+  vehicle: {
+    id: string;
+    name: string;
+    licensePlate: string;
+  };
+  fromUser: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    alias: string | null;
+  };
+  source: TransferQrSource;
+  expiresAt: string;
+  secondsRemaining: number;
+}
+
+/** POST vehicles/transfer/qr/:token/accept → resultado one-shot. */
+export interface TransferQrAcceptResult {
+  transferId: string;
+  status: "completed";
+}
+
+/** DELETE vehicles/:id/qr → revoke (idempotente). */
+export interface TransferQrRevokeResult {
+  revoked: boolean;
+  id?: string;
+}
+
 /**
  * Iteración 2-3 (D-069/D-070): CareEpisode en el timeline del vehículo.
  *

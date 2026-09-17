@@ -25,17 +25,23 @@ export class GetVehicleHistoryHandler {
     // Unless the caller is the active owner or a super_admin, emails stay hidden.
     const exposeEmails = await this.shouldExposeEmails(vehicleId, user);
 
+    // D-078: user contracts expose `{ id, firstName, lastName, alias }`.
+    // `alias` es público (no PII) y se incluye en ambas ramas de visibilidad.
     const ownershipUserSelect = exposeEmails
-      ? { id: true, firstName: true, lastName: true, email: true }
-      : { id: true, firstName: true, lastName: true };
+      ? { id: true, firstName: true, lastName: true, email: true, alias: true }
+      : { id: true, firstName: true, lastName: true, alias: true };
 
     const [transfers, mileages, ownerships, careEpisodesRaw] =
       await Promise.all([
         this.prisma.vehicleTransfer.findMany({
           where: { vehicleId },
           include: {
-            fromUser: { select: { id: true, firstName: true, lastName: true } },
-            toUser: { select: { id: true, firstName: true, lastName: true } },
+            fromUser: {
+              select: { id: true, firstName: true, lastName: true, alias: true },
+            },
+            toUser: {
+              select: { id: true, firstName: true, lastName: true, alias: true },
+            },
           },
           orderBy: { createdAt: 'desc' },
         }),

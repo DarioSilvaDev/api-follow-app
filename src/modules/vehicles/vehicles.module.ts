@@ -19,6 +19,11 @@ import { RejectTransferHandler } from './commands/reject-transfer/reject-transfe
 import { CancelTransferHandler } from './commands/cancel-transfer/cancel-transfer.handler';
 import { TransferRequestEmailListener } from './listeners/transfer-request-email.listener';
 import { TransferAcceptedEmailListener } from './listeners/transfer-accepted-email.listener';
+import { TransferQrExpiredEmailListener } from './listeners/transfer-qr-expired-email.listener';
+import { GenerateTransferQrHandler } from './commands/generate-transfer-qr/generate-transfer-qr.handler';
+import { PreviewTransferQrHandler } from './commands/preview-transfer-qr/preview-transfer-qr.handler';
+import { AcceptTransferQrHandler } from './commands/accept-transfer-qr/accept-transfer-qr.handler';
+import { RevokeTransferQrHandler } from './commands/revoke-transfer-qr/revoke-transfer-qr.handler';
 import { UploadPhotoHandler } from './commands/upload-photo/upload-photo.handler';
 import { SetPrimaryPhotoHandler } from './commands/set-primary-photo/set-primary-photo.handler';
 import { DeletePhotoHandler } from './commands/delete-photo/delete-photo.handler';
@@ -60,6 +65,11 @@ import { GetDocumentHandler } from './queries/get-document/get-document.handler'
     ListDocumentsHandler,
     TransferRequestEmailListener,
     TransferAcceptedEmailListener,
+    TransferQrExpiredEmailListener,
+    GenerateTransferQrHandler,
+    PreviewTransferQrHandler,
+    AcceptTransferQrHandler,
+    RevokeTransferQrHandler,
     { provide: VEHICLE_REPOSITORY, useClass: PrismaVehicleRepository },
   ],
   exports: [VEHICLE_REPOSITORY],

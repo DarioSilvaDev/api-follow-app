@@ -34,10 +34,11 @@ import {
   Inbox,
   Loader2,
   RotateCw,
+  ScanLine,
   Send,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -89,11 +90,12 @@ const STATUS_VARIANT: Record<VehicleTransferStatus, BadgeVariant> = {
 };
 
 /** D-078: nunca muestra el email. Alias → nombre completo → "Usuario". */
+/** RF-5 (D-093): el alias se muestra con @ (decorativo, no persistido). */
 export function transferUserLabel(
   user?: VehicleTransferUser | null,
 ): string {
   if (!user) return "Usuario no disponible";
-  if (user.alias?.trim()) return user.alias.trim();
+  if (user.alias?.trim()) return `@${user.alias.trim()}`;
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
   return name || "Usuario";
 }
@@ -532,10 +534,19 @@ export default function TransferenciasPage() {
             Gestioná los cambios de titularidad de tus vehículos.
           </p>
         </div>
-        <Button onClick={() => setTransferOpen(true)}>
-          <Send className="h-3.5 w-3.5" />
-          Transferir vehículo
-        </Button>
+        <div className="flex gap-2">
+          <Link
+            href="/escaneo"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            <ScanLine className="h-3.5 w-3.5" />
+            Escanear QR
+          </Link>
+          <Button onClick={() => setTransferOpen(true)}>
+            <Send className="h-3.5 w-3.5" />
+            Transferir vehículo
+          </Button>
+        </div>
       </div>
 
       {successBanner && (

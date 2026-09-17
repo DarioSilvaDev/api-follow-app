@@ -31,12 +31,12 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
     handler = new GetIncomingTransfersHandler(prismaMock as any);
   });
 
-  it('returns each item with symmetric fromUser/toUser { id, firstName, lastName, alias } and alias === null', async () => {
+  it('passes through fromUser/toUser with symmetric { id, firstName, lastName, alias }', async () => {
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([
       {
         ...baseTransfer,
-        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez' },
-        toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo' },
+        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez', alias: 'ana_p' },
+        toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo', alias: null },
       },
     ]);
 
@@ -47,7 +47,7 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
       id: 'u-ana',
       firstName: 'Ana',
       lastName: 'Pérez',
-      alias: null,
+      alias: 'ana_p',
     });
     expect(result[0].toUser).toEqual({
       id: 'u-yo',
@@ -59,7 +59,7 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
     expect(result[0].vehicle).toEqual(vehicle);
   });
 
-  it('sends a Prisma select without email and without alias ({ id, firstName, lastName })', async () => {
+  it('requests alias in the Prisma select and never requests email ({ id, firstName, lastName, alias })', async () => {
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([]);
 
     await handler.execute('u-yo');
@@ -69,17 +69,16 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
       id: true,
       firstName: true,
       lastName: true,
+      alias: true,
     });
     expect(arg.include.toUser.select).toEqual({
       id: true,
       firstName: true,
       lastName: true,
+      alias: true,
     });
     expect(arg.include.fromUser.select).not.toHaveProperty('email');
     expect(arg.include.toUser.select).not.toHaveProperty('email');
-    // Guard: `alias: true` would fail at runtime until Phase 2 (missing column).
-    expect(arg.include.fromUser.select).not.toHaveProperty('alias');
-    expect(arg.include.toUser.select).not.toHaveProperty('alias');
     // Vehicle select stays unchanged.
     expect(arg.include.vehicle.select).toEqual({
       id: true,
@@ -94,8 +93,8 @@ describe('GetIncomingTransfersHandler — D-078 symmetric contract (no PII)', ()
     prismaMock.vehicleTransfer.findMany.mockResolvedValue([
       {
         ...baseTransfer,
-        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez' },
-        toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo' },
+        fromUser: { id: 'u-ana', firstName: 'Ana', lastName: 'Pérez', alias: null },
+        toUser: { id: 'u-yo', firstName: 'Yo', lastName: 'Mismo', alias: null },
       },
     ]);
 

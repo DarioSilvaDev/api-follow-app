@@ -12,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
@@ -53,6 +54,16 @@ import { RejectTransferCommand } from '../commands/reject-transfer/reject-transf
 import { RejectTransferHandler } from '../commands/reject-transfer/reject-transfer.handler';
 import { CancelTransferCommand } from '../commands/cancel-transfer/cancel-transfer.command';
 import { CancelTransferHandler } from '../commands/cancel-transfer/cancel-transfer.handler';
+import { GenerateTransferQrCommand } from '../commands/generate-transfer-qr/generate-transfer-qr.command';
+import { GenerateTransferQrHandler } from '../commands/generate-transfer-qr/generate-transfer-qr.handler';
+import { GenerateTransferQrDto } from '../dto/generate-transfer-qr.dto';
+import { PreviewTransferQrCommand } from '../commands/preview-transfer-qr/preview-transfer-qr.command';
+import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
+import { AcceptTransferQrCommand } from '../commands/accept-transfer-qr/accept-transfer-qr.command';
+import { AcceptTransferQrHandler } from '../commands/accept-transfer-qr/accept-transfer-qr.handler';
+import { AcceptTransferQrDto } from '../dto/accept-transfer-qr.dto';
+import { RevokeTransferQrCommand } from '../commands/revoke-transfer-qr/revoke-transfer-qr.command';
+import { RevokeTransferQrHandler } from '../commands/revoke-transfer-qr/revoke-transfer-qr.handler';
 import { UploadPhotoCommand } from '../commands/upload-photo/upload-photo.command';
 import { UploadPhotoHandler } from '../commands/upload-photo/upload-photo.handler';
 import { SetPrimaryPhotoCommand } from '../commands/set-primary-photo/set-primary-photo.command';
@@ -99,8 +110,12 @@ export class VehiclesController {
     private readonly getOutgoingTransfersHandler: GetOutgoingTransfersHandler,
     private readonly acceptTransferHandler: AcceptTransferHandler,
     private readonly rejectTransferHandler: RejectTransferHandler,
-    private readonly cancelTransferHandler: CancelTransferHandler,
-    private readonly uploadPhotoHandler: UploadPhotoHandler,
+private readonly cancelTransferHandler: CancelTransferHandler,
+  private readonly generateTransferQrHandler: GenerateTransferQrHandler,
+  private readonly previewTransferQrHandler: PreviewTransferQrHandler,
+  private readonly acceptTransferQrHandler: AcceptTransferQrHandler,
+  private readonly revokeTransferQrHandler: RevokeTransferQrHandler,
+  private readonly uploadPhotoHandler: UploadPhotoHandler,
     private readonly setPrimaryPhotoHandler: SetPrimaryPhotoHandler,
     private readonly deletePhotoHandler: DeletePhotoHandler,
     private readonly listPhotosHandler: ListPhotosHandler,
@@ -176,6 +191,66 @@ export class VehiclesController {
   ) {
     return this.cancelTransferHandler.execute(
       new CancelTransferCommand(id, user.id),
+    );
+  }
+
+  /**
+   * QR de transferencia presencial (Fase 3, D-079..D-083).
+   * GET: preview del QR (vehicle + emisor) — no requiere ser owner (el
+   * receptor debe poder consultarlo antes de aceptar).
+   */
+  @Get('transfer/qr/:token')
+  // Wave P3: brute-force protection on the 32-hex QR token.
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(ThrottlerGuard)
+  async previewTransferQr(
+    @Param('token') token: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.previewTransferQrHandler.execute(
+      new PreviewTransferQrCommand(token),
+    );
+  }
+
+  /**
+   * En la misma transacción: QR consumed, ownership cerrada/creada,
+   * VehicleTransfer completed + eventos (D-081).
+   */
+  @Post('transfer/qr/:token/accept')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @UseGuards(ThrottlerGuard)
+  async acceptTransferQr(
+    @Param('token') token: string,
+    @Body() dto: AcceptTransferQrDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.acceptTransferQrHandler.execute(
+      new AcceptTransferQrCommand(token, user.id, dto),
+    );
+  }
+
+  @Post(':id/qr')
+  async generateTransferQr(
+    @Param('id') id: string,
+    @Body() dto: GenerateTransferQrDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    // D-079: solo el owner puede generar/revocar QR.
+    await this.assertVehicleOwned(id, user);
+    return this.generateTransferQrHandler.execute(
+      new GenerateTransferQrCommand(id, user.id, dto),
+    );
+  }
+
+  @Delete(':id/qr')
+  async revokeTransferQr(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    // D-079: solo el owner puede revocar.
+    await this.assertVehicleOwned(id, user);
+    return this.revokeTransferQrHandler.execute(
+      new RevokeTransferQrCommand(id, user.id),
     );
   }
 

@@ -122,6 +122,13 @@ model User {
 
   lastLoginAt DateTime? @map("last_login_at")
 
+  // Fase 2 (D-077 / D-091): alias público editable. Se persiste en lowercase
+  // (normalización server-side). Unicidad case-insensitive: índice funcional
+  // LOWER(alias) en la migración + enforcement 409 en el handler.
+  alias String? @unique @map("alias") @db.VarChar(30)
+
+  lastAliasChangedAt DateTime? @map("last_alias_changed_at")
+
   createdAt DateTime? @default(now()) @map("created_at")
 
   updatedAt DateTime? @updatedAt @map("updated_at")
@@ -170,6 +177,9 @@ model User {
   workOrders WorkOrder[]
   estimates Estimate[]
   careEpisodesCreated CareEpisode[]
+
+  createdTransferQrs VehicleTransferQr[] @relation("QrCreatedBy")
+  consumedTransferQrs VehicleTransferQr[] @relation("QrConsumedBy")
 
   impersonationAsAdmin  ImpersonationSession[] @relation("ImpersonationAsAdmin")
   impersonationAsTarget ImpersonationSession[] @relation("ImpersonationAsTarget")
@@ -946,6 +956,8 @@ model Vehicle {
 
   transfers VehicleTransfer[]
 
+  transferQrs VehicleTransferQr[]
+
   accesses VehicleAccess[]
 
   shares VehicleShare[]
@@ -1078,6 +1090,52 @@ model VehicleTransfer {
   @@index([vehicleId])
   @@index([status])
   @@map("vehicle_transfers")
+}
+
+// Fase 3 (D-079..D-083, D-085, D-086, D-088): QR de transferencia
+// presencial / concesionaria. Bearer con TTL corto; consumido one-shot.
+enum QrStatus {
+  pending
+  consumed
+  expired
+  revoked
+}
+
+model VehicleTransferQr {
+  id String @id @default(uuid()) @db.Uuid
+
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  token String @unique @db.VarChar(64)
+
+  status QrStatus @default(pending)
+
+  source String @default("presencial") @db.VarChar(20) // 'presencial' | 'concesionaria' (D-085)
+
+  expiresAt DateTime @map("expires_at")
+
+  consumedAt DateTime? @map("consumed_at")
+
+  consumedByUserId String? @map("consumed_by_user_id") @db.Uuid
+
+  revokedAt DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  createdBy User @relation("QrCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  consumedBy User? @relation("QrConsumedBy", fields: [consumedByUserId], references: [id], onDelete: SetNull)
+
+  // Invariante D-079 (1 QR pending sin resolver por vehículo): enforcement en
+  // el command de generación (lazy-expire de pendientes vencidos + 409) y en la
+  // migración con índice único parcial `ON (vehicle_id) WHERE status='pending'`.
+  // Nota: `expires_at > now()` no es válido en el predicado (debe ser IMMUTABLE).
+  @@index([vehicleId, status])
+  @@map("vehicle_transfer_qrs")
 }
 
 model VehicleAccess {

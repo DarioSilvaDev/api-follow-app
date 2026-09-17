@@ -8,6 +8,8 @@ import { DeleteUserHandler } from './commands/delete-user/delete-user.handler';
 import { GetUserHandler } from './queries/get-user/get-user.handler';
 import { ListUsersHandler } from './queries/list-users/list-users.handler';
 import { SearchUsersHandler } from './queries/search-users/search-users.handler';
+import { GetMyAliasHandler } from './queries/get-my-alias/get-my-alias.handler';
+import { UpdateMyAliasHandler } from './commands/update-my-alias/update-my-alias.handler';
 import { SendWelcomeEmailListener } from './listeners/send-welcome-email.listener';
 import { CreateDefaultSettingsListener } from './listeners/create-default-settings.listener';
 
@@ -20,6 +22,8 @@ import { CreateDefaultSettingsListener } from './listeners/create-default-settin
     GetUserHandler,
     ListUsersHandler,
     SearchUsersHandler,
+    GetMyAliasHandler,
+    UpdateMyAliasHandler,
     SendWelcomeEmailListener,
     CreateDefaultSettingsListener,
     { provide: USER_REPOSITORY, useClass: PrismaUserRepository },

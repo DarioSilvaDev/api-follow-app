@@ -19,22 +19,17 @@ export class GetIncomingTransfersHandler {
           },
         },
         fromUser: {
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, alias: true },
         },
         toUser: {
-          select: { id: true, firstName: true, lastName: true },
+          select: { id: true, firstName: true, lastName: true, alias: true },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
     // D-078: symmetric contract `{ id, firstName, lastName, alias }`.
-    // `User.alias` does not exist in the schema until Phase 2, so it is
-    // injected post-query (the Prisma select MUST NOT include `alias`).
-    return items.map((t) => ({
-      ...t,
-      fromUser: { ...t.fromUser, alias: null },
-      toUser: { ...t.toUser, alias: null },
-    }));
+    // `alias` viene del modelo (Fase 2); null si el usuario no tiene alias.
+    return items;
   }
 }

@@ -22,6 +22,11 @@ import { GetUserHandler } from '../queries/get-user/get-user.handler';
 import { ListUsersHandler } from '../queries/list-users/list-users.handler';
 import { SearchUsersHandler } from '../queries/search-users/search-users.handler';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../../common/types/auth.types';
+import { GetMyAliasHandler } from '../queries/get-my-alias/get-my-alias.handler';
+import { UpdateMyAliasHandler } from '../commands/update-my-alias/update-my-alias.handler';
+import { UpdateMyAliasDto } from '../dto/update-my-alias.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -33,6 +38,8 @@ export class UsersController {
     private readonly getUserHandler: GetUserHandler,
     private readonly listUsersHandler: ListUsersHandler,
     private readonly searchUsersHandler: SearchUsersHandler,
+    private readonly getMyAliasHandler: GetMyAliasHandler,
+    private readonly updateMyAliasHandler: UpdateMyAliasHandler,
   ) {}
 
   @Post()
@@ -55,6 +62,21 @@ export class UsersController {
     @Query('limit') limit?: number,
   ) {
     return this.searchUsersHandler.execute({ q, page, limit });
+  }
+
+  // Fase 2 (D-077/D-091): alias del usuario autenticado. Ruta estática
+  // "me" debe declararse ANTES de ':id' para no ser capturada por ésta.
+  @Get('me/alias')
+  async getMyAlias(@CurrentUser() user: AuthenticatedUser) {
+    return this.getMyAliasHandler.execute(user.id);
+  }
+
+  @Patch('me/alias')
+  async updateMyAlias(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateMyAliasDto,
+  ) {
+    return this.updateMyAliasHandler.execute(user.id, dto);
   }
 
   @Get(':id')

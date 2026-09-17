@@ -3,6 +3,7 @@ export interface SessionUser {
   email: string;
   firstName: string;
   lastName: string;
+  alias: string | null;
   avatarUrl: string | null;
   language: string;
   status: string;

@@ -52,13 +52,15 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
 
     const result = await handler.execute('v1', holderUser);
 
-    // The Prisma select must NOT request email for a non-owner holder.
+    // The Prisma select must NOT request email for a non-owner holder, but
+    // must include alias (D-078 — alias is public, not PII).
     const findManyArg = prismaMock.vehicleOwnership.findMany.mock.calls[0][0];
     expect(findManyArg.include.user.select).not.toHaveProperty('email');
     expect(findManyArg.include.user.select).toEqual({
       id: true,
       firstName: true,
       lastName: true,
+      alias: true,
     });
     expect(result.ownerships[0].user).toEqual({
       id: 'owner-1',
@@ -90,6 +92,7 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
       firstName: true,
       lastName: true,
       email: true,
+      alias: true,
     });
     expect(result.ownerships[0].user).toEqual({
       id: 'owner-1',

@@ -21,11 +21,14 @@ export class SearchUsersHandler {
     );
     const skip = (page - 1) * limit;
 
+    // Fase 2 (RF-6): la búsqueda también matchea por alias. El alias se
+    // persiste en lowercase; `contains` + mode insensitive cubre ambos casos.
     const where: Prisma.UserWhereInput = {
       OR: [
         { email: { contains: query.q, mode: 'insensitive' } },
         { firstName: { contains: query.q, mode: 'insensitive' } },
         { lastName: { contains: query.q, mode: 'insensitive' } },
+        { alias: { contains: query.q, mode: 'insensitive' } },
       ],
     };
 
