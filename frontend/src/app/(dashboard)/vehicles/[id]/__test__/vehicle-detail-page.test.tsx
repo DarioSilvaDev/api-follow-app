@@ -240,9 +240,11 @@ describe("Vehicle detail page", () => {
     // Header + ficha
     expect(await screen.findByRole("heading", { name: "ABC123" })).toBeInTheDocument();
     expect(screen.getByText("Ficha del vehículo")).toBeInTheDocument();
-    expect(screen.getByText("Toyota Corolla XEI")).toBeInTheDocument();
-    expect(screen.getByText("2020 / 2021")).toBeInTheDocument();
-    expect(screen.getByText("Rojo")).toBeInTheDocument();
+    // El catálogo, los años, el color y el km aparecen por duplicado: en el
+    // header (VehicleHeader, desde 2-3) y en la ficha/secciones.
+    expect(screen.getAllByText("Toyota Corolla XEI").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("2020 / 2021").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Rojo").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("WVW123")).toBeInTheDocument();
     expect(screen.getByText("Nota original")).toBeInTheDocument();
     // RF-2: titular = nombre/apellido del ownership activo (nested user)
@@ -276,8 +278,8 @@ describe("Vehicle detail page", () => {
     );
     expect(screen.getByRole("button", { name: /subir documento/i })).toBeInTheDocument();
 
-    // Mileage section (list + form)
-    expect(screen.getByText("25.000 km")).toBeInTheDocument();
+    // Mileage section (list + form) — el km también aparece en el header badge
+    expect(screen.getAllByText("25.000 km").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Propietario")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /registrar km/i })).toBeInTheDocument();
   });
@@ -322,9 +324,10 @@ describe("Vehicle detail page", () => {
     // Photo edit overlay (primary/delete) hidden too
     expect(screen.queryByRole("button", { name: "Eliminar foto" })).not.toBeInTheDocument();
 
-    // Read still works: photos + mileage list visible
+    // Read still works: photos + mileage list visible (el km aparece en el
+    // header y en la sección — badge no es owner-gated).
     expect(screen.getByText("Principal")).toBeInTheDocument();
-    expect(screen.getByText("25.000 km")).toBeInTheDocument();
+    expect(screen.getAllByText("25.000 km").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows 'Vehículo no encontrado' + back link without Reintentar on 404 (RF-6)", async () => {
@@ -410,7 +413,6 @@ describe("Vehicle detail page", () => {
 
   it("sets the primary photo and deletes a photo with confirm (F-013)", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockGetVehicle.mockResolvedValue(makeVehicle());
     mockListPhotos.mockResolvedValue(makeVehicle().photos);
     mockListDocuments.mockResolvedValue([]);
@@ -433,11 +435,17 @@ describe("Vehicle detail page", () => {
       expect(mockListPhotos).toHaveBeenCalledTimes(2);
     });
 
+    // La confirmación usa el Dialog de Base UI (no window.confirm) desde 2-3.
     await user.click(
       screen.getAllByRole("button", { name: "Eliminar foto" })[0],
     );
+
+    expect(
+      await screen.findByRole("dialog", { name: "Eliminar foto" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Eliminar" }));
+
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledWith("¿Eliminar esta foto?");
       expect(mockDeletePhoto).toHaveBeenCalledWith("v1", "p1");
     });
   });
@@ -529,7 +537,6 @@ it("rejects invalid mileage input without calling the API", async () => {
 
   it("uploads, edits and deletes a document (F-013)", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockGetVehicle.mockResolvedValue(makeVehicle());
     mockListPhotos.mockResolvedValue([]);
     mockListDocuments.mockResolvedValue(makeVehicle().documents);
@@ -574,15 +581,19 @@ it("rejects invalid mileage input without calling the API", async () => {
       });
     });
 
-    // Delete flow (confirm → deleteDocument)
+    // Delete flow (Base UI Dialog confirm → deleteDocument)
     await waitFor(() => {
       expect(screen.getByText("Cédula verde")).toBeInTheDocument();
     });
     await user.click(
       screen.getByRole("button", { name: "Eliminar documento Cédula verde" }),
     );
+    expect(
+      await screen.findByRole("dialog", { name: "Eliminar documento" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Eliminar" }));
+
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalled();
       expect(mockDeleteDocument).toHaveBeenCalledWith("v1", "d1");
     });
   });

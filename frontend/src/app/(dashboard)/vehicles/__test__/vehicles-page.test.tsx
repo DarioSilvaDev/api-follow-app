@@ -151,8 +151,11 @@ describe("Vehicles list page", () => {
     renderPage();
 
     expect(await screen.findByText("ABC123")).toBeInTheDocument();
-    // catalog triplet + years + color → at least 3 "—" placeholders
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    // D-038: la UI muestra "—" ante ausencia de marca/modelo/versión y de
+    // años (card: `catalogLabel` + `yearsLabel`). El color ausente OCULTA la
+    // fila (patrón consistente con header y ficha del detalle — no "—").
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/color:/i)).not.toBeInTheDocument();
   });
 
   it("shows the empty state with a CTA to /vehicles/new", async () => {

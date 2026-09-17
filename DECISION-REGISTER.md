@@ -3067,6 +3067,39 @@ Coherencia de copy entre email y UI; el QR jamás nombra al destinatario (D-082)
 
 ---
 
+### D-095 — `source` de `VehicleTransferQr` migra a enum Prisma
+
+**Tipo:** Architecture
+**Prioridad:** P2
+**Fecha:** 2026-09-16 (revisión Tech Lead Fase 2/3)
+
+#### Decisión
+
+`VehicleTransferQr.source` pasa de `String` a `enum QrSource` (`presencial | concesionaria`), consistente con `QrStatus`. Enforcement en DB; el DTO ya valida el dominio (solo los 2 valores del `IsIn`).
+
+SQL de migración (lista, pendiente de aplicar):
+
+```sql
+CREATE TYPE "QrSource" AS ENUM ('presencial', 'concesionaria');
+ALTER TABLE "vehicle_transfer_qrs"
+  ALTER COLUMN "source" TYPE "QrSource" USING ("source"::"QrSource"),
+  ALTER COLUMN "source" SET DEFAULT 'presencial'::"QrSource";
+```
+
+#### Razón
+
+Consistencia con `QrStatus`, enforcement en DB, columna solo contiene valores válidos (sin backfill).
+
+#### Impacto
+
+`schema.prisma`, `transfer-qr.constants.ts` (`QR_TTL_SECONDS: Record<QrSource, number>`), DTOs, handlers y tests.
+
+#### Alternativas descartadas
+
+- Mantener `String` (menos estricto; columna con dominio abierto sin justificación).
+
+---
+
 ## Resumen de las decisiones de transferencia
 
 | ID | Decisión |
@@ -3089,6 +3122,7 @@ Coherencia de copy entre email y UI; el QR jamás nombra al destinatario (D-082)
 | D-092 | Transferencias vencidas no bloquean nuevas (fix `existingPending`) + Cancelar en expirada (Enviadas) + expirada terminal (Recibidas) |
 | D-093 | El email del emisor NO se muestra en la preview del QR (extiende D-078 al flujo QR; validado UX) |
 | D-094 | Copy del email "QR expirado" al emisor (voseo, sin datos del receptor) |
+| D-095 | `source` de `VehicleTransferQr` migra a enum Prisma `QrSource` (presencial|concesionaria) |
 
 ## Pendientes de implementación (por fase)
 
@@ -3123,13 +3157,34 @@ Coherencia de copy entre email y UI; el QR jamás nombra al destinatario (D-082)
 3. **API de Tabs `@base-ui/react`** (D-089): **RESUELTO (D-TL-3)** — `Root/List/Tab/Panel/Indicator` (no `Trigger/Content`).
 4. **Tipo frontend de listas** (RF-2): **RESUELTO (D-TL-4)** — tipo derivado `VehicleTransferListItem`; no se muta `VehicleTransfer` (timeline F-014).
 
-## Decisiones delegadas al Tech Lead / revisión pendiente (validación Fase 2/3 — 2026-09-16)
+## Decisiones delegadas al Tech Lead (resueltas en revisión Fase 2/3 — 2026-09-16)
 
-1. **Trazabilidad QR pre-accept**: QR revoked/expired no emite `VehicleTransferEvent` (sin `transferId`). Aceptado para MVP por PM; evaluar evento/migración si el historial debiera mostrarlo.
-2. **Sweeper de QRs expirados**: D-088 lazy-only hoy (email al emisor solo en intento de accept). Opción in-process (setInterval sin dependencia nueva) o bien dejar lazy — definir con TL.
-3. **`source` como enum Prisma vs String** en `VehicleTransferQr` — definir.
-4. **Ruta del deep link**: implementada en `app/transfer/qr/[token]` (grupo plano, sin layout `(auth)`); URL idéntica a la del contrato D-080 — validar que no se pierde el layout/protección esperados.
-5. **`AliasCard` no refresca la sesión** tras actualizar alias (puede quedar stale el `alias` en `SessionUser`) — pendiente frontend menor.
-6. **Fix P0 UX (`transferUserLabel`)**: devuelve `alias` sin `@` (transferencias/page.tsx:97) — RF-5 requiere `@alias`; 1 línea, pendiente antes de commit.
-7. **6 tests frontend stale** (baseline previo a Fase 1: vehicles-page y vehicle-detail-page) — triage/higiene en iteración aparte.
-8. **`db:deploy`** en ambientes superiores (14 migraciones locales aplicadas; pendientes en upper environments).
+1. **Trazabilidad QR pre-accept**: **RESUELTO (D-TL-5)** — `VehicleTransferQr` queda como única fuente de verdad pre-accept; NO se emiten `VehicleTransferEvent` para revoked/expired (FK `transferId` NOT NULL, cero consumers, sin migración). Diseño futuro (`transferId String?` aditivo, `onDelete: SetNull`) documentado en spec QR §10.7. Impacto `mergeHistory`: nulo.
+2. **Sweeper de QRs expirados**: **RESUELTO (D-TL-6)** — SÍ, sweeper in-process con `setInterval` (sin `@nestjs/schedule`); intervalo 5 min; query `pending AND expiresAt < now` (take 100); `updateMany` con condición `status='pending'` (idempotente) + evento solo para los actualizados; desactivado en test/e2e. **PENDIENTE DE IMPLEMENTACIÓN** (`qr-expiry-sweeper.service.ts`).
+3. **`source` String vs enum**: **RESUELTO (D-095)** — migrar a enum Prisma `QrSource`; SQL listo, sin backfill. **PENDIENTE DE IMPLEMENTACIÓN**.
+4. **Ruta deep link**: **RESUELTO** — ruta plana `app/transfer/qr/[token]` correcta; los route groups no cambian la URL (D-080 OK); protección real = AuthProvider + redirect a `/login?next=` (el layout `(auth)` solo centra, no protege; no existe middleware Next). Mantener.
+5. **AliasCard y sesión**: **RESUELTO** — usar `refreshSession()` de `useAuth()` en `onSuccess` del mutate (sesión vive en AuthProvider, no en react-query); `/auth/me` ya incluye `alias`. Especificación en 3 pasos — **PENDIENTE DE IMPLEMENTACIÓN**.
+6. **Cierre D-TL-1**: **CERRADO SIN UNIFICAR** — shapes minimalistas por mutación; cero consumidores del body; unificar no aporta. Desviaciones de shape de spec (H4) **aceptadas por PM** (aditivas, sin consumidores, coherentes con D-TL-1); preview se alinea aditivamente (H2).
+7. **Fix P0 UX (`transferUserLabel` con @)**: ✅ implementado en `b2dca36`.
+8. **Triage 6 tests frontend stale**: ✅ resuelto (Frontend Tech Lead) — 231/231 PASS + build OK. 4 tests stale actualizados + 1 badge restaurado (ver "Resumen de tests" abajo). Working tree pendiente de commit.
+9. **`db:deploy` superior**: ✅ verificado (Database) — local 14/14 up to date; runbook listo (migraciones SIEMPRE antes del binario nuevo; `db:generate` explícito — no hay postinstall; backup en prod; rollback = migración correctiva, no `db:reset`). **PENDIENTE: ejecución en ambientes superiores.**
+
+## Fase de ajustes Fase 2/3 — pendiente de implementación (diseños del TL listos)
+
+1. Sweeper `qr-expiry-sweeper.service.ts` (D-TL-6) → Backend Engineer.
+2. **H1 (P1) race en `accept-transfer-qr`**: gate idempotente con `updateMany({ where: { id, status: 'pending' } })` DENTRO de la transacción (hoy el check está fuera → 2 accepts concurrentes = 2 ownerships activas). Aplicar mismo patrón a `accept-transfer` (email, P2 pre-existente).
+3. Migrar `source` → enum `QrSource` (D-095): migración + constants + DTO + tests.
+4. `refreshSession()` tras actualizar alias (spec 3 pasos del TL).
+5. Preview aditivo H2: agregar `manufactureYear/modelYear/color` al payload (hoy sin consumer).
+6. Mapear P2002 → 409 en `generate-transfer-qr` (recomendación Database; hoy 500 en carrera concurrente).
+7. Catch P2002 → 409 en `update-my-alias` (recomendación TL H5).
+8. Commit del triage de tests frontend (231/231) — esperando autorización del usuario.
+
+## Escalamiento a Security (revisión pendiente)
+
+- **H6 (P2, pre-existente ampliado)**: `search-users` devuelve PII (`email`, `phone`, `avatarUrl`) a cualquier usuario autenticado; la búsqueda por alias amplía la superficie. Recomendación TL: `select {id, firstName, lastName, alias}` o restringir por roles. Requiere revisión/OK de Security antes de implementar.
+- **H3 (P2, pre-existente)**: `helmet` instalado pero NO aplicado en `main.ts`. Activar `app.use(helmet())` como deuda de seguridad global.
+
+## Resumen de tests (triage 2026-09-16)
+
+- Frontend: **231/231 PASS** (21 archivos) + build OK. Cambios en working tree (sin commit): `vehicle-header.tsx` (restaura badge "Acceso compartido" para no-owners — F-013 §20; regresión real del refactor 2-3; autorización intacta), `vehicles-page.test.tsx`, `vehicle-detail-page.test.tsx` (delete flows reescritos al patrón Base UI Dialog; `getAllByText` para duplicados header+ficha; `window.confirm` removido).

@@ -55,9 +55,19 @@ export function VehicleHeader({ vehicle, isOwner = false }: VehicleHeaderProps) 
               <Tag className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold tracking-tight truncate">
-                {vehicle.licensePlate}
-              </h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold tracking-tight truncate">
+                  {vehicle.licensePlate}
+                </h1>
+                {/* F-013 §7 / D-048: badge "Acceso compartido" para non-owners
+                    (documentado en DECISION-REGISTER §20; se restauró tras el
+                    refactor a VehicleHeader en 2-3). */}
+                {!isOwner && (
+                  <Badge variant="secondary" className="text-xs font-medium">
+                    Acceso compartido
+                  </Badge>
+                )}
+              </div>
               {catalog && (
                 <p className="text-sm text-muted-foreground mt-0.5">
                   {catalog}
