@@ -1,9 +1,13 @@
 import {
   ConflictException,
+  HttpStatus,
   Injectable,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { CodedHttpException } from '../../../../common/exceptions/coded.exception';
+import { ERROR_CODES } from '../../../../common/exceptions/error-codes';
 import { ALIAS_COOLDOWN_DAYS } from '../../constants/alias.constants';
 import { UpdateMyAliasDto } from '../../dto/update-my-alias.dto';
 import {
@@ -19,9 +23,11 @@ import {
  *   mayúsculas (AC §10: `"Juan-9"` → persiste `juan-9`).
  * - Normalización server-side a lowercase antes de persistir.
  * - Unicidad case-insensitive → 409 "El alias ya está en uso".
- * - Cooldown 15 días → 409 con fecha de liberación. La ALTA INICIAL es
- *   gratuita; cualquier otra mutación (cambiar, eliminar, o re-clamar
- *   después de haber eliminado) respeta el cooldown.
+ * - Cooldown 15 días → 409 con fecha de liberación y errors estructurados
+ *   (`errors.code = 'ALIAS_COOLDOWN'`, `errors.nextChangeAllowedAt`,
+ *   `errors.nextChangeAllowedDate`). La ALTA INICIAL es gratuita; cualquier
+ *   otra mutación (cambiar, eliminar, o re-clamar después de haber
+ *   eliminado) respeta el cooldown.
  * - `{ alias: "mismo-valor-actual" }` (no-null) → 200 no-op sin cooldown.
  * - `{ alias: null }` cuando ya no hay alias → no-op; dentro de cooldown
  *   tras una eliminación reciente responde 409 (AC §10 / regla §6.5).
@@ -44,9 +50,7 @@ export class UpdateMyAliasHandler {
     }
 
     const normalized =
-      typeof dto.alias === 'string'
-        ? dto.alias.trim().toLowerCase()
-        : null;
+      typeof dto.alias === 'string' ? dto.alias.trim().toLowerCase() : null;
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -118,29 +122,46 @@ export class UpdateMyAliasHandler {
       }
     }
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        alias: normalized,
-        // Toda mutación sellada (cambiar/eliminar/re-clamar) actualiza el
-        // timestamp del cooldown. Los no-ops retornaron arriba.
-        lastAliasChangedAt: now,
-      },
-    });
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          alias: normalized,
+          // Toda mutación sellada (cambiar/eliminar/re-clamar) actualiza el
+          // timestamp del cooldown. Los no-ops retornaron arriba.
+          lastAliasChangedAt: now,
+        },
+      });
+    } catch (error) {
+      // H5: carrera contra `users_alias_lower_idx` (índice funcional LOWER(alias),
+      // spec §5.1). El pre-check del handler ya responde 409 en el caso común;
+      // el constraint actúa como red de seguridad → 409 (no 500).
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('El alias ya está en uso. Elegí otro.');
+      }
+      throw error;
+    }
 
     return this.getMyAliasHandler.execute(userId);
   }
 
-  private cooldownException(
-    lastAliasChangedAt: Date,
-  ): ConflictException {
+  private cooldownException(lastAliasChangedAt: Date): CodedHttpException {
     const nextChangeAllowedAt = new Date(
-      lastAliasChangedAt.getTime() +
-        ALIAS_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
+      lastAliasChangedAt.getTime() + ALIAS_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
     );
     const isoDate = nextChangeAllowedAt.toISOString().split('T')[0];
-    return new ConflictException(
+    return new CodedHttpException(
+      HttpStatus.CONFLICT,
       `Solo podés cambiar tu alias cada ${ALIAS_COOLDOWN_DAYS} días. Podés cambiarlo el ${isoDate}`,
+      ERROR_CODES.CONFLICT,
+      {
+        code: 'ALIAS_COOLDOWN',
+        nextChangeAllowedAt: nextChangeAllowedAt.toISOString(),
+        nextChangeAllowedDate: isoDate,
+      },
     );
   }
 }

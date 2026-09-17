@@ -45,6 +45,21 @@ describe('GetMyAliasHandler — Fase 2 (D-077/D-091) GET /users/me/alias', () =>
     });
   });
 
+  it('returns nextChangeAllowedAt when alias is null but lastAliasChangedAt exists (post-deletion cooldown, D-091)', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      alias: null,
+      lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const result = await handler.execute('u-4');
+
+    expect(result).toEqual({
+      alias: null,
+      lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z'),
+      nextChangeAllowedAt: new Date('2026-01-16T00:00:00.000Z'),
+    });
+  });
+
   it('nextChangeAllowedAt is null when lastAliasChangedAt is null (initial grant)', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
       alias: 'primer_alias',

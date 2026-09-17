@@ -1,6 +1,12 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpStatus,
+} from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { CodedHttpException } from '../../../../common/exceptions/coded.exception';
+import { ERROR_CODES } from '../../../../common/exceptions/error-codes';
 import { UpdateMyAliasHandler } from './update-my-alias.handler';
-import { GetMyAliasHandler } from '../get-my-alias/get-my-alias.handler';
 
 describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', () => {
   let handler: UpdateMyAliasHandler;
@@ -100,37 +106,59 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
-  it('409 change within cooldown, with the release date', async () => {
+  it('409 change within cooldown emits CodedHttpException with structured errors (D-025 + ALIAS_COOLDOWN)', async () => {
     prismaMock.user.findUnique.mockResolvedValue(
-      userWith({ alias: 'viejo', lastAliasChangedAt: new Date('2026-01-15T00:00:00.000Z') }),
+      userWith({
+        alias: 'viejo',
+        lastAliasChangedAt: new Date('2026-01-15T00:00:00.000Z'),
+      }),
     );
 
-    let thrown: any;
-    try {
-      await handler.execute('u-1', { alias: 'nuevo_alias' });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(ConflictException);
-    expect(thrown.message).toContain('15 días');
-    expect(thrown.message).toContain('2026-01-30');
+    await expect(
+      handler.execute('u-1', { alias: 'nuevo_alias' }),
+    ).rejects.toBeInstanceOf(CodedHttpException);
+    await expect(
+      handler.execute('u-1', { alias: 'nuevo_alias' }),
+    ).rejects.toMatchObject({
+      status: HttpStatus.CONFLICT,
+      response: {
+        statusCode: HttpStatus.CONFLICT,
+        code: ERROR_CODES.CONFLICT,
+        // Byte-idéntico al texto previo (el frontend clasifica por "15 días").
+        message:
+          'Solo podés cambiar tu alias cada 15 días. Podés cambiarlo el 2026-01-30',
+        errors: {
+          code: 'ALIAS_COOLDOWN',
+          nextChangeAllowedAt: '2026-01-30T00:00:00.000Z',
+          nextChangeAllowedDate: '2026-01-30',
+        },
+      },
+    });
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
-  it('409 delete within cooldown', async () => {
+  it('409 delete within cooldown (structured errors)', async () => {
     prismaMock.user.findUnique.mockResolvedValue(
-      userWith({ alias: 'viejo', lastAliasChangedAt: new Date('2026-01-15T00:00:00.000Z') }),
+      userWith({
+        alias: 'viejo',
+        lastAliasChangedAt: new Date('2026-01-15T00:00:00.000Z'),
+      }),
     );
 
-    let thrown: any;
-    try {
-      await handler.execute('u-1', { alias: null });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(ConflictException);
+    await expect(handler.execute('u-1', { alias: null })).rejects.toMatchObject(
+      {
+        status: HttpStatus.CONFLICT,
+        response: {
+          statusCode: HttpStatus.CONFLICT,
+          code: ERROR_CODES.CONFLICT,
+          errors: {
+            code: 'ALIAS_COOLDOWN',
+            nextChangeAllowedAt: '2026-01-30T00:00:00.000Z',
+            nextChangeAllowedDate: '2026-01-30',
+          },
+        },
+      },
+    );
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -139,14 +167,20 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
       userWith({ lastAliasChangedAt: new Date('2026-01-15T00:00:00.000Z') }),
     );
 
-    let thrown: any;
-    try {
-      await handler.execute('u-1', { alias: null });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(ConflictException);
+    await expect(handler.execute('u-1', { alias: null })).rejects.toMatchObject(
+      {
+        status: HttpStatus.CONFLICT,
+        response: {
+          statusCode: HttpStatus.CONFLICT,
+          code: ERROR_CODES.CONFLICT,
+          errors: {
+            code: 'ALIAS_COOLDOWN',
+            nextChangeAllowedAt: '2026-01-30T00:00:00.000Z',
+            nextChangeAllowedDate: '2026-01-30',
+          },
+        },
+      },
+    );
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -168,12 +202,15 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
 
   it('delete outside cooldown is allowed and seals lastAliasChangedAt', async () => {
     prismaMock.user.findUnique.mockResolvedValue(
-      userWith({ alias: 'viejo', lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z') }),
+      userWith({
+        alias: 'viejo',
+        lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }),
     );
     getMyAliasMock.execute.mockResolvedValue({
       alias: null,
       lastAliasChangedAt: NOW,
-      nextChangeAllowedAt: null,
+      nextChangeAllowedAt: new Date('2026-02-04T00:00:00.000Z'),
     });
 
     await handler.execute('u-1', { alias: null });
@@ -186,7 +223,10 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
 
   it('409 D-077 changing alias while pending transfer exists', async () => {
     prismaMock.user.findUnique.mockResolvedValue(
-      userWith({ alias: 'viejo', lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z') }),
+      userWith({
+        alias: 'viejo',
+        lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }),
     );
     prismaMock.vehicleTransfer.findFirst.mockResolvedValue({ id: 'pending-1' });
 
@@ -204,7 +244,10 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
 
   it('409 D-077 deleting alias while pending transfer exists', async () => {
     prismaMock.user.findUnique.mockResolvedValue(
-      userWith({ alias: 'viejo', lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z') }),
+      userWith({
+        alias: 'viejo',
+        lastAliasChangedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }),
     );
     prismaMock.vehicleTransfer.findFirst.mockResolvedValue({ id: 'pending-1' });
 
@@ -225,7 +268,7 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
     getMyAliasMock.execute.mockResolvedValue({
       alias: 'primer_alias',
       lastAliasChangedAt: NOW,
-      nextChangeAllowedAt: null,
+      nextChangeAllowedAt: new Date('2026-02-04T00:00:00.000Z'),
     });
 
     const result = await handler.execute('u-1', { alias: 'primer_alias' });
@@ -246,5 +289,26 @@ describe('UpdateMyAliasHandler — Fase 2 (D-077/D-091) PATCH /users/me/alias', 
 
     expect(thrown).toBeInstanceOf(BadRequestException);
     expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('P2002 from the functional lower index (race) → 409 "Elegí otro", not 500', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(userWith({}));
+    prismaMock.user.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '6.19.3',
+        meta: { target: ['users_alias_lower_idx'] },
+      }),
+    );
+
+    let thrown: any;
+    try {
+      await handler.execute('u-1', { alias: 'nuevo_alias' });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ConflictException);
+    expect(thrown.message).toBe('El alias ya está en uso. Elegí otro.');
   });
 });
