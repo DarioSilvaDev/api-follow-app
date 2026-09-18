@@ -9,7 +9,6 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
-  ArrowLeft,
   ArrowRightLeft,
   Car,
   Download,
@@ -29,7 +28,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
