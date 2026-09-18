@@ -3804,3 +3804,42 @@ Razón
 1. FIX-PII (Backend Engineer) → suite completa verde.
 2. Commit por área (PM, tras revisar diff).
 3. Integración end-to-end (Backend + verificación frontend).
+
+---
+
+# 35. Registro (2026-09-18): Integración end-to-end completada — cierre del milestone consignación
+
+## 1. Resultado del smoke test E2E (API viva, seed real, auth por cookies)
+
+**24/24 pasos HTTP OK + verificación DB read-only.** Usuarios del seed (`Seeder123!`): vendedor `user1@seeder.com`, comprador/persona `user3@seeder.com`, concesionaria Norte (`admin1@seeder.com`, owner).
+
+| Verificación | Resultado |
+|---|---|
+| take-qr (PERSONAL, immediate) | 201, `purpose:"take"`, TTL 3600 |
+| Aceptación take (DEALERSHIP por X-Context) | 201; ownership `company` activa; QR one-shot; VehicleAccess del vendedor creado |
+| Panel exhibición `GET /dealerships/:id/vehicles` | 200, vehículo con ownership `company` + dealership |
+| Detalle e historial (dealer) | 200, **sin email** del propietario (FIX-PII), con `ownership.dealership` y tramo concesionaria |
+| Blindaje A1 (persona acepta take) | **409** "solo puede aceptarse en contexto de concesionaria" |
+| Venta (sale QR → comprador) | 201; detail vendedor post-venta **403**; VehicleAccess del vendedor **revocado en transacción** (M3) |
+| Devolución (return QR → vendedor original) | 201×3; ownership vuelve al vendedor; accesses revocadas |
+| `GET /auth/me` (miembro) | 200 con `dealershipMemberships` |
+| Estabilidad | Backend escuchando en 3001, 0 errores level-50 en log |
+
+Estado: backend corriendo (PID 15764, puerto 3001, logs en `%TEMP%\opencode\hcdv-backend.*.log`).
+
+## 2. Hallazgos fuera de alcance (registrados, NO corregidos en este milestone)
+
+1. **BUG PREEXISTENTE (confirmado, TL Attention)**: `DELETE /api/vehicles/:id` → 500 para todo vehículo con history (ownership/transfers/mileages/QR usan FK RESTRICT y `DeleteVehicleHandler` no los considera "history"). Requiere decisión DB/TL (ADR-005): soft-delete vs cascade para vehículos frescos. **Propuesto para el próximo milestone.**
+2. **Datos de smoke en BD dev**: 6 vehículos SMK0xx quedaron en dev (QR take pendientes expiran solos). Recomendación: purga manual o `db:reset` en dev.
+3. **Conflictos de identidades en seed**: `user1` es a la vez persona y miembro de concesionarias — útil para pruebas, puede confundir QA al simular roles mixtos. Anotado para revisar seed en el futuro.
+
+## 3. Estado del milestone
+
+**COMPLETO**: producto → database → backend → frontend → security → revisión TL → fixes → commits (f66bc25, 0817e4a, 975bdd5, 91feff8) → integración E2E en verde. Sin blockers.
+
+## 4. Candidatos para el próximo milestone (en orden sugerido)
+
+1. **Acceptance de invitación (join dealership)** — decisión de producto diferida (§33 §3.1).
+2. **D-106 CareEpisode en contexto DEALERSHIP** — aprobación Security + implementación (sección 30 §2.4).
+3. **Fix `DELETE /vehicles` (ADR-005)** — bug preexistente confirmado.
+4. **Onboarding post-invitación** (§32 §3).
