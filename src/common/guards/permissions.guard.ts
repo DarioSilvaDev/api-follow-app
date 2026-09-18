@@ -18,6 +18,12 @@ import { CurrentContext } from '../context/interfaces/current-context.interface'
  * Fallback: si no hay contexto, infiere workshopId de request.params.id
  * para compatibilidad con endpoints que aún no usan ContextGuard.
  *
+ * Scopes soportados:
+ * - WORKSHOP: permisos del rol del miembro activo del taller.
+ * - DEALERSHIP (Fase 1a consignación, D-TL-12): permisos del rol del miembro
+ *   activo de la concesionaria.
+ * - Sin scope: system roles (super_admin bypass + rol 'user').
+ *
  * @see ADR-002 -- Active Context
  * @see ADR-003 -- Authorization & Permission Engine
  */
@@ -47,11 +53,15 @@ export class PermissionsGuard implements CanActivate {
 
     // Preferir contexto resuelto por ContextGuard
     const ctx: CurrentContext | undefined = request.context;
-    const workshopId = this.resolveWorkshopId(ctx, request.params);
+    const scope = this.resolveScope(ctx, request.params);
 
-    const cacheKey = workshopId ? `${user.id}:${workshopId}` : user.id;
+    const cacheKey = scope.dealershipId
+      ? `${user.id}:dealership:${scope.dealershipId}`
+      : scope.workshopId
+        ? `${user.id}:${scope.workshopId}`
+        : user.id;
 
-    const effective = await this.loadPermissions(user.id, workshopId, cacheKey);
+    const effective = await this.loadPermissions(user.id, scope, cacheKey);
 
     if (effective.systemRoles.includes('super_admin')) {
       return true;
@@ -69,22 +79,25 @@ export class PermissionsGuard implements CanActivate {
   }
 
   /**
-   * Extrae workshopId del contexto activo, con fallback a path params.
+   * Extrae el scope del contexto activo, con fallback a path params.
    */
-  private resolveWorkshopId(
+  private resolveScope(
     ctx: CurrentContext | undefined,
     params: Record<string, string>,
-  ): string | undefined {
+  ): { dealershipId?: string; workshopId?: string } {
     if (ctx?.type === 'WORKSHOP') {
-      return ctx.workshopId;
+      return { workshopId: ctx.workshopId };
     }
-    // Fallback de compatibilidad
-    return params?.id;
+    if (ctx?.type === 'DEALERSHIP') {
+      return { dealershipId: ctx.dealershipId };
+    }
+    // Fallback de compatibilidad (endpoints legacy sin ContextGuard)
+    return { workshopId: params?.id };
   }
 
   private async loadPermissions(
     userId: string,
-    workshopId: string | undefined,
+    scope: { dealershipId?: string; workshopId?: string },
     cacheKey: string,
   ): Promise<ResolvedPermissions> {
     const cached = this.permissionCache.get(cacheKey);
@@ -112,9 +125,30 @@ export class PermissionsGuard implements CanActivate {
       }
     }
 
-    if (workshopId) {
+    if (scope.dealershipId) {
+      const member = await this.prisma.dealershipMember.findUnique({
+        where: {
+          dealershipId_userId: { dealershipId: scope.dealershipId, userId },
+        },
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: { permission: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (member) {
+        for (const rp of member.role.permissions) {
+          permissions.add(rp.permission.code);
+        }
+      }
+    } else if (scope.workshopId) {
       const member = await this.prisma.workshopMember.findUnique({
-        where: { workshopId_userId: { workshopId, userId } },
+        where: { workshopId_userId: { workshopId: scope.workshopId, userId } },
         include: {
           role: {
             include: {

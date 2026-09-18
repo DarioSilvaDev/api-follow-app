@@ -10,7 +10,11 @@
  * @see ADR-002 -- Active Context
  */
 
-export type ContextType = 'PERSONAL' | 'WORKSHOP' | 'PLATFORM';
+export type ContextType =
+  | 'PERSONAL'
+  | 'WORKSHOP'
+  | 'DEALERSHIP'
+  | 'PLATFORM';
 
 export interface PersonalContext {
   type: 'PERSONAL';
@@ -25,13 +29,27 @@ export interface WorkshopContext {
   roleId: string;
 }
 
+// Fase 1a consignación (D-TL-12): contexto de concesionaria, espejo de
+// WorkshopContext. La concesionaria actúa únicamente mediante un miembro
+// activo (memberId/roleId), nunca como actor autónomo.
+export interface DealershipContext {
+  type: 'DEALERSHIP';
+  userId: string;
+  dealershipId: string;
+  memberId: string;
+  roleId: string;
+}
+
 export interface PlatformContext {
   type: 'PLATFORM';
   userId: string;
 }
 
 export type CurrentContext =
-  PersonalContext | WorkshopContext | PlatformContext;
+  | PersonalContext
+  | WorkshopContext
+  | DealershipContext
+  | PlatformContext;
 
 /**
  * Request extension: el ContextGuard coloca el contexto resuelto en request.context.

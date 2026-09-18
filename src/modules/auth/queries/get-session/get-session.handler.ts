@@ -37,6 +37,17 @@ export class GetSessionHandler {
             role: { select: { id: true, code: true, name: true } },
           },
         },
+        // §28 §3.4: memberships de concesionaria para bootstrap del contexto
+        // DEALERSHIP (DealershipSelector, NAV_ITEMS §29). Shape:
+        // { dealershipId, dealershipName, logoUrl?, role }.
+        dealershipMemberships: {
+          where: { status: 'active', leftAt: null },
+          select: {
+            dealershipId: true,
+            dealership: { select: { id: true, name: true, logoUrl: true } },
+            role: { select: { id: true, code: true, name: true } },
+          },
+        },
       },
     });
 
@@ -46,12 +57,22 @@ export class GetSessionHandler {
 
     const roles = await this.roleService.loadUserRoles(userId, true);
 
-    const { _count, ...userData } = user;
+    const { _count, dealershipMemberships, ...userData } = user;
+
+    // §28 §3.4: shape público `{ dealershipId, dealershipName, logoUrl?, role }`
+    // (el campo anidado `dealership` es interno de Prisma).
+    const memberships = (dealershipMemberships ?? []).map((m) => ({
+      dealershipId: m.dealershipId,
+      dealershipName: m.dealership.name,
+      logoUrl: m.dealership.logoUrl,
+      role: m.role,
+    }));
 
     return {
       ...userData,
       isVehicleOwner: _count.ownerships > 0,
       roles,
+      dealershipMemberships: memberships,
       ...(impersonation?.impersonated
         ? {
             impersonated: true,

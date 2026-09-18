@@ -21,6 +21,9 @@ import { ContextGuard } from '../../../common/context/guards/context.guard';
 import { ActiveContext } from '../../../common/context/decorators/current-context.decorator';
 import type { CurrentContext } from '../../../common/context/interfaces/current-context.interface';
 import { VehicleAccessService } from '../../../common/authorization/vehicle-access.service';
+import { Permissions } from '../../../common/decorators/permissions.decorator';
+import { PermissionsGuard } from '../../../common/guards/permissions.guard';
+import { DealershipOnlyGuard } from '../../../common/guards/dealership-only.guard';
 import { RegisterVehicleDto } from '../dto/register-vehicle.dto';
 import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
 import { TransferVehicleDto } from '../dto/transfer-vehicle.dto';
@@ -57,6 +60,9 @@ import { CancelTransferHandler } from '../commands/cancel-transfer/cancel-transf
 import { GenerateTransferQrCommand } from '../commands/generate-transfer-qr/generate-transfer-qr.command';
 import { GenerateTransferQrHandler } from '../commands/generate-transfer-qr/generate-transfer-qr.handler';
 import { GenerateTransferQrDto } from '../dto/generate-transfer-qr.dto';
+import { GenerateTakeQrDto } from '../dto/generate-take-qr.dto';
+import { GenerateConsignmentQrCommand } from '../commands/generate-consignment-qr/generate-consignment-qr.command';
+import { GenerateConsignmentQrHandler } from '../commands/generate-consignment-qr/generate-consignment-qr.handler';
 import { PreviewTransferQrCommand } from '../commands/preview-transfer-qr/preview-transfer-qr.command';
 import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrCommand } from '../commands/accept-transfer-qr/accept-transfer-qr.command';
@@ -112,6 +118,7 @@ export class VehiclesController {
     private readonly rejectTransferHandler: RejectTransferHandler,
     private readonly cancelTransferHandler: CancelTransferHandler,
     private readonly generateTransferQrHandler: GenerateTransferQrHandler,
+    private readonly generateConsignmentQrHandler: GenerateConsignmentQrHandler,
     private readonly previewTransferQrHandler: PreviewTransferQrHandler,
     private readonly acceptTransferQrHandler: AcceptTransferQrHandler,
     private readonly revokeTransferQrHandler: RevokeTransferQrHandler,
@@ -130,15 +137,18 @@ export class VehiclesController {
 
   /**
    * Strict-mode vehicle access check for /vehicles/* routes.
-   * Ownership / VehicleAccess / super_admin only — no workshop membership.
+   * Ownership / VehicleAccess / DEALERSHIP titular (FIX-B1) / super_admin —
+   * no workshop membership.
    */
   private assertVehicleAccess(
     vehicleId: string,
     user: AuthenticatedUser,
+    context?: CurrentContext,
   ): Promise<void> {
     return this.vehicleAccessService.assertOwnershipOrSharedAccess({
       vehicleId,
       user,
+      context,
     });
   }
 
@@ -222,35 +232,99 @@ export class VehiclesController {
   async acceptTransferQr(
     @Param('token') token: string,
     @Body() dto: AcceptTransferQrDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.acceptTransferQrHandler.execute(
-      new AcceptTransferQrCommand(token, user.id, dto),
+      new AcceptTransferQrCommand(token, user.id, dto, ctx),
     );
   }
 
+  /**
+   * QR de TRANSFERENCIA presencial (Fase 3, D-079..D-083).
+   *
+   * Fase 2b (B2): en contexto DEALERSHIP la concesionaria TITULAR genera el
+   * QR de VENTA (`purpose: sale`; permiso `dealership.vehicle.sell`); en
+   * contexto PERSONAL el owner genera el QR clásico (comportamiento D-079).
+   */
   @Post(':id/qr')
   async generateTransferQr(
     @Param('id') id: string,
     @Body() dto: GenerateTransferQrDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    // D-079: solo el owner puede generar/revocar QR.
+    if (ctx.type === 'DEALERSHIP') {
+      // D-TL-14 / spec §8: la concesionaria (titular) genera QR de venta.
+      return this.generateConsignmentQrHandler.execute(
+        new GenerateConsignmentQrCommand(id, user.id, 'sale', ctx),
+      );
+    }
     await this.assertVehicleOwned(id, user);
     return this.generateTransferQrHandler.execute(
       new GenerateTransferQrCommand(id, user.id, dto),
     );
   }
 
+  /**
+   * Fase 2b (D-104, RB-11): el vendedor (owner persona) genera el QR de TOMA.
+   * Solo contexto PERSONAL; schedule `immediate | pickup` define el TTL.
+   */
+  @Post(':id/consignment/take-qr')
+  async generateTakeQr(
+    @Param('id') id: string,
+    @Body() dto: GenerateTakeQrDto,
+    @ActiveContext() ctx: CurrentContext,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (ctx.type !== 'PERSONAL') {
+      throw new ForbiddenException(
+        'El QR de toma debe generarse desde la cuenta personal del vendedor',
+      );
+    }
+    await this.assertVehicleOwned(id, user);
+    return this.generateConsignmentQrHandler.execute(
+      new GenerateConsignmentQrCommand(id, user.id, 'take', ctx, dto.schedule),
+    );
+  }
+
+  /**
+   * Fase 2b (D-105, RB-11): la concesionaria TITULAR genera el QR inverso de
+   * DEVOLUCIÓN. Guard estricto DEALERSHIP ANTES de PermissionsGuard (A2) y
+   * permiso `dealership.vehicle.return` (RB-10). Sin fallback de params.id.
+   */
+  @Post(':id/consignment/return-qr')
+  @UseGuards(DealershipOnlyGuard, PermissionsGuard)
+  @Permissions('dealership.vehicle.return')
+  async generateReturnQr(
+    @Param('id') id: string,
+    @ActiveContext() ctx: CurrentContext,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.generateConsignmentQrHandler.execute(
+      new GenerateConsignmentQrCommand(id, user.id, 'return', ctx),
+    );
+  }
+
+  /**
+   * Revocación del QR pendiente. Rama DEALERSHIP (B2): la concesionaria
+   * titular revoca sus QRs de consignación (permiso vehicle.sell/return).
+   */
   @Delete(':id/qr')
   async revokeTransferQr(
     @Param('id') id: string,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    if (ctx.type === 'DEALERSHIP') {
+      return this.revokeTransferQrHandler.execute(
+        new RevokeTransferQrCommand(id, user.id, ctx),
+      );
+    }
     // D-079: solo el owner puede revocar.
     await this.assertVehicleOwned(id, user);
     return this.revokeTransferQrHandler.execute(
-      new RevokeTransferQrCommand(id, user.id),
+      new RevokeTransferQrCommand(id, user.id, ctx),
     );
   }
 
@@ -464,9 +538,14 @@ export class VehiclesController {
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
   ) {
-    await this.assertVehicleAccess(id, user);
-    const vehicle = await this.getVehicleHandler.execute(id);
+    // FIX-B1: el contexto DEALERSHIP habilita la lectura de la concesionaria
+    // titular (RB-04) en el detalle del vehículo en exhibición.
+    await this.assertVehicleAccess(id, user, ctx);
+    // FIX-PII (§34): el caller se pasa al handler para aplicar la misma regla
+    // de exposición de emails que el history (owner persona + super_admin).
+    const vehicle = await this.getVehicleHandler.execute(id, user);
     return VehicleResponseDto.from(vehicle);
   }
 
@@ -538,8 +617,12 @@ export class VehiclesController {
   async getHistory(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // FIX-B1: la concesionaria titular puede ver el historial del vehículo en
+    // exhibición (RB-04) — el timeline ya modela los tramos fromDealership/
+    // toDealership (B3) sin PII de empleados (RB-08).
+    await this.assertVehicleAccess(id, user, ctx);
     return this.getVehicleHistoryHandler.execute(id, user);
   }
 }

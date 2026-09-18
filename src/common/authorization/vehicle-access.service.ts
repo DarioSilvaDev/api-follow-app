@@ -1,7 +1,10 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthenticatedUser } from '../types/auth.types';
-import { CurrentContext } from '../context/interfaces/current-context.interface';
+import {
+  CurrentContext,
+  DealershipContext,
+} from '../context/interfaces/current-context.interface';
 import { CodedHttpException } from '../exceptions/coded.exception';
 import { ERROR_CODES } from '../exceptions/error-codes';
 
@@ -87,14 +90,15 @@ export class VehicleAccessService {
 
   /**
    * Strict mode access check (D-024 A1 — /vehicles/* routes):
-   * Steps 1→2→3→5 ONLY (no workshop membership).
+   * Steps 1→2→3→(4 si el contexto es DEALERSHIP)→5 (no workshop membership).
    * Preserves current behavior until D-019.
    */
   async assertOwnershipOrSharedAccess(params: {
     vehicleId: string;
     user: AuthenticatedUser;
+    context?: CurrentContext;
   }): Promise<void> {
-    const { vehicleId, user } = params;
+    const { vehicleId, user, context } = params;
 
     // 1. Vehicle exists?
     const vehicle = await this.prisma.vehicle.findUnique({
@@ -121,6 +125,20 @@ export class VehicleAccessService {
       select: { id: true },
     });
     if (hasAccess) return;
+
+    // 4. DEALERSHIP context (FIX-B1 / RB-04): la concesionaria que es titular
+    // actual del vehículo (ownership activo type 'company', D-TL-9) puede
+    // leer el detalle/historial del vehículo en exhibición a través de
+    // cualquier miembro activo con permiso de lectura (sell/return/history.view).
+    // Esto desbloquea el panel: `GET /vehicles/:id` y `GET /vehicles/:id/history`.
+    if (context?.type === 'DEALERSHIP') {
+      const hasDealershipAccess = await this.assertDealershipVehicleRead(
+        vehicleId,
+        user.id,
+        context,
+      );
+      if (hasDealershipAccess) return;
+    }
 
     // 5. super_admin system role
     const hasSuperAdmin = await this.assertSuperAdmin(user.id);
@@ -166,6 +184,70 @@ export class VehicleAccessService {
     throw new ForbiddenException(
       'Only the vehicle owner can perform this operation',
     );
+  }
+
+  /**
+   * FIX-B1 (RB-04): acceso de lectura de la concesionaria titular.
+   *
+   * Acepta cuando se cumplen AMBAS condiciones:
+   * - el caller es miembro ACTIVO de la dealership actuando en contexto
+   *   DEALERSHIP (membresía + al menos un permiso de lectura del rol:
+   *   `dealership.vehicle.sell` | `dealership.vehicle.return` | `history.view`);
+   * - la dealership es el titular ACTUAL del vehículo (ownership activo,
+   *   endsAt null, type 'company' — D-TL-9 / D-DB-1).
+   *
+   * Un miembro de una dealership NO titular es rechazado (no hay fuga de
+   * vehículos entre concesionarias). super_admin NO se consulta aquí (lo
+   * maneja el caller).
+   */
+  private async assertDealershipVehicleRead(
+    vehicleId: string,
+    userId: string,
+    ctx: DealershipContext,
+  ): Promise<boolean> {
+    // (a) Membresía activa + permiso de lectura del rol
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: { dealershipId: ctx.dealershipId, userId },
+      },
+      select: {
+        id: true,
+        status: true,
+        role: {
+          select: {
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!member || member.status !== 'active') return false;
+
+    // READ_PERMISSIONS: códigos reales del seed (RB-10). owner/admin/seller
+    // incluyen al menos uno de ellos.
+    const READ_PERMISSIONS: readonly string[] = [
+      'dealership.vehicle.sell',
+      'dealership.vehicle.return',
+      'history.view',
+    ];
+    const hasReadPermission = member.role.permissions.some((rp) =>
+      READ_PERMISSIONS.includes(rp.permission.code),
+    );
+    if (!hasReadPermission) return false;
+
+    // (b) La dealership es el titular actual del vehículo
+    const titularOwnership = await this.prisma.vehicleOwnership.findFirst({
+      where: {
+        vehicleId,
+        dealershipId: ctx.dealershipId,
+        endsAt: null,
+        type: 'company',
+      },
+      select: { id: true },
+    });
+
+    return !!titularOwnership;
   }
 
   /**

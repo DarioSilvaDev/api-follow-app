@@ -13,6 +13,9 @@ import { AuthenticatedUser } from '../../types/auth.types';
  * - WORKSHOP without X-Context-Id → 403 INVALID_CONTEXT
  * - WORKSHOP with id but no active membership → 403 INVALID_CONTEXT
  * - WORKSHOP with id and active membership → WORKSHOP context
+ * - DEALERSHIP without X-Context-Id → 403 INVALID_CONTEXT
+ * - DEALERSHIP with id but no active membership → 403 INVALID_CONTEXT
+ * - DEALERSHIP with id and active membership → DEALERSHIP context
  * - PLATFORM without system role (super_admin/admin/support) → 403 INVALID_CONTEXT
  * - PLATFORM with system role → PLATFORM context
  * - USER system role does NOT qualify for PLATFORM
@@ -22,6 +25,7 @@ describe('ContextResolver', () => {
   let resolver: ContextResolver;
   let prismaMock: {
     workshopMember: { findUnique: jest.Mock };
+    dealershipMember: { findUnique: jest.Mock };
     systemRoleAssignment: { findFirst: jest.Mock };
   };
 
@@ -39,6 +43,7 @@ describe('ContextResolver', () => {
   beforeEach(() => {
     prismaMock = {
       workshopMember: { findUnique: jest.fn() },
+      dealershipMember: { findUnique: jest.fn() },
       systemRoleAssignment: { findFirst: jest.fn() },
     };
     resolver = new ContextResolver(prismaMock as any);
@@ -144,6 +149,67 @@ describe('ContextResolver', () => {
       userId: 'user-1',
       workshopId: 'workshop-1',
       memberId: 'member-1',
+      roleId: 'role-1',
+    });
+  });
+
+  // ─── DEALERSHIP (Fase 1a consignación, D-TL-12) ───
+  it('should throw InvalidContextException when DEALERSHIP has no X-Context-Id', async () => {
+    await expect(
+      resolver.resolve(mockUser, makeRequest({ 'x-context-type': 'DEALERSHIP' })),
+    ).rejects.toThrow(InvalidContextException);
+  });
+
+  it('should throw InvalidContextException when DEALERSHIP id has no active membership', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+    await expect(
+      resolver.resolve(
+        mockUser,
+        makeRequest({
+          'x-context-type': 'DEALERSHIP',
+          'x-context-id': 'dealership-1',
+        }),
+      ),
+    ).rejects.toThrow(InvalidContextException);
+  });
+
+  it('should throw InvalidContextException when dealership membership is inactive', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      id: 'dm-1',
+      status: 'inactive',
+      roleId: 'role-1',
+      role: { code: 'seller', name: 'Seller' },
+    });
+    await expect(
+      resolver.resolve(
+        mockUser,
+        makeRequest({
+          'x-context-type': 'DEALERSHIP',
+          'x-context-id': 'dealership-1',
+        }),
+      ),
+    ).rejects.toThrow(InvalidContextException);
+  });
+
+  it('should return DEALERSHIP context when membership is active', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      id: 'dm-1',
+      status: 'active',
+      roleId: 'role-1',
+      role: { code: 'seller', name: 'Seller' },
+    });
+    const result = await resolver.resolve(
+      mockUser,
+      makeRequest({
+        'x-context-type': 'DEALERSHIP',
+        'x-context-id': 'dealership-1',
+      }),
+    );
+    expect(result).toEqual({
+      type: 'DEALERSHIP',
+      userId: 'user-1',
+      dealershipId: 'dealership-1',
+      memberId: 'dm-1',
       roleId: 'role-1',
     });
   });

@@ -52,6 +52,11 @@ export class GetVehicleHistoryHandler {
                 alias: true,
               },
             },
+            // B3 / D-107 (RB-08): tramo concesionaria. La dealership es
+            // metadata organizacional (sin PII de empleados) y el frontend
+            // la renderiza como titular intermedio en el timeline.
+            fromDealership: { select: { id: true, name: true, logoUrl: true } },
+            toDealership: { select: { id: true, name: true, logoUrl: true } },
           },
           orderBy: { createdAt: 'desc' },
         }),
@@ -63,6 +68,8 @@ export class GetVehicleHistoryHandler {
           where: { vehicleId },
           include: {
             user: { select: ownershipUserSelect },
+            // B3 / D-107: titular organizacional (dealership intermedia) sin PII.
+            dealership: { select: { id: true, name: true, logoUrl: true } },
           },
           orderBy: { startsAt: 'desc' },
         }),

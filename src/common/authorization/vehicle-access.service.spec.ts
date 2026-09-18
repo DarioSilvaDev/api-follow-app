@@ -33,6 +33,7 @@ describe('VehicleAccessService', () => {
     vehicleOwnership: { findFirst: jest.Mock };
     vehicleAccess: { findFirst: jest.Mock };
     workshopMember: { findUnique: jest.Mock };
+    dealershipMember: { findUnique: jest.Mock };
     systemRole: { findUnique: jest.Mock };
     systemRoleAssignment: { findFirst: jest.Mock };
     $queryRawUnsafe: jest.Mock;
@@ -62,6 +63,7 @@ describe('VehicleAccessService', () => {
       vehicleOwnership: { findFirst: jest.fn() },
       vehicleAccess: { findFirst: jest.fn() },
       workshopMember: { findUnique: jest.fn() },
+      dealershipMember: { findUnique: jest.fn() },
       systemRole: { findUnique: jest.fn() },
       systemRoleAssignment: { findFirst: jest.fn() },
       $queryRawUnsafe: jest.fn(),
@@ -307,6 +309,136 @@ describe('VehicleAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
       // workshopMember.findUnique should NOT have been called in strict mode
       expect(prismaMock.workshopMember.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DEALERSHIP read access — FIX-B1 (RB-04)', () => {
+    const dealershipCtx: CurrentContext = {
+      type: 'DEALERSHIP',
+      userId: 'user-1',
+      dealershipId: 'dealership-1',
+      memberId: 'member-1',
+      roleId: 'role-1',
+    };
+
+    const memberWithReadPermission = {
+      id: 'member-1',
+      status: 'active',
+      role: {
+        permissions: [{ permission: { code: 'history.view' } }],
+      },
+    };
+
+    const memberWithoutReadPermission = {
+      id: 'member-1',
+      status: 'active',
+      role: {
+        permissions: [{ permission: { code: 'dealership.vehicle.take' } }],
+      },
+    };
+
+    it('allows an active member with read permission of the TITULAR dealership', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      // 1er findFirst (ownership persona) → null; 2do (titularidad dealership) → activo
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'own-dealer' });
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(
+        memberWithReadPermission,
+      );
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejects a member of a dealership that is NOT the current titular owner (no leak across dealerships)', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null) // persona
+        .mockResolvedValueOnce(null); // dealership NO titular
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(
+        memberWithReadPermission,
+      );
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects an active member whose role lacks read permissions (e.g. only take)', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(
+        memberWithoutReadPermission,
+      );
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-member caller even in DEALERSHIP context', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('keeps the persona branch first: a personal owner is granted BEFORE the dealership check', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+        id: 'own-persona',
+      });
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).resolves.toBeUndefined();
+      expect(
+        prismaMock.dealershipMember.findUnique,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('rejects a person WITHOUT access in DEALERSHIP context (no ownership, no access, no membership)', async () => {
+      prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      prismaMock.vehicleAccess.findFirst.mockResolvedValue(null);
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+      await expect(
+        service.assertOwnershipOrSharedAccess({
+          vehicleId: 'v1',
+          user: mockUser,
+          context: dealershipCtx,
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

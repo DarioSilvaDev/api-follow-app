@@ -9,6 +9,7 @@ import { VehicleAccessService } from '../../../common/authorization/vehicle-acce
 import { PhotoResponseDto } from '../dto/photo-response.dto';
 import { DocumentResponseDto } from '../dto/document-response.dto';
 import { AuthenticatedUser } from '../../../common/types/auth.types';
+import { CurrentContext } from '../../../common/context/interfaces/current-context.interface';
 import { UploadPhotoHandler } from '../commands/upload-photo/upload-photo.handler';
 import { SetPrimaryPhotoHandler } from '../commands/set-primary-photo/set-primary-photo.handler';
 import { DeletePhotoHandler } from '../commands/delete-photo/delete-photo.handler';
@@ -34,6 +35,7 @@ import { AcceptTransferHandler } from '../commands/accept-transfer/accept-transf
 import { RejectTransferHandler } from '../commands/reject-transfer/reject-transfer.handler';
 import { CancelTransferHandler } from '../commands/cancel-transfer/cancel-transfer.handler';
 import { GenerateTransferQrHandler } from '../commands/generate-transfer-qr/generate-transfer-qr.handler';
+import { GenerateConsignmentQrHandler } from '../commands/generate-consignment-qr/generate-consignment-qr.handler';
 import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrHandler } from '../commands/accept-transfer-qr/accept-transfer-qr.handler';
 import { RevokeTransferQrHandler } from '../commands/revoke-transfer-qr/revoke-transfer-qr.handler';
@@ -105,6 +107,20 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
     email: 'superadmin@test.com',
   };
 
+  // FIX-B1: contextos activos para el forwarding de lectura DEALERSHIP.
+  const personalCtx: CurrentContext = {
+    type: 'PERSONAL',
+    userId: 'owner-1',
+  };
+
+  const dealershipCtx: CurrentContext = {
+    type: 'DEALERSHIP',
+    userId: 'dealer-user-1',
+    dealershipId: 'dealership-1',
+    memberId: 'member-1',
+    roleId: 'role-1',
+  };
+
   const vehicleId = 'v-1';
   const photoId = 'p-1';
   const docId = 'd-1';
@@ -133,6 +149,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       stubHandler as unknown as RejectTransferHandler,
       stubHandler as unknown as CancelTransferHandler,
       stubHandler as unknown as GenerateTransferQrHandler,
+      stubHandler as unknown as GenerateConsignmentQrHandler,
       stubHandler as unknown as PreviewTransferQrHandler,
       stubHandler as unknown as AcceptTransferQrHandler,
       stubHandler as unknown as RevokeTransferQrHandler,
@@ -317,14 +334,15 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       updatedAt: new Date('2025-06-01'),
     };
 
-    it('GET :id (findOne) uses assertOwnershipOrSharedAccess', async () => {
+    it('GET :id (findOne) uses assertOwnershipOrSharedAccess with the active context', async () => {
       stubHandler.execute.mockResolvedValue(vehicleRecord);
-      await controller.findOne(vehicleId, sharedUser);
+      await controller.findOne(vehicleId, sharedUser, personalCtx);
       expect(
         vehicleAccessService.assertOwnershipOrSharedAccess,
       ).toHaveBeenCalledWith({
         vehicleId,
         user: sharedUser,
+        context: personalCtx,
       });
     });
 
@@ -352,14 +370,43 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       expect(result).toEqual([expect.objectContaining({ id: docId })]);
     });
 
-    it('GET :id/history (getHistory) uses assertOwnershipOrSharedAccess', async () => {
+    it('GET :id/history (getHistory) uses assertOwnershipOrSharedAccess with the active context', async () => {
       stubHandler.execute.mockResolvedValue({ history: [] });
-      await controller.getHistory(vehicleId, sharedUser);
+      await controller.getHistory(vehicleId, sharedUser, personalCtx);
       expect(
         vehicleAccessService.assertOwnershipOrSharedAccess,
       ).toHaveBeenCalledWith({
         vehicleId,
         user: sharedUser,
+        context: personalCtx,
+      });
+    });
+
+    // ═══════════════════════════════════════════════════════════
+    // FIX-B1: forwarding del contexto DEALERSHIP (RB-04) en lectura
+    // ═══════════════════════════════════════════════════════════
+
+    it('GET :id (findOne) forwards DEALERSHIP context to assertOwnershipOrSharedAccess', async () => {
+      stubHandler.execute.mockResolvedValue(vehicleRecord);
+      await controller.findOne(vehicleId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
+      });
+    });
+
+    it('GET :id/history (getHistory) forwards DEALERSHIP context to assertOwnershipOrSharedAccess', async () => {
+      stubHandler.execute.mockResolvedValue({ history: [] });
+      await controller.getHistory(vehicleId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
       });
     });
   });

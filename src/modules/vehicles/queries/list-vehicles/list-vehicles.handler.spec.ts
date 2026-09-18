@@ -91,7 +91,20 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
 
     expect(prismaMock.vehicle.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { ownerships: { some: { userId: 'user-1', endsAt: null } } },
+        // M5 (§30 §3): scope = ownership activo O VehicleAccess vigente.
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { ownerships: { some: { userId: 'user-1', endsAt: null } } },
+            expect.objectContaining({
+              accesses: {
+                some: expect.objectContaining({
+                  userId: 'user-1',
+                  revokedAt: null,
+                }),
+              },
+            }),
+          ]),
+        }),
       }),
     );
 
@@ -167,10 +180,12 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
 
       expect(prismaMock.vehicle.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            ownerships: { some: { userId: 'user-1', endsAt: null } },
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { ownerships: { some: { userId: 'user-1', endsAt: null } } },
+            ]),
             licensePlate: { contains: 'SMK', mode: 'insensitive' },
-          },
+          }),
         }),
       );
     });
@@ -211,9 +226,10 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
         await handler.execute({ userId: 'user-1', q });
 
         const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
-        expect(arg.where).toEqual({
+        expect(arg.where.OR).toContainEqual({
           ownerships: { some: { userId: 'user-1', endsAt: null } },
         });
+        expect(arg.where.OR).toHaveLength(2);
         expect(arg.where).not.toHaveProperty('licensePlate');
       }
     });
@@ -227,9 +243,20 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
       ).resolves.toBeDefined();
 
       const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
-      expect(arg.where).toEqual({
+      expect(arg.where.OR).toContainEqual({
         ownerships: { some: { userId: 'user-1', endsAt: null } },
       });
+      expect(arg.where.OR).toHaveLength(2);
+      expect(arg.where.OR).toContainEqual(
+        expect.objectContaining({
+          accesses: {
+            some: expect.objectContaining({
+              userId: 'user-1',
+              revokedAt: null,
+            }),
+          },
+        }),
+      );
       expect(arg.where).not.toHaveProperty('licensePlate');
     });
 
@@ -246,6 +273,25 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
           where: expect.objectContaining({
             licensePlate: { contains: 'ZZZ', mode: 'insensitive' },
           }),
+        }),
+      );
+    });
+  });
+
+  describe('M5 — VehicleAccess vigente (consignación)', () => {
+    it('incluye el scope de accesses sin revocar y con expiración activa', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
+      prismaMock.vehicle.count.mockResolvedValue(1);
+
+      await handler.execute({ userId: 'seller-1' });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      const accessScope = arg.where.OR.find((o: any) => o.accesses);
+      expect(accessScope.accesses.some).toEqual(
+        expect.objectContaining({
+          userId: 'seller-1',
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }],
         }),
       );
     });

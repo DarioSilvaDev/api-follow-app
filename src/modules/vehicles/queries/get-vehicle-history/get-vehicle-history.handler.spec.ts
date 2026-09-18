@@ -383,4 +383,29 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
     expect(result.careEpisodes.map((e: any) => e.id)).toContain('ep-open');
     expect(result.careEpisodes.map((e: any) => e.id)).toContain('ep-delivered');
   });
+
+  it('B3/D-107: ownerships y transfers incluyen la dealership (sin PII)', async () => {
+    prismaMock.vehicle.findUnique.mockResolvedValue({ id: 'v1' });
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+    prismaMock.systemRole.findUnique.mockResolvedValue(null);
+    prismaMock.vehicleOwnership.findMany.mockResolvedValue([]);
+    prismaMock.vehicleTransfer.findMany.mockResolvedValue([]);
+    prismaMock.vehicleMileage.findMany.mockResolvedValue([]);
+    prismaMock.careEpisode.findMany.mockResolvedValue([]);
+
+    await handler.execute('v1');
+
+    const ownershipArg = prismaMock.vehicleOwnership.findMany.mock.calls[0][0];
+    expect(ownershipArg.include.dealership).toEqual({
+      select: { id: true, name: true, logoUrl: true },
+    });
+
+    const transferArg = prismaMock.vehicleTransfer.findMany.mock.calls[0][0];
+    expect(transferArg.include.fromDealership).toEqual({
+      select: { id: true, name: true, logoUrl: true },
+    });
+    expect(transferArg.include.toDealership).toEqual({
+      select: { id: true, name: true, logoUrl: true },
+    });
+  });
 });

@@ -9,6 +9,15 @@ import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleTransferQrExpiredEvent } from '../../events/vehicle-transfer-qr-expired.event';
 import { PreviewTransferQrCommand } from './preview-transfer-qr.command';
 
+/**
+ * PreviewTransferQrHandler — preview del QR de transferencia.
+ *
+ * Fase 2b (M1 / resolución PM §28 §3.3): el response extiende con `purpose` +
+ * `fromDealership` (sin PII) y SUPRIME `fromUser` cuando `createdByDealershipId`
+ * no es null (RB-08: nunca exponer PII de empleados de la concesionaria).
+ * `purpose` respeta el contrato frontend `TransferQrPurpose`: `"transfer"`
+ * como default cuando la columna es NULL (flujo clásico persona→persona).
+ */
 @Injectable()
 export class PreviewTransferQrHandler {
   constructor(
@@ -29,6 +38,9 @@ export class PreviewTransferQrHandler {
         },
         createdBy: {
           select: { id: true, firstName: true, lastName: true, alias: true },
+        },
+        createdByDealership: {
+          select: { id: true, name: true, logoUrl: true },
         },
       },
     });
@@ -74,6 +86,12 @@ export class PreviewTransferQrHandler {
       ? `${qr.vehicle.version.model.brand.name} ${qr.vehicle.version.model.name} ${qr.vehicle.version.name}`
       : qr.vehicle.licensePlate;
 
+    // M1 (RB-08): cuando el origen es organizacional NO se expone fromUser
+    // (PII de empleados); el emisor pasa a ser fromDealership (sin PII).
+    const fromDealership = qr.createdByDealershipId
+      ? qr.createdByDealership
+      : null;
+
     return {
       vehicle: {
         id: qr.vehicle.id,
@@ -85,7 +103,15 @@ export class PreviewTransferQrHandler {
         modelYear: qr.vehicle.modelYear ?? null,
         color: qr.vehicle.color ?? null,
       },
-      fromUser: qr.createdBy,
+      fromUser: fromDealership ? null : qr.createdBy,
+      fromDealership: fromDealership
+        ? {
+            id: fromDealership.id,
+            name: fromDealership.name,
+            logoUrl: fromDealership.logoUrl,
+          }
+        : null,
+      purpose: qr.purpose ?? 'transfer',
       source: qr.source,
       expiresAt: qr.expiresAt.toISOString(),
       secondsRemaining: Math.max(

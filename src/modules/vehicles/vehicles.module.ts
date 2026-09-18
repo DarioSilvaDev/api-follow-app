@@ -21,8 +21,10 @@ import { TransferRequestEmailListener } from './listeners/transfer-request-email
 import { TransferAcceptedEmailListener } from './listeners/transfer-accepted-email.listener';
 import { TransferQrExpiredEmailListener } from './listeners/transfer-qr-expired-email.listener';
 import { GenerateTransferQrHandler } from './commands/generate-transfer-qr/generate-transfer-qr.handler';
+import { GenerateConsignmentQrHandler } from './commands/generate-consignment-qr/generate-consignment-qr.handler';
 import { PreviewTransferQrHandler } from './commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrHandler } from './commands/accept-transfer-qr/accept-transfer-qr.handler';
+import { AcceptConsignmentTakeQrHandler } from './commands/accept-consignment-take/accept-consignment-take.handler';
 import { RevokeTransferQrHandler } from './commands/revoke-transfer-qr/revoke-transfer-qr.handler';
 import { QrExpirySweeperService } from './services/qr-expiry-sweeper.service';
 import { UploadPhotoHandler } from './commands/upload-photo/upload-photo.handler';
@@ -68,6 +70,8 @@ import { GetDocumentHandler } from './queries/get-document/get-document.handler'
     TransferAcceptedEmailListener,
     TransferQrExpiredEmailListener,
     GenerateTransferQrHandler,
+    GenerateConsignmentQrHandler,
+    AcceptConsignmentTakeQrHandler,
     PreviewTransferQrHandler,
     AcceptTransferQrHandler,
     RevokeTransferQrHandler,

@@ -6,6 +6,7 @@ import {
   ContextType,
   PersonalContext,
   WorkshopContext,
+  DealershipContext,
   PlatformContext,
 } from '../interfaces/current-context.interface';
 import { InvalidContextException } from '../../exceptions/coded.exception';
@@ -21,6 +22,8 @@ import { InvalidContextException } from '../../exceptions/coded.exception';
  * - PERSONAL with X-Context-Id → 403 INVALID_CONTEXT
  * - WORKSHOP without X-Context-Id → 403 INVALID_CONTEXT
  * - WORKSHOP with id but no active membership → 403 INVALID_CONTEXT
+ * - DEALERSHIP without X-Context-Id → 403 INVALID_CONTEXT
+ * - DEALERSHIP with id but no active membership → 403 INVALID_CONTEXT
  * - PLATFORM without system role assignment of type super_admin/admin/support → 403 INVALID_CONTEXT
  *
  * @see D-020 — ContextResolver sin fallback
@@ -66,6 +69,13 @@ export class ContextResolver {
         return this.resolveWorkshopContext(user.id, headerId);
       }
 
+      case 'DEALERSHIP': {
+        if (!headerId) {
+          throw new InvalidContextException();
+        }
+        return this.resolveDealershipContext(user.id, headerId);
+      }
+
       case 'PLATFORM': {
         return this.resolvePlatformContext(user.id);
       }
@@ -97,6 +107,32 @@ export class ContextResolver {
       type: 'WORKSHOP',
       userId,
       workshopId,
+      memberId: member.id,
+      roleId: member.roleId,
+    };
+  }
+
+  private async resolveDealershipContext(
+    userId: string,
+    dealershipId: string,
+  ): Promise<DealershipContext> {
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: { dealershipId, userId },
+      },
+      include: {
+        role: true,
+      },
+    });
+
+    if (!member || member.status !== 'active') {
+      throw new InvalidContextException();
+    }
+
+    return {
+      type: 'DEALERSHIP',
+      userId,
+      dealershipId,
       memberId: member.id,
       roleId: member.roleId,
     };

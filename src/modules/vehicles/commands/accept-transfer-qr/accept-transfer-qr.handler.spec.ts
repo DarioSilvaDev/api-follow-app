@@ -7,11 +7,21 @@ import {
 } from '@nestjs/common';
 import { AcceptTransferQrHandler } from './accept-transfer-qr.handler';
 import { AcceptTransferQrCommand } from './accept-transfer-qr.command';
+import { AcceptConsignmentTakeQrCommand } from '../accept-consignment-take/accept-consignment-take.command';
 
 describe('AcceptTransferQrHandler', () => {
   let handler: AcceptTransferQrHandler;
   let prismaMock: any;
   let eventEmitterMock: { emit: jest.Mock };
+  let acceptConsignmentTakeQrMock: { execute: jest.Mock };
+
+  const dealershipCtx = {
+    type: 'DEALERSHIP',
+    dealershipId: 'dealership-1',
+    userId: 'user-member',
+    memberId: 'member-1',
+    roleId: 'role-1',
+  } as any;
 
   const pendingQr = {
     id: 'qr-1',
@@ -40,10 +50,17 @@ describe('AcceptTransferQrHandler', () => {
         update: jest.fn(),
         create: jest.fn(),
       },
+      dealershipMember: { findUnique: jest.fn() },
+      vehicleAccess: { updateMany: jest.fn() },
       $transaction: jest.fn((cb) => cb(prismaMock)),
     };
     eventEmitterMock = { emit: jest.fn() };
-    handler = new AcceptTransferQrHandler(prismaMock, eventEmitterMock as any);
+    acceptConsignmentTakeQrMock = { execute: jest.fn() };
+    handler = new AcceptTransferQrHandler(
+      prismaMock,
+      eventEmitterMock as any,
+      acceptConsignmentTakeQrMock as any,
+    );
   });
 
   it('D-081: completes the transfer in one transaction (ownership closed+created, events, QR consumed)', async () => {
@@ -253,5 +270,265 @@ describe('AcceptTransferQrHandler', () => {
     }
 
     expect(thrown).toBeInstanceOf(NotFoundException);
+  });
+
+  describe('Fase 2b — tramos de consignación', () => {
+    it('A1: un QR de TOMA en contexto persona → 409 sin delegar', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'take',
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(cmd);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ConflictException);
+      expect(acceptConsignmentTakeQrMock.execute).not.toHaveBeenCalled();
+    });
+
+    it('A1: QR de TOMA en contexto DEALERSHIP → delega al take handler', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'take',
+      });
+      acceptConsignmentTakeQrMock.execute.mockResolvedValue({
+        transferId: 'transfer-take',
+        status: 'completed',
+      });
+
+      const takeCmd = new AcceptTransferQrCommand(
+        'token-1',
+        'user-member',
+        { confirmation: true },
+        dealershipCtx,
+      );
+
+      const result = await handler.execute(takeCmd);
+
+      expect(acceptConsignmentTakeQrMock.execute).toHaveBeenCalledTimes(1);
+      const delegated = acceptConsignmentTakeQrMock.execute.mock.calls[0][0];
+      expect(delegated).toBeInstanceOf(AcceptConsignmentTakeQrCommand);
+      expect(delegated).toMatchObject({
+        userId: 'user-member',
+        ctx: dealershipCtx,
+      });
+      expect(result).toEqual({
+        transferId: 'transfer-take',
+        status: 'completed',
+      });
+    });
+
+    it('A1: QR de TOMA en contexto DEALERSHIP sin confirmation → 400', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'take',
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(
+          new AcceptTransferQrCommand(
+            'token-1',
+            'user-member',
+            { confirmation: false },
+            dealershipCtx,
+          ),
+        );
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(BadRequestException);
+      expect(acceptConsignmentTakeQrMock.execute).not.toHaveBeenCalled();
+    });
+
+    it('D-TL-16: venta — miembro activo de la dealership no puede aceptar', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'sale',
+        createdByDealershipId: 'dealership-1',
+      });
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status: 'active',
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(cmd);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ConflictException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('D-TL-16: venta — comprador persona acepta; tramo dealership + evento dedicado + revoca acceso vendedor', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'sale',
+        createdByDealershipId: 'dealership-1',
+      });
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+        id: 'own-1',
+        vehicleId: 'vehicle-1',
+        dealershipId: 'dealership-1',
+      });
+      // 1) chequeo pending email; 2) take transfer (M3, dentro del tx).
+      prismaMock.vehicleTransfer.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ fromUserId: 'seller-1' });
+      prismaMock.vehicleTransferQr.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.vehicleAccess.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.vehicleTransfer.create.mockResolvedValue({
+        id: 'transfer-sale',
+        status: 'completed',
+      });
+
+      const result = await handler.execute(cmd);
+
+      // El tramo modelo origen = dealership (sin fromUser persona).
+      expect(prismaMock.vehicleTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fromUserId: null,
+            fromDealershipId: 'dealership-1',
+            toUserId: 'user-buyer',
+            status: 'completed',
+          }),
+        }),
+      );
+      // M3: revoca el VehicleAccess del seller detectado en el take transfer.
+      expect(prismaMock.vehicleAccess.updateMany).toHaveBeenCalledWith({
+        where: {
+          vehicleId: 'vehicle-1',
+          userId: 'seller-1',
+          revokedAt: null,
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+      // M4: evento dedicado, NO el clásico persona→persona.
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        'vehicle.consignment.sold',
+        expect.any(Object),
+      );
+      expect(eventEmitterMock.emit).not.toHaveBeenCalledWith(
+        'vehicle.transfer.accepted',
+        expect.any(Object),
+      );
+      expect(result).toEqual({
+        transferId: 'transfer-sale',
+        status: 'completed',
+      });
+    });
+
+    it('venta: 409 si la dealership ya no es la titular actual', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'sale',
+        createdByDealershipId: 'dealership-1',
+      });
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+        id: 'own-1',
+        userId: 'other-user',
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(cmd);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ConflictException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('D-TL-16: devolución — solo el vendedor original acepta (403)', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'return',
+        createdByDealershipId: 'dealership-1',
+      });
+      // resolveOriginalSeller: el vendedor original es otro usuario.
+      prismaMock.vehicleTransfer.findFirst.mockResolvedValue({
+        fromUserId: 'seller-original',
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(cmd);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('D-TL-16: devolución — vendedor original recupera; evento dedicado + revoca su acceso', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'return',
+        createdByDealershipId: 'dealership-1',
+      });
+      // 1) resolveOriginalSeller; 2) chequeo pending email.
+      prismaMock.vehicleTransfer.findFirst
+        .mockResolvedValueOnce({ fromUserId: 'seller-original' })
+        .mockResolvedValueOnce(null);
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+        id: 'own-1',
+        vehicleId: 'vehicle-1',
+        dealershipId: 'dealership-1',
+      });
+      prismaMock.vehicleTransferQr.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.vehicleAccess.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.vehicleTransfer.create.mockResolvedValue({
+        id: 'transfer-return',
+        status: 'completed',
+      });
+
+      const returnCmd = new AcceptTransferQrCommand(
+        'token-1',
+        'seller-original',
+        { confirmation: true },
+      );
+
+      const result = await handler.execute(returnCmd);
+
+      expect(prismaMock.vehicleTransfer.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            fromUserId: null,
+            fromDealershipId: 'dealership-1',
+            toUserId: 'seller-original',
+          }),
+        }),
+      );
+      // M3: revoca el VehicleAccess del vendedor (ya recuperó la titularidad).
+      expect(prismaMock.vehicleAccess.updateMany).toHaveBeenCalledWith({
+        where: {
+          vehicleId: 'vehicle-1',
+          userId: 'seller-original',
+          revokedAt: null,
+        },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+        'vehicle.consignment.returned',
+        expect.any(Object),
+      );
+      expect(eventEmitterMock.emit).not.toHaveBeenCalledWith(
+        'vehicle.transfer.accepted',
+        expect.any(Object),
+      );
+      expect(result.status).toBe('completed');
+    });
   });
 });

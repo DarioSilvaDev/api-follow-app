@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { WorkshopsModule } from './modules/workshops/workshops.module';
+import { DealershipsModule } from './modules/dealerships/dealerships.module';
 import { MaintenanceModule } from './modules/maintenance/maintenance.module';
 import { CareEpisodesModule } from './modules/care-episodes/care-episodes.module';
 import { AdministrationModule } from './modules/administration/administration.module';
@@ -41,6 +42,7 @@ import { envs } from './config/envs';
     UsersModule,
     VehiclesModule,
     WorkshopsModule,
+    DealershipsModule,
     MaintenanceModule,
     CareEpisodesModule,
     AdministrationModule,

@@ -81,8 +81,8 @@ export class ListVerificationsHandler {
         manufactureYear: episode.vehicle.manufactureYear,
       },
       owner: {
-        firstName: episode.vehicle.ownerships[0]?.user.firstName ?? null,
-        lastName: episode.vehicle.ownerships[0]?.user.lastName ?? null,
+        firstName: episode.vehicle.ownerships[0]?.user?.firstName ?? null,
+        lastName: episode.vehicle.ownerships[0]?.user?.lastName ?? null,
       },
     }));
   }

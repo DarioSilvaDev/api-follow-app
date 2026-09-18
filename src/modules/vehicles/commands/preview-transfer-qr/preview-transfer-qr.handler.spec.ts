@@ -161,4 +161,41 @@ describe('PreviewTransferQrHandler', () => {
 
     expect(thrown).toBeInstanceOf(ConflictException);
   });
+
+  describe('Fase 2b — M1 (purpose + fromDealership, RB-08)', () => {
+    it('QR clásico (sin purpose) → purpose "transfer", fromDealership null, fromUser visible', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue(pendingQr);
+
+      const result = await handler.execute(cmd);
+
+      expect(result.purpose).toBe('transfer');
+      expect(result.fromDealership).toBeNull();
+      expect(result.fromUser).toEqual(
+        expect.objectContaining({ alias: 'jperez' }),
+      );
+    });
+
+    it('QR de consignación (origen dealership) → purpose + fromDealership, fromUser oculto', async () => {
+      prismaMock.vehicleTransferQr.findUnique.mockResolvedValue({
+        ...pendingQr,
+        purpose: 'sale',
+        createdByDealershipId: 'dealership-1',
+        createdByDealership: {
+          id: 'dealership-1',
+          name: 'AutoMax',
+          logoUrl: 'https://cdn.example/logo.png',
+        },
+      });
+
+      const result = await handler.execute(cmd);
+
+      expect(result.purpose).toBe('sale');
+      expect(result.fromUser).toBeNull();
+      expect(result.fromDealership).toEqual({
+        id: 'dealership-1',
+        name: 'AutoMax',
+        logoUrl: 'https://cdn.example/logo.png',
+      });
+    });
+  });
 });

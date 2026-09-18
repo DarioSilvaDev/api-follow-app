@@ -31,9 +31,25 @@ export class ListVehiclesHandler {
     const rawQ = typeof query.q === 'string' ? query.q : '';
     const q = rawQ.trim().length >= 2 ? rawQ.trim().slice(0, 20) : '';
 
+    // M5 (D-107, §30 §3 / §29): el listado incluye ownership activo **O**
+    // VehicleAccess vigente, siempre filtrado por userId del caller. Esto
+    // permite que el vendedor durante la exhibición vea su vehículo
+    // "en consignación" (banner D-107) sin ser ya titular.
+    const now = new Date();
     const where: Prisma.VehicleWhereInput | undefined = query.userId
       ? {
-          ownerships: { some: { userId: query.userId, endsAt: null } },
+          OR: [
+            { ownerships: { some: { userId: query.userId, endsAt: null } } },
+            {
+              accesses: {
+                some: {
+                  userId: query.userId,
+                  revokedAt: null,
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                },
+              },
+            },
+          ],
           ...(q ? { licensePlate: { contains: q, mode: 'insensitive' } } : {}),
         }
       : undefined;
