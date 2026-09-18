@@ -173,6 +173,10 @@ model User {
 
   workshopInvitations WorkshopInvitation[]
 
+  dealershipMemberships DealershipMember[]
+
+  dealershipInvitations DealershipInvitation[]
+
   appointments Appointment[]
   workOrders WorkOrder[]
   estimates Estimate[]
@@ -597,6 +601,8 @@ model Permission {
 
   workshopRolePermissions WorkshopRolePermission[]
 
+  dealershipRolePermissions DealershipRolePermission[]
+
   vehicleAccessPermissions VehicleAccessPermission[]
 
   vehicleSharePermissions VehicleSharePermission[]
@@ -623,6 +629,167 @@ model WorkshopRolePermission {
   @@unique([roleId, permissionId])
   @@index([permissionId])
   @@map("workshop_role_permissions")
+}
+
+// Fase 1a consignación (D-102, D-TL-8): Concesionaria como organización.
+// Espejo del patrón Workshop (identidad + roles + miembros + invitaciones).
+// NO reutiliza tablas workshop (D-102): son actores distintos.
+// Sucursales/specialties quedan fuera del MVP (D-TL-8, D-103).
+model Dealership {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(150)
+
+  legalName String? @map("legal_name") @db.VarChar(200)
+
+  taxId String? @unique @map("tax_id") @db.VarChar(30)
+
+  email String? @db.VarChar(255)
+
+  phone String? @db.VarChar(30)
+
+  website String?
+
+  logoUrl String? @map("logo_url")
+
+  description String?
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deletedAt DateTime? @map("deleted_at")
+
+  members DealershipMember[]
+  roles DealershipRole[]
+  invitations DealershipInvitation[]
+
+  // Titular organizacional (D-TL-9 / D-TL-10 / D-DB-1): la concesionaria
+  // puede ser propietaria intermedia / parte de transferencias / origen y
+  // consumidor de QRs de consignación.
+  ownerships VehicleOwnership[]
+  transfersFrom VehicleTransfer[] @relation("TransferFromDealership")
+  transfersTo VehicleTransfer[] @relation("TransferToDealership")
+  transferQrsCreated VehicleTransferQr[] @relation("QrCreatedByDealership")
+  transferQrsConsumed VehicleTransferQr[] @relation("QrConsumedByDealership")
+
+  @@index([name])
+  @@map("dealerships")
+}
+
+model DealershipRole {
+  id String @id @default(uuid()) @db.Uuid
+
+  dealershipId String @map("dealership_id") @db.Uuid
+
+  code String @db.VarChar(50)
+
+  name String @db.VarChar(100)
+
+  description String?
+
+  isSystem Boolean @default(false) @map("is_system")
+
+  priority Int @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  permissions DealershipRolePermission[]
+
+  members DealershipMember[]
+
+  invitations DealershipInvitation[]
+
+  @@unique([dealershipId, code])
+  @@map("dealership_roles")
+}
+
+model DealershipMember {
+  id String @id @default(uuid()) @db.Uuid
+
+  dealershipId String @map("dealership_id") @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  joinedAt DateTime @map("joined_at")
+
+  leftAt DateTime? @map("left_at")
+
+  invitedAt DateTime? @map("invited_at")
+
+  acceptedAt DateTime? @map("accepted_at")
+
+  lastAccessAt DateTime? @map("last_access_at")
+
+  status MemberStatus
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role DealershipRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  // QRs de consignación consumidos por este miembro en representación de la
+  // concesionaria (patrón `recordedByMemberId` de VehicleMileage).
+  consumedTransferQrs VehicleTransferQr[] @relation("QrConsumedByMember")
+
+  @@unique([dealershipId, userId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("dealership_members")
+}
+
+model DealershipInvitation {
+  id String @id @default(uuid()) @db.Uuid
+
+  dealershipId String @map("dealership_id") @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  invitedById String @map("invited_by") @db.Uuid
+
+  email String
+
+  token String @unique
+
+  expiresAt DateTime @map("expires_at")
+
+  acceptedAt DateTime? @map("accepted_at")
+
+  status InvitationStatus
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dealership Dealership @relation(fields: [dealershipId], references: [id], onDelete: Cascade)
+
+  role DealershipRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  invitedBy User @relation(fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([email])
+  @@map("dealership_invitations")
+}
+
+model DealershipRolePermission {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleId String @map("role_id") @db.Uuid
+
+  permissionId String @map("permission_id") @db.Uuid
+
+  role DealershipRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("dealership_role_permissions")
 }
 
 enum SystemRoleType {
@@ -1019,7 +1186,12 @@ model VehicleOwnership {
 
   vehicleId String @map("vehicle_id") @db.Uuid
 
-  userId String @map("user_id") @db.Uuid
+  // Titular persona OR concesionaria (D-TL-9 / D-DB-1). XOR enforced por
+  // CHECK a nivel DB (migración M2). userId nullable: la concesionaria puede
+  // ser titular intermedio (type = 'company').
+  userId String? @map("user_id") @db.Uuid
+
+  dealershipId String? @map("dealership_id") @db.Uuid
 
   type OwnershipType @default(owner)
 
@@ -1035,13 +1207,17 @@ model VehicleOwnership {
 
   // Histórico: la propiedad es parte de la historia del vehículo, no se borra en cascada
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+  dealership Dealership? @relation(fields: [dealershipId], references: [id], onDelete: Restrict)
 
   acquiredByTransfer VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId])
   @@index([userId])
   @@index([startsAt])
+  // Panel de la concesionaria: `GET /dealerships/:id/vehicles` = ownerships
+  // activos (ends_at IS NULL) de la dealership.
+  @@index([dealershipId, endsAt])
   @@map("vehicle_ownerships")
 }
 
@@ -1059,9 +1235,16 @@ model VehicleTransfer {
 
   vehicleId String @map("vehicle_id") @db.Uuid
 
-  fromUserId String @map("from_user_id") @db.Uuid
+  // from/to persona OR concesionaria (D-TL-10 / D-DB-1). XOR por lado
+  // enforceado por CHECKs a nivel DB (migración M2): from_user_id XOR
+  // from_dealership_id, to_user_id XOR to_dealership_id.
+  fromUserId String? @map("from_user_id") @db.Uuid
 
-  toUserId String @map("to_user_id") @db.Uuid
+  toUserId String? @map("to_user_id") @db.Uuid
+
+  fromDealershipId String? @map("from_dealership_id") @db.Uuid
+
+  toDealershipId String? @map("to_dealership_id") @db.Uuid
 
   status TransferStatus @default(pending)
 
@@ -1081,14 +1264,20 @@ model VehicleTransfer {
 
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
 
-  fromUser User @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: Restrict)
+  fromUser User? @relation("TransferFromUser", fields: [fromUserId], references: [id], onDelete: Restrict)
 
-  toUser User @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: Restrict)
+  toUser User? @relation("TransferToUser", fields: [toUserId], references: [id], onDelete: Restrict)
+
+  fromDealership Dealership? @relation("TransferFromDealership", fields: [fromDealershipId], references: [id], onDelete: Restrict)
+
+  toDealership Dealership? @relation("TransferToDealership", fields: [toDealershipId], references: [id], onDelete: Restrict)
 
   ownerships VehicleOwnership[] @relation("TransferCreatesOwnership")
 
   @@index([vehicleId])
   @@index([status])
+  @@index([fromDealershipId])
+  @@index([toDealershipId])
   @@map("vehicle_transfers")
 }
 
@@ -1107,12 +1296,28 @@ enum QrSource {
   concesionaria
 }
 
+// Fase 1a consignación (D-TL-11 / resolución PM sección 28 §3.1):
+// propósito del QR dentro de la cadena de consignación.
+// NULL = flujo clásico persona→persona (sin cambiar contrato existente).
+// QrSource (canal) se conserva como metadata: ejes ortogonales.
+enum QrPurpose {
+  take
+  sale
+  return
+}
+
 model VehicleTransferQr {
   id String @id @default(uuid()) @db.Uuid
 
   vehicleId String @map("vehicle_id") @db.Uuid
 
+  // Resolución PM sección 28 §3.2: `createdByUserId` se mantiene NOT NULL
+  // (siempre actúa una persona física: vendedor o miembro actuante).
   createdByUserId String @map("created_by_user_id") @db.Uuid
+
+  // Si el QR fue generado en representación de una concesionaria (venta /
+  // devolución), se registra la dealership como origen organizacional.
+  createdByDealershipId String? @map("created_by_dealership_id") @db.Uuid
 
   token String @unique @db.VarChar(64)
 
@@ -1120,11 +1325,21 @@ model VehicleTransferQr {
 
   source QrSource @default(presencial) @map("source") // 'presencial' | 'concesionaria' (D-085, D-095)
 
+  // NULL = flujo clásico persona→persona; 'take'|'sale'|'return' = consignación.
+  purpose QrPurpose?
+
   expiresAt DateTime @map("expires_at")
 
   consumedAt DateTime? @map("consumed_at")
 
+  // Consumo: persona (consumedByUserId) OR concesionaria (consumedByDealershipId
+  // + consumedByMemberId, miembro que actuó en representación). XOR enforced
+  // por CHECKs a nivel DB (D-DB-1, migración M2).
   consumedByUserId String? @map("consumed_by_user_id") @db.Uuid
+
+  consumedByDealershipId String? @map("consumed_by_dealership_id") @db.Uuid
+
+  consumedByMemberId String? @map("consumed_by_member_id") @db.Uuid
 
   revokedAt DateTime? @map("revoked_at")
 
@@ -1136,11 +1351,20 @@ model VehicleTransferQr {
 
   consumedBy User? @relation("QrConsumedBy", fields: [consumedByUserId], references: [id], onDelete: SetNull)
 
+  createdByDealership Dealership? @relation("QrCreatedByDealership", fields: [createdByDealershipId], references: [id], onDelete: Restrict)
+
+  consumedByDealership Dealership? @relation("QrConsumedByDealership", fields: [consumedByDealershipId], references: [id], onDelete: SetNull)
+
+  consumedByMember DealershipMember? @relation("QrConsumedByMember", fields: [consumedByMemberId], references: [id], onDelete: SetNull)
+
   // Invariante D-079 (1 QR pending sin resolver por vehículo): enforcement en
   // el command de generación (lazy-expire de pendientes vencidos + 409) y en la
   // migración con índice único parcial `ON (vehicle_id) WHERE status='pending'`.
   // Nota: `expires_at > now()` no es válido en el predicado (debe ser IMMUTABLE).
   @@index([vehicleId, status])
+  @@index([createdByDealershipId])
+  @@index([consumedByDealershipId])
+  @@index([consumedByMemberId])
   @@map("vehicle_transfer_qrs")
 }
 

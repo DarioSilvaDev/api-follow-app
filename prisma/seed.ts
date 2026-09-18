@@ -113,6 +113,63 @@ const permissions = [
   },
 
   {
+    module: 'dealership',
+    resource: 'dealership',
+    action: 'create',
+    code: 'dealership.create',
+    description: 'Create dealership organizations',
+  },
+  {
+    module: 'dealership',
+    resource: 'dealership',
+    action: 'update',
+    code: 'dealership.update',
+    description: 'Update dealership settings',
+  },
+  {
+    module: 'dealership',
+    resource: 'members',
+    action: 'invite',
+    code: 'dealership.members.invite',
+    description: 'Invite new dealership members',
+  },
+  {
+    module: 'dealership',
+    resource: 'members',
+    action: 'role.update',
+    code: 'dealership.members.role.update',
+    description: 'Change dealership member role',
+  },
+  {
+    module: 'dealership',
+    resource: 'members',
+    action: 'remove',
+    code: 'dealership.members.remove',
+    description: 'Remove member from dealership',
+  },
+  {
+    module: 'dealership',
+    resource: 'vehicle',
+    action: 'take',
+    code: 'dealership.vehicle.take',
+    description: 'Take a vehicle into consignment',
+  },
+  {
+    module: 'dealership',
+    resource: 'vehicle',
+    action: 'sell',
+    code: 'dealership.vehicle.sell',
+    description: 'Sell a consigned vehicle',
+  },
+  {
+    module: 'dealership',
+    resource: 'vehicle',
+    action: 'return',
+    code: 'dealership.vehicle.return',
+    description: 'Return a consigned vehicle',
+  },
+
+  {
     module: 'member',
     resource: 'member',
     action: 'invite',
@@ -570,6 +627,49 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'history.view',
   ],
   employee: ['appointment.create', 'history.view'],
+};
+
+/**
+ * Dealership role → permission matrix for the system dealership roles created
+ * by `seedDealerships` (owner / admin / seller) — RB-10.
+ *
+ * Links the system dealership roles to the permission codes they can exercise
+ * within a DEALERSHIP context (consignment chain: take → sell / return).
+ *
+ * Hierarchy (for member-role changes): owner (100) > admin (60) > seller (40).
+ *
+ * NOTE: `dealership.create` is intentionally NOT assigned to any dealership
+ * role: creating a dealership is a platform-level action (system roles only).
+ */
+const systemDealershipRolePermissions: Record<string, string[]> = {
+  owner: [
+    // dealership
+    'dealership.update',
+    // members
+    'dealership.members.invite',
+    'dealership.members.role.update',
+    'dealership.members.remove',
+    // consignment chain
+    'dealership.vehicle.take',
+    'dealership.vehicle.sell',
+    'dealership.vehicle.return',
+    // care episodes / vehicle history
+    'care-episode.create',
+    'history.view',
+  ],
+  admin: [
+    'dealership.update',
+    'dealership.members.invite',
+    'dealership.vehicle.take',
+    'care-episode.create',
+    'history.view',
+  ],
+  seller: [
+    'dealership.vehicle.sell',
+    'dealership.vehicle.return',
+    'care-episode.create',
+    'history.view',
+  ],
 };
 
 async function seedPermissions() {
@@ -1433,6 +1533,148 @@ async function seedWorkshops() {
 }
 
 /**
+ * Seeds example dealerships with their system roles (owner / admin / seller)
+ * and members — RB-10. Idempotent: skips dealerships that already exist
+ * (same pattern as `seedWorkshops`).
+ */
+async function seedDealerships() {
+  const dealershipsData = [
+    {
+      name: 'Concesionaria Norte',
+      taxId: '30-13579246-8',
+      email: 'norte@concesionaria.com',
+      phone: '011-2222-1111',
+      ownerEmail: 'admin1@seeder.com',
+    },
+    {
+      name: 'AutoCenter Premium',
+      taxId: '30-24681357-9',
+      email: 'premium@concesionaria.com',
+      phone: '011-3333-2222',
+      ownerEmail: 'admin2@seeder.com',
+    },
+    {
+      name: 'Concesionaria del Centro',
+      taxId: '30-86420975-3',
+      email: 'centro@concesionaria.com',
+      phone: '011-4444-3333',
+      ownerEmail: 'admin3@seeder.com',
+    },
+  ];
+
+  const memberPool = [
+    'user1@seeder.com',
+    'user2@seeder.com',
+    'user3@seeder.com',
+    'user4@seeder.com',
+    'user5@seeder.com',
+  ];
+
+  let assignmentIndex = 0;
+
+  for (const d of dealershipsData) {
+    const existing = await prisma.dealership.findUnique({
+      where: { taxId: d.taxId },
+    });
+    if (existing) continue;
+
+    const owner = await prisma.user.findUnique({
+      where: { email: d.ownerEmail },
+    });
+    if (!owner) continue;
+
+    const dealership = await prisma.dealership.create({
+      data: {
+        name: d.name,
+        taxId: d.taxId,
+        email: d.email,
+        phone: d.phone,
+        isActive: true,
+      },
+    });
+
+    const ownerRole = await prisma.dealershipRole.create({
+      data: {
+        dealershipId: dealership.id,
+        code: 'owner',
+        name: 'Dueño',
+        description: 'Dealership owner with full access',
+        isSystem: true,
+        priority: 100,
+      },
+    });
+
+    const adminRole = await prisma.dealershipRole.create({
+      data: {
+        dealershipId: dealership.id,
+        code: 'admin',
+        name: 'Administrador',
+        description: 'Manages dealership operations and members',
+        isSystem: true,
+        priority: 60,
+      },
+    });
+
+    const sellerRole = await prisma.dealershipRole.create({
+      data: {
+        dealershipId: dealership.id,
+        code: 'seller',
+        name: 'Vendedor',
+        description: 'Handles vehicle sales and returns',
+        isSystem: true,
+        priority: 40,
+      },
+    });
+
+    await prisma.dealershipMember.create({
+      data: {
+        dealershipId: dealership.id,
+        userId: owner.id,
+        roleId: ownerRole.id,
+        status: MemberStatus.active,
+        joinedAt: new Date(),
+        acceptedAt: new Date(),
+      },
+    });
+
+    const memberCount = 2 + (assignmentIndex % 3);
+    for (let i = 0; i < memberCount; i++) {
+      const memEmail = memberPool[(assignmentIndex + i) % memberPool.length];
+      const memUser = await prisma.user.findUnique({
+        where: { email: memEmail },
+      });
+      if (!memUser) continue;
+
+      const existingMember = await prisma.dealershipMember.findUnique({
+        where: {
+          dealershipId_userId: {
+            dealershipId: dealership.id,
+            userId: memUser.id,
+          },
+        },
+      });
+      if (existingMember) continue;
+
+      const role = i === 0 ? adminRole : sellerRole;
+      await prisma.dealershipMember.create({
+        data: {
+          dealershipId: dealership.id,
+          userId: memUser.id,
+          roleId: role.id,
+          status: MemberStatus.active,
+          joinedAt: new Date(),
+          acceptedAt: new Date(),
+        },
+      });
+    }
+    assignmentIndex++;
+  }
+
+  const count = await prisma.dealership.count();
+  console.log(`  ✓ ${count} dealerships seeded`);
+}
+
+/**
  * Links system workshop roles (owner / mechanic / employee) to their
  * permission codes. Idempotent: upserts the WorkshopRolePermission link.
  *
@@ -1477,6 +1719,51 @@ async function seedSystemWorkshopRolePermissions() {
   console.log(`  ✓ ${linked} system workshop role → permission links seeded`);
 }
 
+/**
+ * Links system dealership roles (owner / admin / seller) to their permission
+ * codes — RB-10. Idempotent: upserts the DealershipRolePermission link.
+ *
+ * Requires the dealership roles to already exist (run after `seedDealerships`).
+ */
+async function seedSystemDealershipRolePermissions() {
+  const roles = await prisma.dealershipRole.findMany({
+    where: { isSystem: true },
+  });
+
+  const permissionCodes = Array.from(
+    new Set(Object.values(systemDealershipRolePermissions).flat()),
+  );
+  const permissionsByCode = new Map(
+    (
+      await prisma.permission.findMany({
+        where: { code: { in: permissionCodes } },
+      })
+    ).map((p) => [p.code, p]),
+  );
+
+  let linked = 0;
+  for (const role of roles) {
+    const codes = systemDealershipRolePermissions[role.code] ?? [];
+    for (const code of codes) {
+      const permission = permissionsByCode.get(code);
+      if (!permission) continue; // permission not defined in seed → skip
+      await prisma.dealershipRolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: role.id,
+            permissionId: permission.id,
+          },
+        },
+        update: {},
+        create: { roleId: role.id, permissionId: permission.id },
+      });
+      linked++;
+    }
+  }
+
+  console.log(`  ✓ ${linked} system dealership role → permission links seeded`);
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -1486,6 +1773,8 @@ async function main() {
   await seedUsers();
   await seedWorkshops();
   await seedSystemWorkshopRolePermissions();
+  await seedDealerships();
+  await seedSystemDealershipRolePermissions();
 
   console.log('\n✅ Seed completed successfully\n');
 }
