@@ -3410,3 +3410,397 @@ ky 2.1.0 consume el body al poblar `error.data`; releer `response.json()` lanza 
 - D-096, D-097, D-098, D-099, D-100, D-TL-7: ✅ implementados y verificados (backend 48 suites / 408 tests PASS; frontend 263 PASS; build OK).
 - Pendiente de robustez (no bloqueante): migrar clasificación de errores de transferencia de substring de message a `errors.code` (D-096): `TRANSFER_RECIPIENT_NOT_FOUND`, `TRANSFER_SELF`, `TRANSFER_PENDING` ya disponibles.
 - Note de specs: `alias-user-flow.md` §10.5 queda anulada por D-096 (el alias SÍ es input de transferencia desde esta iteración).
+
+---
+
+# 27. Registro (2026-09-18): Cadena de consignación concesionaria — ACEPTADA (D-101, D-102, D-103)
+
+> **ESTADO: DECISIÓN ACEPTADA (2026-09-18) en la dirección general (Opción A + módulo Dealership).**
+> El diseño fino (modelo de datos, permisos, contrato QR) queda en análisis de producto; no modifica implementación actual ni alcance MVP. Corresponde a un milestone post-MVP.
+
+## Objetivo (de la propuesta, si se aceptara)
+
+Modelar la consignación real del vehículo en una concesionaria como **cadena trazable en el historial**: `Propietario → Concesionaria → Comprador`, usando el mismo mecanismo QR (toma y venta) y eliminando la necesidad del TTL largo de 48h.
+
+## Contexto: por qué nace
+
+- El selector actual muestra "Presencial (1 hora)" / "Concesionaria (48 horas)" como si fueran dos flujos distintos; en realidad es **el mismo QR con distinto TTL** (D-085: concesionaria = solo TTL + metadata `source`; D-086: 1h / 48h). Consulta del product owner sobre esta diferenciación (2026-09-18).
+- La 48h fue un "parche" para cubrir que la concesionaria **tiene el vehículo un tiempo** sin estar modelada como actor (D-085: "No es actor de sistema: imprime/exhibe el QR generado por el owner").
+- El product owner propone: la concesionaria **sí participa activamente** — escanea un QR de toma (pasa a ser responsable hasta vender), y al vender genera un QR nuevo para que el comprador escanee. Toda la cadena queda en el historial.
+- La concesionaria como actor fue explícitamente diferida en D-085: *"Rol de concesionaria (sobrealcance; se evalúa cuando el producto soporte dealers como actores)"* — esta propuesta es la evaluación de ese diferimiento.
+
+## Flujo propuesto (para validar)
+
+1. **Toma** — El vendedor genera un QR; la concesionaria lo escanea y asume la responsabilidad del vehículo (hasta venderlo).
+2. **Consignación / exhibición** — La concesionaria tiene el vehículo (periodo largo, sin QR vigente: no es un bearer vivo sino un estado de custodia/propiedad).
+3. **Venta** — La concesionaria genera un QR nuevo; el comprador lo escanea y recibe la titularidad.
+4. **Trazabilidad** — El historial registra la cadena completa `Propietario → Concesionaria → Comprador`.
+
+Ventaja observada: si la tenencia intermedia se modela como **estado** (custodia o propiedad) y no como QR vigente, el TTL largo de 48h **deja de ser necesario** — el QR de venta vuelve a ser presencial (1h, el comprador escanea en el momento).
+
+## Decisión central: RESUELTA — Opción A: la concesionaria es propietaria intermedia
+
+**DECISIÓN (2026-09-18, product owner):** la concesionaria es **propietaria intermedia (dominio)**. La cadena queda `Propietario → Concesionaria → Comprador`, con ownerships encadenados y registros de transferencia por QR de toma y QR de venta.
+
+| Aspecto | Resultado |
+|---|---|
+| Modelo | Cadena de ownerships `Owner persona → Dealer (ownership) → Buyer persona` |
+| Facultades de la agencia | Las de un owner intermedio acotado: ver historial, generar QR de venta, revocar, registrar atenciones durante la tenencia (sujeto a permisos por definir); **no** puede transferirse el vehículo a sí misma ni borrar historial |
+| Riesgo | Abuso de la agencia mitigado por: ownership histórico inmutable, devolución garantizada al vendedor si no se vende (flujo por definir), auditoría de eventos |
+| Complejidad | Reusa ownership + machinery QR existente; requiere modelo de organización (Dealership) |
+
+## D-102 — Dealership como organización (patrón Workshop)
+
+**Estado:** `ACCEPTED` (dirección)
+**Tipo:** Product
+**Prioridad:** P1 (post-MVP)
+
+#### Decisión
+
+Se crea un módulo **Dealership** ("Concesionaria") siguiendo el patrón del módulo Workshops: organización con identidad, miembros, roles, invitaciones y opcionalmente sucursales. NO se reutiliza la tabla `Workshop` ni se convierte una concesionaria en un taller: son actores distintos del ecosistema con propósitos diferentes.
+
+- Una concesionaria es una **identidad organizacional**, no una cuenta de usuario.
+- Los empleados/dueños son **Users** con membresía en la concesionaria (patrón WorkshopMember).
+- Un miembro autenticado actúa **en representación de la concesionaria** (contexto activo Dealership) al escanear un QR de toma o generar un QR de venta.
+
+#### Razón
+
+El usuario pidió explícitamente "algo similar a workshop": reusar un patrón probado (identity + miembros + roles + invitaciones) acelera diseño, permisos y consistencia de auditoría.
+
+#### Impacto
+
+- Nuevo módulo NestJS `dealerships` (espejo de `workshops`): entidad, miembros, roles, invitaciones, sucursales (post-MVP según tamaño).
+- `VehicleOwnership`, `VehicleTransfer`, `VehicleTransferQr` deben soportar titular/concesionaria (ver decisión de arquitectura/data pendiente).
+- Active Context se enriquece con contexto Dealership (similar a Workshop).
+
+#### Alternativas descartadas
+
+- Reutilizar `Workshop` como "organización genérica" (confunde dominio: taller ≠ concesionaria; mezcla permisos de servicios con los de venta).
+- Modelar la concesionaria solo como metadata (estado actual, D-085) — insuficiente para la cadena completa.
+
+---
+
+### D-103 — Flexibilidad de tamaño: de "de barrio" a gran concesionaria
+
+**Estado:** `ACCEPTED` (dirección)
+**Tipo:** Product
+**Prioridad:** P1 (post-MVP)
+
+#### Decisión
+
+El modelo Dealership debe soportar **sin fricción** desde una concesionaria chica ("de barrio", p. ej. FM Automotores: dueño solo o con 1-2 empleados/socios, venta de usados y algunos 0km de varias marcas) hasta una grande (p. ej. Concesionaria Giorgi: exclusiva de marca, muchos empleados, services oficiales, garantías, financiación, múltiples sucursales).
+
+Implicaciones de diseño:
+
+- **Onboarding liviano obligatorio:** crear la concesionaria + alta del primer miembro (dueño) NO debe requerir pasar por invitación, roles ni sucursales. El dueño queda como owner/miembro único inmediato.
+- **Roles:** roles mínimos predefinidos de sistema (dueño/owner, vendedor, administrativo) + roles custom para las grandes (post-MVP).
+- **Sucursales:** opcionales; una concesionaria de barrio puede no tener sucursales y eso NO debe bloquear nada.
+- **Membresía:** invitar empleados debe ser opcional; el minímo viable es dueño único.
+- **Permisos:** los permisos se asignan por rol; un miembro único (dueño) hereda implícitamente las capacidades del owner sin configuración extra.
+
+#### Razón
+
+El ecosistema real de concesionarias en Argentina (contexto del producto) incluye desde agencias unipersonales hasta concesionarias oficiales de marca. Un modelo que exija estructura corporativa expulsa al segmento "de barrio", que es probablemente el de mayor volumen de ventas de usados y el más relevante para la Historia Clínica Vehicular.
+
+#### Impacto
+
+- Seed/DTOs de creación de Dealership: campos de perfil (nombre, marca(s), CUIT, contacto, logo, descripción), no campos estructurales obligatorios.
+- El frontend debe ofrecer un flujo de alta rápida (1 pantalla: datos del negocio + yo soy el dueño) y un flujo completo (invitar miembros, crear sucursales) como opción "configurar después".
+- No se modela "tamaño" como campo del negocio; la complejidad emerge de los datos reales (1 miembro = chica; N miembros/sucursales = grande). **No inventar un campo `size`.**
+
+#### Alternativas descartadas
+
+- Campo enum `size: chica | grande` (falsa precisión; el tamaño real es continuo y derivable).
+- Onboarding único corporativo (rompe el segmento chico).
+- Diferentes modelos de datos según tamaño (duplicación).
+
+## Resoluciones del PM aceptadas (2026-09-18, prioridad MVP) — D-104..D-108
+
+Las 5 preguntas abiertas se resuelven con las propuestas del PM, aceptadas por el product owner junto con la priorización **MVP** del milestone.
+
+### D-104 — QR de TOMA: presencial 1h + ventana opcional de retiro
+
+**Decisión:** el QR de toma usa TTL corto presencial (1h, D-086) cuando el vendedor y el miembro de la concesionaria están juntos; se permite ventana mayor (48h) solo en el caso explícito "retiro diferido" (la agencia escanea cuando el auto llega al local). Sigue siendo one-shot e invalida cualquier QR previo (D-079).
+**Razón:** la entrega y escaneo ocurren en el momento de la toma; una ventana larga innecesaria deja un bearer con capacidad transaccional más tiempo del necesario.
+**Impacto:** el source de QR se extiende (toma vs venta) reutilizando el machinery existente; contrato final bajo decisión TL.
+
+### D-105 — Devolución sin venta: QR inverso de devolución
+
+**Decisión:** si la concesionaria no vende, devuelve el vehículo al vendedor original mediante **QR inverso de devolución** (la concesionaria como titular genera un QR que el vendedor original escanea y acepta). Sin plazos forzosos en MVP; el vendedor puede solicitar la devolución y la concesionaria la ejecuta.
+**Razón:** simetría con el patrón QR existente (D-078); mantiene trazabilidad total en el historial (cadena inversa queda registrada).
+**Impacto:** nuevo flujo de generación/consumo de QR con origen concesionaria → vendedor; historial registra el retorno.
+
+### D-106 — Atenciones durante la tenencia: la concesionaria puede registrar CareEpisodes
+
+**Decisión:** mientras la concesionaria es titular intermedia, sus miembros con el permiso correspondiente pueden registrar CareEpisodes del vehículo (services oficiales, diagnósticos, mantenimiento pre-venta).
+**Razón:** concesionarias grandes (ej. Giorgi) hacen services oficiales y todo trabajo del vehículo debe quedar en su historia (principio: el vehículo es el centro).
+**Impacto:** reutiliza el permiso `care-episode.create` (patrón D-059/D-062); requiere definir cómo se asocia el episodio a la concesionaria (unidad organizacional) en el contrato.
+
+### D-107 — Historial visible al vendedor durante la consignación
+
+**Decisión:** durante la exhibición, el vendedor ve que su vehículo está **en consignación en [Concesionaria X]**, con la concesionaria como titular intermedio visible en el timeline (trazabilidad D-078 simétrica).
+**Razón:** el valor del producto es la historia confiable; ocultar el tramo intermedio rompería la cadena.
+**Impacto:** timeline muestra ownership de la concesionaria con nombre/logo; sin PII de empleados.
+
+### D-108 — Prioridad MVP del milestone "Cadena de consignación"
+
+**Decisión:** la cadena de consignación pasa a ser **prioridad MVP** (2026-09-18). Reemplaza la planificación "post-MVP" previa.
+**Razón:** decisión del product owner: sin consignación el producto no cubre el flujo real de venta de usados con agencia, segmento central del negocio.
+**Impacto:** se inicia análisis técnico inmediato; el equipo trabaja en paralelo (backend, database, frontend, UX). El flujo QR actual (persona→persona) se conserva; el flujo concesionaria lo extiende sin romperlo.
+
+## Recomendación del PM (2026-09-18, tras decisión del product owner)
+
+- **MVP: el milestone "Cadena de consignación" se prioriza y se trabaja ahora** (D-108). El flujo actual (QR persona→persona) se conserva; el flujo concesionaria lo extiende sin romperlo.
+- Alcance propuesto para el MVP consignación: módulo Dealership (D-102) con modelo flexible (D-103), QR de toma (D-104), exhibición (ownership intermedio sin QR vigente), QR de venta (presencial 1h), devolución (D-105), CareEpisodes de la concesionaria (D-106), historial visible (D-107).
+- Confirmado con los datos actuales: la opción A reusa ownership y QR; el trabajo nuevo es el módulo de organización.
+
+## Impacto estimado (tras aceptación, MVP)
+
+- Backend: nuevo módulo `dealerships` (organization: entidad, miembros, roles, invitaciones, sucursales opcionales); extensiones a `VehicleOwnership`, `VehicleTransfer`, `VehicleTransferQr` para titular organizacional.
+- Frontend: alta rápida de concesionaria (1 pantalla dueño); panel de consignación para el vendedor (vehículo "en concesionaria"); panel de la concesionaria (vehículos en exhibición, QR de venta); selector de origen (D-085) se replantea.
+- Database: modelos Dealership (espejo de Workshop), columnas/FKs para titular organizacional en ownership/transfer/qr, revisar TTLs y source (D-086/D-095).
+
+## Estado
+
+- **ACEPTADA y PRIORIZADA MVP (2026-09-18):** D-101 dominio intermedio, D-102 módulo Dealership, D-103 flexibilidad de tamaño, D-104..D-108 resoluciones PM + prioridad MVP.
+- En curso: análisis técnico en equipo (Tech Lead Backend, Database, Frontend Tech Lead, UX/UI, Backend Engineer) partiendo de la spec `docs/specs/vehicle-consignment-flow.md`.
+- Sin cambios de código aún: el working tree solo tiene docs de decisión; los equipos trabajan en diseño y plan de implementación en paralelo.
+
+---
+
+# 28. Registro (2026-09-18): Análisis técnico del equipo — Diseño MVP de la cadena de consignación (D-TL-8..D-TL-18, D-DB-1..D-DB-2, resoluciones PM)
+
+> **Estado:** diseño técnico del equipo completado en paralelo (Backend TL, Database, Backend Engineer, Frontend TL, UX/UI). Decisiones de arquitectura y resoluciones de producto consolidadas aquí como fuente de verdad para implementación.
+
+## 1. Decisiones del Backend Tech Lead (D-TL-8..D-TL-18)
+
+| ID | Decisión |
+|----|----------|
+| D-TL-8 | Módulo `dealerships` espejo de workshops: entidad + roles + miembros + invitaciones + role_permissions; sucursales fuera del MVP. NO reutilizar tablas workshop (D-102) |
+| D-TL-9 | `VehicleOwnership.userId` nullable + `dealershipId` nullable (XOR); `OwnershipType.company` existente; CHECK en migración + índices |
+| D-TL-10 | `VehicleTransfer` from/to persona OR concesionaria (4 FKs nullables, 2 CHECKs XOR, índice por dealershipId) |
+| D-TL-11 | Enum nuevo `QrPurpose { take \| sale \| return }` + `consumedByDealershipId` + `consumedByMemberId`; `QrSource` conservado como metadata (compat D-085); índice parcial D-079 sin cambios |
+| D-TL-12 | Active Context `DEALERSHIP` + `DealershipContext { dealershipId, memberId? }` + guards `DealershipGuard`/`DealershipOnlyGuard` (espejo de Workshop) |
+| D-TL-13 | Permisos `dealership.create/update/members.invite/members.role.update/members.remove/vehicle.take/vehicle.sell/vehicle.return`; reutilizar `care-episode.create` y `history.view`; roles seed owner/admin/seller |
+| D-TL-14 | Aceptaciones: command nuevo `AcceptConsignmentTakeQr` (contexto DEALERSHIP) + extensión del accept existente para venta/devolución (owner de origen dinámico persona|dealership); ruta Fase 3 conservada |
+| D-TL-15 | TTLs por purpose: toma presencial 60min / retiro diferido 2880min (schedule `immediate\|pickup`); venta 60min; devolución 60min |
+| D-TL-16 | Identidad en aceptación: 409 si la dealership ya es titular (auto-transfer); 409 venta si el aceptante es miembro activo del dealer titular; 409/403 devolución si no coincide el vendedor original |
+| D-TL-17 | Eventos `dealership.created`, `vehicle.consignment.taken/sold/returned` (solo IDs, sin PII de empleados); payload aditivo en `VehicleTransferAcceptedEvent` |
+| D-TL-18 | D-106: `CareEpisode.dealershipId` + `createdByDealershipMemberId` + source `dealership`; autorización DEALERSHIP en create/verify — **PENDIENTE revisión Security** (no bloquea núcleo) |
+
+## 2. Decisiones del agente Database (D-DB-1, D-DB-2)
+
+| ID | Decisión |
+|----|----------|
+| D-DB-1 | **Opción A confirmada**: XOR userId/dealershipId con CHECKs a nivel DB (Prisma 6 no modela CHECKs → migración manual, patrón D-079); FKs Restrict (histórico inmutable); CHECK `ownership_type_company`; CHECK `transfers_not_self` (auto-transfer a nivel DB, RB-03); CHECK `consumed_by_xor` + `consumed_member_required` |
+| D-DB-2 | Migraciones aditivas: **M1** `add_dealership_organization` (tablas dealerships + seed roles/permisos) y **M2** `add_organizational_owner` (QrPurpose + XOR ownership/transfer/qr + CHECKs + índices); **M3** opcional D-106. D-079 queda intacto. Riesgo mayor: DROP NOT NULL user_id → código backend primero |
+
+## 3. Resoluciones del PM sobre tensiones del equipo (2026-09-18)
+
+1. **Naming**: se adopta **`QrPurpose`** (TL) para el enum de BD (columna `purpose`); el frontend usa `TransferQrPurpose` con `"transfer"` como default (NULL = flujo clásico). Se descarta `QrKind` (DB) por consistencia con la spec y el dominio.
+2. **`createdByUserId` de `VehicleTransferQr` se mantiene NOT NULL** (siempre hay persona física: vendedor o miembro actuante) + `createdByDealershipId` nullable. (DECISIÓN P2 resuelta — opción del DB.)
+3. **Preview QR extiende response** con `purpose` + `fromDealership` (sin PII): el frontend ramifica UI por purpose (requisito de Frontend TL/UX).
+4. **`/auth/me` expone `dealershipMemberships`** (shape: `{ dealershipId, dealershipName, logoUrl?, role }`): requisito de bootstrap para Frontend TL/UX.
+5. **Endpoint "vehículos en exhibición"**: `GET /dealerships/:id/vehicles` (panel concesionaria). DAP-5 resuelta.
+6. **Lectura del vendedor durante la exhibición (D-107)**: el vendedor NO es owner activo; conserva acceso de lectura vía `VehicleAccess` + historial/timeline; edición de fotos/docs/km **deshabilitada** durante la exhibición (integridad). DAP-6 resuelta.
+7. **TTL QR de devolución (D-105)**: **60 min presencial**, simétrico con venta. (DECISIÓN DE PRODUCTO resuelta.)
+8. **CUIT en alta rápida**: **opcional**, editable después (D-103: sin fricción para concesionarias de barrio).
+9. **Invitaciones de membresía**: patrón workshops (email + token), **sin** exigir cuenta pre-existente — el invitado se registra/loguea al aceptar (patrón D-034).
+10. **"Solicitar devolución" del vendedor**: **DIFERIDO** — MVP solo acción de devolución desde el panel de la concesionaria (D-105 se refina).
+11. **Roles y facultades (D-103)**: `owner` = todo (update, members.*, vehicle.take/sell/return, care-episode.create, history.view); `seller` = vehicle.sell/return + care-episode.create + history.view; `admin` = update + members.invite + vehicle.take + care-episode.create + history.view.
+12. **Naming de rutas**: ruta técnica `/dealerships` (consistente con módulo backend); etiqueta UI "Concesionarias" (decisión UX).
+
+## 4. Estado
+
+- Diseños cerrados y consistentes (TL + Database + Frontend TL + UX/UI + plan de Backend Engineer).
+- **Pendiente Security**: D-TL-18/D-106 (autorización CareEpisodes en contexto DEALERSHIP) y revisión del set de permisos §1. No bloquea el núcleo de consignación.
+- Siguiente paso: implementación por fases — (1) Database M1+M2 + seed; (2) Backend módulo + handlers + guards; (3) Frontend rutas + componentes; en paralelo donde no haya colisión.
+
+---
+
+# 29. Registro (2026-09-18): Decisión de navegación "Concesionarias" (NAV_ITEMS) + cierre de Fase 1a/1b
+
+## 1. Decisión PM: Navegación "Concesionarias" (resolución de la pregunta del Frontend TL)
+
+DECISIÓN
+El ítem "Concesionarias" y el `DealershipSelector` del header se renderizan **solo cuando el usuario tiene `dealershipMemberships`** (o acaba de crear su primera concesionaria — el alta lo deja con membresía). Si `NAV_ITEMS_BASE` admite render condicional por sesión, el ítem vive ahí; si no, en el bloque de navegación existente que ya maneja ítems condicionados a datos del usuario (no por permisos genéricos).
+
+Razón
+- El acceso a "Concesionarias" es contextual: depende de participar en una dealership, no de un permiso global de plataforma.
+- Mostrar siempre el ítem sin membresía es ruido y confunde (ante la pregunta "¿de quién es este espacio?").
+- El backend sigue siendo la frontera de enforcement; la UI solo oculta para UX.
+
+Impacto
+- Frontend: `NAV_ITEMS_BASE` (o bloque equivalente) + `DealershipSelector` condicionados a `SessionUser.dealershipMemberships?.length > 0`.
+- Sin impacto en contrato API ni en autorización.
+
+Alternativas descartadas
+- Ítem siempre visible (ruido, contradecía D-107/contexto).
+- Ítem en NAV_ITEMS_EXTENDED por plan (los planes no son el discriminante correcto: es membresía).
+
+## 2. Estado de fases (cierre Fase 1a/1b)
+
+- **Fase 1a (Database) COMPLETADA**: schema (Dealership*, XOR, QrPurpose), M1+M2 aplicadas (17/17 migraciones), seed `dealership.*` (8 permisos) + matriz RB-10 verificada en BD (owner=9, admin=5, seller=4). 7 CHECKs + 6 índices + D-079 intacto. M3 (D-106) diferida hasta revisión Security. Nota: procesos dev (start:dev PIDs 18256/15108, node dist/main PID 20332) fueron detenidos por el agente para liberar el query engine; el backend debe relanzarse con el cliente Prisma regenerado.
+- **Fase 1b (Frontend TL) COMPLETADA**: `src/types/dealership.ts`, `dealershipApi` + `X-Context-*`, `DealershipSelector` (header desktop/mobile), rutas `/dealerships` (+`/nueva`, `/[id]`), componentes de sección (exhibición/miembros), timeline consignación (D-107); `tsc --noEmit` exit 0. Pendiente: `npm run build` como gate final + ajuste NAV_ITEMS según §1.
+- **Auditoría Backend Engineer COMPLETADA** (read-only): mapa de impacto DROP NOT NULL user_id, plan Fase 2 (contexto/guards → módulo dealerships → flujo QR → `/auth/me` → tests), 3 correcciones: retira DAP de naming `dealership.members.*` (adopta contrato verbatim), D-107 resuelto vía VehicleAccess de solo lectura + edición deshabilitada (decisión de diseño backend: crear/derivar VehicleAccess al tomar; list-vehicles L36 debe incluir ownership O VehicleAccess activo), y quita OR por dealership en queries de transfers persona↔persona (no hay solicitud de devolución en MVP, sección 28 §3.10).
+- **Fase 2 (Backend Engineer) AUTORIZADA** por PM: implementar módulo `src/modules/dealerships/**` (espejo workshops), contexto DEALERSHIP + guards, comandos QR (AcceptConsignmentTakeQr + extensión accept/venta/devolución), `/auth/me` (dealershipMemberships). **NOTA: seed ya implementado por Database — el backend NO debe duplicar permisos/roles; solo verificar.**
+
+---
+
+# 30. Registro (2026-09-18): Cierre Fase 2a, revisión Security y resoluciones PM para Fase 2b (flujo QR)
+
+## 1. Estado de fases
+
+- **Fase 2a (Backend Engineer) COMPLETADA**: módulo `src/modules/dealerships/**` (repo Prisma, 11 DTOs, 3 eventos `dealership.created/invited/joined`, 9 handlers, 6 queries), `DealershipGuard` sintetiza contexto DEALERSHIP, módulo registrado en `app.module.ts`, fixes de build pre-existentes (payload aditivo `VehicleTransferAcceptedEvent`, listener email null-safe). Suite: **52 suites / 434 tests PASS + build limpio**.
+- **Frontend COMPLETADO**: DoD aplicado incl. decisión §29 (navegación condicionada a `dealershipMemberships`); `tsc --noEmit` exit 0. Pendiente `npm run build` como gate final.
+- **Revisión Security COMPLETADA** (read-only, agente General): 2 hallazgos ALTA, 6 MEDIA, 3 BAJA; 9 confirmados OK.
+
+## 2. Resoluciones PM sobre hallazgos Security
+
+1. **M6 — autorización de `POST /dealerships`**: el alta rápida es **auto-registro** (D-103): cualquier usuario autenticado crea una concesionaria y queda como owner. El permiso `dealership.create` se mantiene de plataforma (no asignado a roles de dealership); la autorización del endpoint es "autenticado + crea como owner" (ya implementado por Backend Engineer). Consistente con crear workshop.
+2. **M3 — acceso del vendedor tras la venta**: **se revoca** el `VehicleAccess` de solo lectura **en la misma transacción del `sold`** (y también al `returned`). Post-venta el vendedor no conserva acceso (coherente con el flujo persona→persona). D-107 (lectura + banner) aplica **durante la exhibición**.
+3. **B1 — ventana retiro diferido 48h (pickup)**: **se mantiene** (D-104). Mitigaciones presentes: sesión autenticada + miembro activo + throttle 10/60 + token 32-hex. Sin cambios.
+4. **M6/D-106 — representación de CareEpisode de la concesionaria en timeline**: permanece **diferido**; condiciones mínimas aprobadas para cuando se implemente: rama DEALERSHIP en guards, autorización en create/verify, representación explícita en timeline.
+5. **A1 (ALTA) — orden de implementación obligatorio**: **no se habilitan QRs de consignación hasta que el accept clásico ramifique por `purpose`** (rechazo de `take` por routing persona→persona). RB-02 es regla de producto innegociable.
+6. **A2 (ALTA) — modelo de autorización DEALERSHIP**: requerimiento de Fase 2b: rama DEALERSHIP en `loadPermissions` (cacheKey `user:dealershipId`), `DealershipGuard` estricto ANTES de `PermissionsGuard`, super_admin **no eximido de membresía** en el flujo QR de consignación. Composición de guards → revisión Tech Lead (no blocker de implementación).
+
+## 3. Fase 2b autorizada (flujo QR consignación) — alcance con hallazgos Security integrados
+
+| Ítem | Fuente |
+|---|---|
+| Blindaje accept clásico por `purpose` (ABIERTA: pasarela `take`→rechazo persona, `sale/return`→rama dealership) | A1 |
+| Rama DEALERSHIP en `loadPermissions` + DealershipGuard antes de PermissionsGuard + sin fallback `params.id` | A2 |
+| `POST /vehicles/:id/consignment/take-qr` y `return-qr`, TTLs RB-11, schedule `immediate\|pickup` | D-TL-14/15, RB-11 |
+| Preview extiende `purpose` + `fromDealership`, y **suprime `fromUser` cuando `createdByDealershipId` no es null** | §28 §3.3, M1 |
+| Eventos dedicated `vehicle.consignment.taken/sold/returned` (solo IDs), NO reemitir el clásico con miembro como origen | D-TL-17, M4 |
+| `VehicleAccess` de solo lectura para el vendedor al tomar + **revocación en transacción sold/returned** (sin resucitar revocados) | D-107, M3 |
+| `list-vehicles` incluye ownership **O** VehicleAccess activo **filtrado por userId del caller** | M5, §29 |
+| Soft-remove de miembros (ya aplicado en Fase 2a — verificar que no exista DELETE que rompa CHECK `consumed_member_required`) | M2 |
+| Ramsey DEALERSHIP en generate/revoke (solo titular dealership con `vehicle.sell/return`) | B2 |
+| Timeline (historial) incluye tramo concesionaria (`get-vehicle-history`) | B3 |
+| `/auth/me` con `dealershipMemberships` (get-session) | §28 §3.4 |
+| Tests: 409 auto-transfer / miembro activo / devolución no coincide + one-shot + doble consumo | D-TL-16 |
+
+---
+
+# 31. Registro (2026-09-18): Fase 2b completada, decisión de alcance "invitación por email", pendientes de integración
+
+## 1. Estado de fases
+
+- **Fase 2b (flujo QR consignación) COMPLETADA** (Backend Engineer): take-qr/return-qr, rama DEALERSHIP en generate/revoke, accept enruta por `purpose` + contexto (A1), `AcceptConsignmentTakeQr`, eventos `vehicle.consignment.{taken,sold,returned}` (M4), preview con `purpose` + `fromDealership` y `fromUser` suprimido en origen dealership (M1/RB-08), VehicleAccess solo-lectura creado en take y **revocado en sold/returned** en la misma transacción (M3), list-vehicles ownership **O** VehicleAccess (M5), `get-vehicle-history` incluye dealership (B3), `/auth/me` con `dealershipMemberships`. **Suite: 55 suites / 470 tests en verde + build + lint limpios.** Sin migraciones nuevas (schema Fase 1a cubría todo).
+- **Frontend DoD CERRADO**: `tsc --noEmit` + `npm run build` (Next 16/Turbopack, 19 páginas, 3 rutas dealership) exit 0.
+
+## 2. Decisión PM: journey "invitación por email" entra en el milestone MVP
+
+DECISIÓN
+La invitación de miembros por email (backend ya implementado: `POST /dealerships/:id/members`, eventos `dealership.member.invited/joined`, patrón workshops) **se cierra con UI en este milestone** (sección Miembros del panel). No se difiere al siguiente.
+
+Razón
+- Principio de producto #2: priorizar journeys completos sobre componentes aislados. El backend ya existe; dejar la invitación sin UI deja un journey a medias (RB-10 gestión de miembros).
+- El dueño único de barrio no la necesita, pero la concesionaria con N vendedores sí; es parte del valor del panel.
+
+Impacto
+- Frontend: agregar flujo de invitación en `DealershipMembersSection` (email + rol; estado "pendiente/activo"), reutilizando `dealershipApi.inviteMember`.
+- Sin impacto en contrato API.
+
+Alternativas descartadas
+- Diferir al siguiente milestone (dejaba el journey incompleto con backend ya listo).
+- Invitación solo por owner (roles ya resuelven jerarquía; no agrega valor).
+
+## 3. Pendientes de integración (para próxima ronda)
+
+1. **Frontend — shape de historial**: el backend ahora devuelve `fromUser/toUser: null` + `fromDealership/toDealership` en tramos de consignación; `frontend/src/types/vehicle.ts` tipa `fromUser/toUser` como required. Ajustar tipos + `mergeHistory` para legs con dealership (contrato B3/D-107).
+2. **Revisión técnica TL (backend-tech-lead)**: composición de guards (DealershipGuard → PermissionsGuard, A2), semántica de dirección del tramo `return` (`fromDealershipId → toUser`), rutas de contexto mixto (`POST/DELETE :id/qr` con autorización DEALERSHIP dentro del handler vs split futuro).
+3. **Integración real backend↔frontend**: requiere backend vivo + DB seeded (los procesos dev quedaron detenidos en Fase 1a) — a coordinar antes de cerrar DoD end-to-end.
+4. **Commit**: todo el trabajo está sin commitear (docs + prisma + backend + frontend). Se propondrá commit coherente por área al usuario al cerrar integración.
+
+---
+
+# 32. Registro (2026-09-18): Revisión técnica del Tech Lead sobre Fase 2a/2b — veredicto y fixes autorizados
+
+## 1. Veredicto de revisión (backend-tech-lead, read-only)
+
+La implementación 2a/2b es **sólida en lo estructural** (guards, eventos, one-shot, XOR, M1-M5 resueltos). Se identificaron 3 ítems a corregir antes del cierre y riesgos residuales documentables:
+
+| ID | Severidad | Hallazgo | Evidencia |
+|----|-----------|----------|-----------|
+| B1 | **Blocker (RB-04)** | `GET /vehicles/:id` y `GET /vehicles/:id/history` llaman `assertVehicleAccess(id, user)` sin `@ActiveContext()`; `VehicleAccessService` no tiene rama DEALERSHIP → la concesionaria titular no puede ver el detalle/historial de su vehículo en exhibición (rompe panel + timeline D-107) | `vehicles.controller.ts:534-542, 608-615` |
+| H7 | Media (PII) | `GET /dealerships/:id/members` solo con `DealershipGuard`, sin `PermissionsGuard` → cualquier miembro activo (incl. seller) lista miembros con email | `dealerships.controller.ts:148-149`, `member-response.dto.ts` |
+| H2 | Media (A2) | Fallback `params.id` en `DealershipGuard` usado por rutas del panel sin `X-Context-Id` — riesgo de cache-key pollution; eliminar si las rutas del panel lo permiten | `DealershipGuard` |
+| H3/H4/H6 | Baja/doc | Riesgos residuales documentados por el TL (sin acción inmediata) | — |
+
+## 2. Decisions PM: fixes autorizados (2026-09-18)
+
+1. **FIX-B1 (autorizado)**: agregar rama DEALERSHIP de lectura en `findOne`/`getHistory` (`@ActiveContext` + rama dealership en `VehicleAccessService` + tests + spec del controller). Backend Engineer/Tech Lead.
+2. **FIX-H7 (autorizado)**: `GET /dealerships/:id/members` exige rol que pueda ver miembros (owner/admin; seller NO ve emails de otros miembros). Decisión: la lista de miembros queda para owner/admin; el seller no accede a emails. Si el panel lo necesita para algo, se evaluará un DTO sin PII.
+3. **FIX-H2 (autorizado)**: eliminar fallback `params.id` de `DealershipGuard` solo si las rutas del panel pueden aportar `X-Context-Id` (revisar prelación header vs params); ajustar `dealerships.controller.spec`.
+
+## 3. Decisión PM: onboarding post-invitación (alcance frontend)
+
+DECISIÓN
+La invitación por email se completa mostrando en la sección Miembros el **estado `PENDING` de la invitación** (backend ya distingue PENDING/ACTIVE) hasta que el invitado la acepte; sin pantalla de onboarding adicional post-invitación en este milestone (se evalúa en el siguiente).
+
+Razón
+- Cierra el journey "invitar → ver estado" sin fricción; el email del backend notifica al invitado.
+- El onboarding visual post-invitación (qué puede hacer el nuevo miembro) es mejora de UX para el siguiente milestone.
+
+## 4. Decisión PM: `turbopack.root` (config frontend)
+
+DECISIÓN
+Se aprueba fijar `turbopack.root` en `next.config.ts` (frontend) para silenciar el warning de múltiples lockfiles y asegurar builds deterministas en CI. Cambio chico, aislado, con build de verificación.
+
+Razón
+- Build determinista en CI; sin impacto funcional.
+
+## 5. Pendientes tras fixes
+
+- Integración end-to-end real backend↔frontend (requiere backend vivo + DB seeded; los procesos dev siguen detenidos desde Fase 1a).
+- Commit coherente por área (docs/prisma/backend/frontend) — requiere autorización del usuario.
+
+---
+
+# 33. Registro (2026-09-18): Fixes de revisión aplicados — estado final del milestone consignación
+
+## 1. Fixes completados (Backend Tech Lead + Frontend)
+
+| Fix | Resultado | Tests nuevos |
+|-----|-----------|-------------|
+| B1 (blocker RB-04) | Rama DEALERSHIP en lectura: `assertOwnershipOrSharedAccess` con `context`, `assertDealershipVehicleRead`, controllers forward `@ActiveContext` | +8 specs |
+| H7 (PII members) | `GET :id/members` con `PermissionsGuard` → owner/admin only (seller no ve emails) | en spec |
+| H2 (guard A2) | `DealershipGuard` fallback solo sin contexto o PERSONAL; WORKSHOP/PLATFORM → 403; documentado | +7 specs |
+| turbopack.root (§32 §4) | Warning lockfiles eliminado (1→0), build determinista en CI | — |
+| Invitaciones PENDING (§32 §3) | Badge "Invitación pendiente" en `DealershipMembersSection` por `member.status === "PENDING"` | — |
+
+**Suite final: 56 suites / 485 tests (backend) + tsc exit 0 + build Next 19 páginas (frontend).**
+
+## 2. Riesgo residual documentado por el TL
+
+- `get-vehicle.handler.ts` expone email de propietarios en ownerships a la dealership titular (PII ampliado por B1). El `get-vehicle-history` ya oculta emails para no-owners. Recomendación TL: aplicar la misma regla de `shouldExposeEmails` al handler de detalle. Chico (handler + tests), puede delegarse a Backend Engineer. No bloquea el milestone; documentado como deuda a corregir antes de deploy.
+
+## 3. Decisiones de producto pendientes (NO bloquean este milestone)
+
+1. **Acceptance de invitación (join dealership)** — el invitado acepta y se hace miembro activo. Mismo patrón que workshops (D-034); el badge PENDING ya se muestra. Requiere definición de producto: flujo de aceptación por email + auto-registro si no tiene cuenta. Diferido al siguiente milestone.
+2. **CareEpisode en contexto DEALERSHIP (D-106)** — pendiente revisión Security (ya no bloquea el milestone; las condiciones de aprobación están documentadas en sección 30 §2.4).
+3. **Onboarding post-invitación** — qué puede hacer el nuevo miembro. Diferido (sección 32 §3).
+
+## 4. Pendiente antes de deploy real
+
+1. **Commit coherente por área** (docs → prisma → backend → frontend) — requiere autorización del usuario. Hoy hay 6 commits previos (Fase 3 QR + D-096..D-100) + cambios sin commitear del milestone completo.
+2. **Integración end-to-end backend↔frontend** — requiere backend vivo + DB seeded (procesos dev detenidos desde Fase 1a; relanzar `npm run start:dev` + verificar los 485 tests + smoke test manual del flujo completo en el panel).
+3. **El fix menor de PII en get-vehicle** (recomendación TL, §2).
+
+---
+
+# 34. Registro (2026-09-18): Plan de cierre autorizado por el usuario — PII fix → commit → integración end-to-end
+
+## 1. Autorización PM (usuario aprobó seguir la recomendación §33 §4)
+
+1. **FIX-PII (autorizado)**: aplicar en `get-vehicle.handler.ts` la misma regla de `GetVehicleHistoryHandler.shouldExposeEmails` (email visible solo al owner activo/super_admin; oculto para dealership y shared-access). Ejecuta: Backend Engineer. Test: +specs.
+2. **Commit por área (autorizado)**: docs → prisma → backend → frontend, coherentes y cohesivos (AGENTS.md §36). Se revisará `git status`/`git diff` antes; solo archivos intencionales; mensajes según estilo del repo.
+3. **Integración end-to-end (autorizada)**: relanzar backend (`npm run start:dev`) + smoke test del flujo completo (toma → panel exhibición → venta / devolución) contra stack vivo con DB seeded.
+
+## 2. Orden de ejecución
+
+1. FIX-PII (Backend Engineer) → suite completa verde.
+2. Commit por área (PM, tras revisar diff).
+3. Integración end-to-end (Backend + verificación frontend).
