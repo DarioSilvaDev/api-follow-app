@@ -8,12 +8,17 @@ import { NextRequest, NextResponse } from "next/server";
 // ---------------------------------------------------------------------------
 
 // Fase 1 (D-078): /transferencias es ruta protegida (panel de transferencias).
+// Milestone consignación: /dealerships (rutas del módulo, D-102); /escaneo es
+// deuda conocida del escáner QR (Fase 3 / D-090) — un usuario sin sesión no
+// debe poder escanear.
 const protectedRoutes = [
   "/dashboard",
   "/profile",
   "/vehicles",
   "/atenciones",
   "/transferencias",
+  "/dealerships",
+  "/escaneo",
 ];
 const authRoutes = ["/login", "/register"];
 

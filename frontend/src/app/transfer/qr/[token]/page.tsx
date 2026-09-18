@@ -3,14 +3,28 @@
 /**
  * Fase 3 / D-079..D-088 — Aceptación de QR de transferencia presencial.
  *
+ * Milestone consignación (D-104/D-105, spec §8-§9): la misma ruta pública
+ * ramifica la UI por `purpose` del preview (resolución PM §3.3):
+ * - "transfer" (default): flujo clásico persona→persona (D-080).
+ * - "take": QR de TOMA — un miembro autenticado de una concesionaria lo
+ *   escanea en representación (contexto DEALERSHIP, D-TL-12). Exige
+ *   seleccionar la concesionaria receptora antes de confirmar.
+ * - "sale": QR de VENTA — la concesionaria (fromDealership) transfiere al
+ *   comprador; se conserva el flujo de confirmación D-082/D-083.
+ * - "return": QR inverso de DEVOLUCIÓN — el vendedor original recupera la
+ *   titularidad.
+ *
  * Ruta pública de deep link: /transfer/qr/[token]. El backend genera el QR
  * con URL `${FRONTEND_URL}/transfer/qr/{token}` (D-080).
  *
  * Flujo:
  * 1. Requiere sesión (JwtAuth). Si el usuario no está autenticado, se lo
  *    manda a /login?next=... (AuthProvider bootstrap + redirect).
- * 2. Carga el preview (GET vehicles/transfer/qr/:token) → vehículo + emisor.
- * 3. Botón de confirmación explícita → POST .../accept (body confirmation:true).
+ * 2. Carga el preview (GET vehicles/transfer/qr/:token) → vehículo + emisor
+ *    (+ purpose + fromDealership cuando aplica).
+ * 3. Confirmación explícita → POST .../accept (body confirmation:true). En
+ *    "take" el contexto DEALERSHIP se setea antes de aceptar para que el
+ *    cliente API inyecte X-Context-Type/Id.
  * 4. One-shot: 410 revocado / 409 consumido / 400 self / 404 expirado.
  */
 
@@ -23,6 +37,7 @@ import {
   CheckCircle2,
   Loader2,
   ShieldCheck,
+  Store,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,13 +48,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { useActiveContext } from "@/hooks/use-active-context";
 import { useAuth } from "@/hooks/use-auth";
+import { selectDealership } from "@/lib/active-context";
 import { vehicleApi } from "@/lib/api";
+import { resolveQrPurpose } from "@/lib/consignment";
 import {
   resolveQrAcceptErrorMessage,
   resolveQrPreviewErrorMessage,
 } from "@/lib/transfer-errors";
-import type { TransferQrPreview } from "@/types/vehicle";
+import type {
+  TransferQrPreview,
+  TransferQrPurpose,
+} from "@/types/vehicle";
 
 function UserName(user?: TransferQrPreview["fromUser"] | null): string {
   if (!user) return "Usuario";
@@ -47,11 +70,86 @@ function UserName(user?: TransferQrPreview["fromUser"] | null): string {
   return [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || "Usuario";
 }
 
+const PURPOSE_ICONS: Record<TransferQrPurpose, React.ComponentType<{ className?: string }>> = {
+  take: Store,
+  sale: Car,
+  return: Car,
+  transfer: ShieldCheck,
+};
+
+function purposeTitle(purpose: TransferQrPurpose): string {
+  switch (purpose) {
+    case "take":
+      return "Recibo del vehículo en consignación";
+    case "sale":
+      return "Compra de vehículo";
+    case "return":
+      return "Devolución de vehículo";
+    default:
+      return "Transferencia de vehículo";
+  }
+}
+
+function purposeDescription(preview: TransferQrPreview, purpose: TransferQrPurpose): string {
+  switch (purpose) {
+    case "take":
+      return `${UserName(preview.fromUser)} quiere entregar este vehículo a tu concesionaria. Elegíla y confirmá la recepción en su representación.`;
+    case "sale":
+      return preview.fromDealership
+        ? `La concesionaria ${preview.fromDealership.name} te transfiere este vehículo. Confirmá para aceptarlo.`
+        : `${UserName(preview.fromUser)} te transfiere el vehículo. Confirmá para aceptarlo.`;
+    case "return":
+      return preview.fromDealership
+        ? `La concesionaria ${preview.fromDealership.name} te devuelve este vehículo. Confirmá para recuperar la titularidad.`
+        : `${UserName(preview.fromUser)} te devuelve este vehículo. Confirmá para recuperar la titularidad.`;
+    default:
+      return `${UserName(preview.fromUser)} te quiere transferir un vehículo presencialmente. Confirmá para aceptarlo.`;
+  }
+}
+
+function purposeButtonLabel(purpose: TransferQrPurpose): string {
+  switch (purpose) {
+    case "take":
+      return "Confirmar recepción";
+    case "return":
+      return "Aceptar devolución";
+    default:
+      return "Aceptar y recibir vehículo";
+  }
+}
+
+function purposeFooterText(purpose: TransferQrPurpose, dealershipName?: string): string {
+  switch (purpose) {
+    case "take":
+      return dealershipName
+        ? `Al confirmar, ${dealershipName} asume la responsabilidad del vehículo hasta la venta o devolución.`
+        : "Al confirmar, la concesionaria asume la responsabilidad del vehículo hasta la venta o devolución.";
+    case "return":
+      return "Al aceptar, recuperás la titularidad del vehículo.";
+    default:
+      return "Al aceptar, el vehículo pasará a estar bajo tu titularidad.";
+  }
+}
+
+function purposeDoneText(purpose: TransferQrPurpose, dealershipName?: string): string {
+  switch (purpose) {
+    case "take":
+      return dealershipName
+        ? `El vehículo quedó en consignación en ${dealershipName}.`
+        : "El vehículo quedó en consignación en la concesionaria.";
+    case "return":
+      return "Recuperaste la titularidad del vehículo.";
+    default:
+      return "La transferencia se completó con éxito. Ya sos el titular del vehículo.";
+  }
+}
+
 export default function TransferQrAcceptPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
   const router = useRouter();
-  const { status } = useAuth();
+  const { status, user } = useAuth();
+  const activeContext = useActiveContext();
 
   const [preview, setPreview] = useState<TransferQrPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +157,7 @@ export default function TransferQrAcceptPage() {
   const [accepting, setAccepting] = useState(false);
   const [done, setDone] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dealershipId, setDealershipId] = useState<string>("");
   const started = useRef(false);
 
   // Unauthenticated → login preserving the QR deep link as `next`.
@@ -68,6 +167,13 @@ export default function TransferQrAcceptPage() {
       router.replace(`/login?next=${encodeURIComponent(next)}`);
     }
   }, [status, token, router]);
+
+  // Pre-select the active DEALERSHIP context when the page opens (take flow).
+  useEffect(() => {
+    if (activeContext?.type === "DEALERSHIP") {
+      setDealershipId(activeContext.dealershipId);
+    }
+  }, [activeContext]);
 
   // Load preview once (authenticated + token present).
   useEffect(() => {
@@ -88,6 +194,17 @@ export default function TransferQrAcceptPage() {
     setAccepting(true);
     setActionError(null);
     try {
+      // Milestone consignación (D-TL-12/D-TL-14): la toma se confirma en
+      // representación — setea el contexto DEALERSHIP para que el cliente API
+      // inyecte X-Context-Type/Id (el backend valida la membresía, RB-02).
+      if (resolveQrPurpose(preview) === "take") {
+        if (!dealershipId) {
+          setActionError("Seleccioná la concesionaria que va a recibir el vehículo.");
+          setAccepting(false);
+          return;
+        }
+        selectDealership(dealershipId);
+      }
       await vehicleApi.acceptTransferQr(token);
       setDone(true);
     } catch (err: unknown) {
@@ -96,6 +213,15 @@ export default function TransferQrAcceptPage() {
       setAccepting(false);
     }
   };
+
+  const purpose = resolveQrPurpose(preview);
+  const dealershipMemberships = user?.dealershipMemberships ?? [];
+  const selectedDealership = dealershipMemberships.find(
+    (m) => m.dealershipId === dealershipId,
+  );
+  const PurposeIcon = PURPOSE_ICONS[purpose];
+  const noDealershipToReceive =
+    purpose === "take" && dealershipMemberships.length === 0;
 
   if (!token) {
     return (
@@ -118,10 +244,10 @@ export default function TransferQrAcceptPage() {
     return (
       <CenteredCard
         icon={<CheckCircle2 className="h-10 w-10 text-green-600" />}
-        title="¡Transferencia completada!"
-        body="La transferencia se completó con éxito. Ya sos el titular del vehículo."
+        title={purpose === "take" ? "¡Recepción confirmada!" : "¡Transferencia completada!"}
+        body={purposeDoneText(purpose, selectedDealership?.dealershipName)}
         action={
-          <Link href="/vehiculos">
+          <Link href="/vehicles">
             <Button className="w-full">Ver mis vehículos</Button>
           </Link>
         }
@@ -160,22 +286,36 @@ export default function TransferQrAcceptPage() {
     return null;
   }
 
+  if (noDealershipToReceive) {
+    return (
+      <CenteredCard
+        icon={<AlertCircle className="h-10 w-10 text-destructive" />}
+        title="Necesitás una concesionaria"
+        body="Este QR es una toma de consignación. Para recibirlo, primero tenés que crear o unirte a una concesionaria."
+        action={
+          <Link href="/dealerships">
+            <Button className="w-full">Ver concesionarias</Button>
+          </Link>
+        }
+      />
+    );
+  }
+
   return (
     <div className="w-full max-w-md">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <PurposeIcon className="h-5 w-5 text-primary" />
             <CardTitle className="text-xl font-semibold">
-              Transferencia de vehículo
+              {purposeTitle(purpose)}
             </CardTitle>
           </div>
           <CardDescription>
-            {UserName(preview.fromUser)} te quiere transferir un vehículo
-            presencialmente. Confirmá para aceptarlo.
+            {purposeDescription(preview, purpose)}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center gap-4">
+        <CardContent className="flex flex-col gap-4">
           <Car className="h-8 w-8 text-muted-foreground" />
           <div className="text-center">
             <p className="text-lg font-semibold">{preview.vehicle.name}</p>
@@ -183,6 +323,33 @@ export default function TransferQrAcceptPage() {
               Patente: {preview.vehicle.licensePlate}
             </p>
           </div>
+
+          {purpose === "take" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="qr-take-dealership">
+                Concesionaria que recibe el vehículo
+              </Label>
+              <Select
+                id="qr-take-dealership"
+                value={dealershipId}
+                onChange={(e) => setDealershipId(e.target.value)}
+              >
+                <option value="">Seleccioná una concesionaria…</option>
+                {dealershipMemberships.map((membership) => (
+                  <option
+                    key={membership.dealershipId}
+                    value={membership.dealershipId}
+                  >
+                    {membership.dealershipName}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Confirmás la recepción en representación de esta concesionaria.
+              </p>
+            </div>
+          )}
+
           {actionError && (
             <p
               role="alert"
@@ -195,7 +362,7 @@ export default function TransferQrAcceptPage() {
         <CardFooter className="flex flex-col gap-2">
           <Button
             className="w-full"
-            disabled={accepting}
+            disabled={accepting || (purpose === "take" && !dealershipId)}
             onClick={handleAccept}
           >
             {accepting ? (
@@ -204,11 +371,11 @@ export default function TransferQrAcceptPage() {
                 Aceptando…
               </>
             ) : (
-              "Aceptar y recibir vehículo"
+              purposeButtonLabel(purpose)
             )}
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            Al aceptar, el vehículo pasará a estar bajo tu titularidad.
+            {purposeFooterText(purpose, selectedDealership?.dealershipName)}
           </p>
         </CardFooter>
       </Card>

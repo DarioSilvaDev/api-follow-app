@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, User, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WorkshopSelector } from "@/components/layout/workshop-selector";
+import { DealershipSelector } from "@/components/layout/dealership-selector";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { useAuth } from "@/hooks/use-auth";
 import { authApi } from "@/lib/api";
@@ -15,6 +16,8 @@ const NAV_ITEMS_BASE = [
   { href: "/dashboard", label: "Inicio" },
   // Fase 1 / D-078: panel de transferencias (base — owner en contexto PERSONAL).
   { href: "/transferencias", label: "Transferencias" },
+  // Milestone consignación (D-105 / spec §8): gestión de concesionarias.
+  { href: "/dealerships", label: "Concesionarias" },
 ] as const;
 
 const NAV_ITEMS_WORKSHOP = [
@@ -68,6 +71,12 @@ export default function DashboardLayout({
 
   const isWorkshop = activeContext?.type === "WORKSHOP";
 
+  // PM §29 (D-105): "Concesionarias" + DealershipSelector solo se renderizan
+  // cuando el usuario tiene `dealershipMemberships` (datos de sesión — no
+  // permisos genéricos). NAV_ITEMS_BASE se mantiene como fuente canónica;
+  // el acceso del header al selector ya es condicional (§8 RB-10).
+  const hasDealerships = (user?.dealershipMemberships?.length ?? 0) > 0;
+
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
@@ -76,7 +85,9 @@ export default function DashboardLayout({
   const navLinks = [
     ...NAV_ITEMS_BASE,
     ...(isWorkshop ? NAV_ITEMS_WORKSHOP : []),
-  ];
+  ].filter(
+    (item) => item.href !== "/dealerships" || hasDealerships,
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -93,6 +104,7 @@ export default function DashboardLayout({
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1">
             <WorkshopSelector />
+            <DealershipSelector />
             {navLinks.map((item) => (
               <Link
                 key={item.href}
@@ -144,6 +156,7 @@ export default function DashboardLayout({
           {/* Mobile hamburger */}
           <div className="flex items-center gap-2 md:hidden">
             <WorkshopSelector />
+            <DealershipSelector />
             {user && (
               <div
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-medium"

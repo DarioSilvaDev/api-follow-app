@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { Car, Loader2, Mail, QrCode, Send } from "lucide-react";
+import { Car, Loader2, Mail, QrCode, Send, Store } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -159,7 +159,7 @@ function TransferDialogForm({
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [submitError, setSubmitError] = useState<unknown>(null);
-  const [mode, setMode] = useState<"email" | "qr">("email");
+  const [mode, setMode] = useState<"email" | "qr" | "consignment">("email");
 
   const {
     register,
@@ -221,7 +221,7 @@ function TransferDialogForm({
   );
 
   const modeToggle = (
-    <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+    <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-muted/40 p-1">
       <button
         type="button"
         onClick={() => setMode("email")}
@@ -249,6 +249,23 @@ function TransferDialogForm({
       >
         <QrCode className="h-3.5 w-3.5" />
         QR
+      </button>
+      {/* Milestone consignación (§9 spec): "Entregar a concesionaria" genera
+          el QR de TOMA (purpose: take, D-104). Un miembro de la concesionaria
+          lo escanea y la concesionaria pasa a ser titular intermedia. */}
+      <button
+        type="button"
+        onClick={() => setMode("consignment")}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+          mode === "consignment"
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+        aria-pressed={mode === "consignment"}
+      >
+        <Store className="h-3.5 w-3.5" />
+        Concesionaria
       </button>
     </div>
   );
@@ -342,6 +359,25 @@ function TransferDialogForm({
             onSuccess?.();
           }}
         />
+      ) : mode === "consignment" ? (
+        <div className="flex flex-col gap-3">
+          {/* Milestone consignación (D-104): QR de TOMA. Lo escanea un miembro
+              de la concesionaria en representación (contexto DEALERSHIP). */}
+          <QrTransferPanel
+            key={`take-${qrVehicle?.id ?? "no-vehicle"}`}
+            vehicle={qrVehicle}
+            purpose="take"
+            onMutationEnd={() => {
+              queryClient.invalidateQueries({ queryKey: ["vehicle"] });
+              queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+              onSuccess?.();
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Al escanear este QR, la concesionaria pasa a ser titular
+            intermedia del vehículo hasta la venta o devolución.
+          </p>
+        </div>
       ) : (
         <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1.5">

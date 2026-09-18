@@ -19,6 +19,7 @@ import {
   Loader2,
   RotateCw,
   Star,
+  Store,
   Trash2,
   Upload,
   Wrench,
@@ -45,6 +46,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/use-auth";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { vehicleApi } from "@/lib/api";
+import { activeConsignmentDealership } from "@/lib/consignment";
 import { VehicleHeader } from "@/components/vehicle/vehicle-header";
 import { TransferDialog } from "@/components/transfer/transfer-dialog";
 import {
@@ -142,15 +144,20 @@ function isImageDocument(doc: VehicleDocument): boolean {
 // ---------------------------------------------------------------------------
 
 function FichaCard({ vehicle }: { vehicle: Vehicle }) {
+  // Milestone consignación (D-107): el titular ACTUAL puede ser persona
+  // (type owner) o concesionaria (type company + dealership, titular
+  // intermedio durante la exhibición). Se muestra el que esté vigente.
   const activeOwnership =
-    vehicle.ownerships?.find((o) => o.type === "owner" && !o.endsAt) ?? null;
+    vehicle.ownerships?.find((o) => !o.endsAt) ?? null;
 
-  const ownerDisplayName = activeOwnership?.user
-    ? [activeOwnership.user.firstName, activeOwnership.user.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim() || "Propietario registrado"
-    : "Propietario registrado";
+  const ownerDisplayName = activeOwnership?.dealership?.name
+    ? activeOwnership.dealership.name
+    : activeOwnership?.user
+      ? [activeOwnership.user.firstName, activeOwnership.user.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Propietario registrado"
+      : "Propietario registrado";
 
   return (
     <Card>
@@ -1219,11 +1226,34 @@ export default function VehicleDetailPage() {
 
   const vehicle = vehicleQuery.data;
   const isOwner = isVehicleOwner(vehicle, user?.id);
+  // Milestone consignación (D-107/RB-09): durante la exhibición la dealership
+  // es titular intermedio → el vendedor ve banner y conserva SOLO lectura
+  // (canWrite = isOwner ya es false porque el ownership activo es company).
+  const consignmentDealership = activeConsignmentDealership(vehicle);
 
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <VehicleHeader vehicle={vehicle} isOwner={isOwner} />
+
+      {/* Banner de consignación (D-107): visible para quien lee el vehículo
+          mientras la concesionaria es titular intermedio. */}
+      {consignmentDealership && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm"
+        >
+          <Store className="h-4 w-4 shrink-0 text-primary" />
+          <p>
+            En consignación en{" "}
+            <span className="font-semibold">
+              {consignmentDealership.name}
+            </span>
+            . Durante la exhibición, fotos, documentos y kilometraje no se
+            pueden modificar.
+          </p>
+        </div>
+      )}
 
       {/* Acciones específicas del contexto */}
       <div className="flex flex-wrap gap-2">

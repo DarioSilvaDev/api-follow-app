@@ -21,7 +21,11 @@ export type VehicleOwnershipType = "owner" | "co_owner" | "company";
 export interface VehicleOwnership {
   id: string;
   vehicleId: string;
-  userId: string;
+  /**
+   * Titular persona. Milestone consignación (D-TL-9 / D-DB-1): nullable
+   * cuando el titular es una concesionaria (XOR con `dealershipId`).
+   */
+  userId?: string | null;
   type: VehicleOwnershipType;
   startsAt: string;
   endsAt?: string | null;
@@ -34,6 +38,17 @@ export interface VehicleOwnership {
     lastName: string;
     email?: string;
   };
+  /**
+   * Milestone consignación (D-101/D-107): titular organizacional (dealership).
+   * Presente en ownerships de tipo `company` activadas por la cadena de
+   * consignación (`userId` null — XOR D-DB-1). Sin PII de empleados.
+   */
+  dealershipId?: string | null;
+  dealership?: {
+    id: string;
+    name: string;
+    logoUrl?: string | null;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +230,15 @@ export interface TransferRecipient {
 
 export type TransferQrSource = "presencial" | "concesionaria";
 
+/**
+ * Milestone consignación (resolución PM §3.1): propósito del QR.
+ * `"transfer"` = flujo clásico persona→persona (purpose NULL en BD);
+ * `take` = QR de TOMA (vendedor → concesionaria, D-104);
+ * `sale` = QR de VENTA (concesionaria → comprador);
+ * `return` = QR inverso de DEVOLUCIÓN (concesionaria → vendedor, D-105).
+ */
+export type TransferQrPurpose = "take" | "sale" | "return" | "transfer";
+
 /** POST vehicles/:id/qr → QR generado (url deep link + TTL). */
 export interface GeneratedTransferQr {
   id: string;
@@ -223,6 +247,8 @@ export interface GeneratedTransferQr {
   source: TransferQrSource;
   expiresAt: string;
   secondsRemaining: number;
+  /** Milestone consignación: propósito (ausente/transfer = flujo clásico). */
+  purpose?: TransferQrPurpose;
 }
 
 /** GET vehicles/transfer/qr/:token → preview (vehicle + emisor, sin PII). */
@@ -241,6 +267,16 @@ export interface TransferQrPreview {
   source: TransferQrSource;
   expiresAt: string;
   secondsRemaining: number;
+  /**
+   * Milestone consignación (resolución PM §3.3): propósito del QR. Ausente →
+   * flujo clásico persona→persona (`"transfer"`).
+   */
+  purpose?: TransferQrPurpose;
+  /**
+   * Titular organizacional de origen (consignación: venta/devolución). Sin
+   * PII. `null` cuando el origen es persona.
+   */
+  fromDealership?: { id: string; name: string; logoUrl?: string | null } | null;
 }
 
 /** POST vehicles/transfer/qr/:token/accept → resultado one-shot. */

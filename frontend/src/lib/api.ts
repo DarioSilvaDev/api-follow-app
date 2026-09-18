@@ -1,5 +1,5 @@
 import ky, { HTTPError, isHTTPError } from "ky";
-import { clearWorkshop, getActiveContext } from "@/lib/active-context";
+import { clearActiveContext, getActiveContext } from "@/lib/active-context";
 import type { SessionUser } from "@/types/auth";
 import type {
   CareEpisode,
@@ -8,6 +8,15 @@ import type {
   CreateCareEpisodeInput,
   CreateOwnerCareEpisodeInput,
 } from "@/types/care-episode";
+import type {
+  CreateDealershipInput,
+  UpdateDealershipInput,
+  Dealership,
+  DealershipExhibitionVehicle,
+  DealershipInvitation,
+  DealershipMember,
+  DealershipRoleItem,
+} from "@/types/dealership";
 import type {
   WorkshopDetail,
   WorkshopSearchResult,
@@ -36,11 +45,13 @@ import type {
 export { HTTPError, isHTTPError };
 
 // ---------------------------------------------------------------------------
-// Active context headers (F-020 / RF-3, D-020 A1)
+// Active context headers (F-020 / RF-3, D-020 A1; consignación D-TL-12)
 //
 // El contexto activo se inyecta por request vía headers:
 // - WORKSHOP activo → `X-Context-Type: WORKSHOP` + `X-Context-Id: {workshopId}`
 //   en todas las llamadas EXCEPTO `auth/*`.
+// - DEALERSHIP activo → `X-Context-Type: DEALERSHIP` +
+//   `X-Context-Id: {dealershipId}` (idem, miembro en representación).
 // - PERSONAL (null) → sin headers (comportamiento actual intacto, D-035).
 // ---------------------------------------------------------------------------
 
@@ -73,7 +84,7 @@ function isAuthApiPath(path: string): boolean {
   return path.startsWith("auth/");
 }
 
-/** Inyecta los headers de contexto si hay taller seleccionado y NO es auth/*. */
+/** Inyecta los headers de contexto si hay taller/concesionaria seleccionado y NO es auth/*. */
 function injectActiveContextHeaders({ request }: { request: Request }): void {
   const context = getActiveContext();
   if (!context) {
@@ -83,7 +94,9 @@ function injectActiveContextHeaders({ request }: { request: Request }): void {
     return;
   }
   request.headers.set("X-Context-Type", context.type);
-  request.headers.set("X-Context-Id", context.workshopId);
+  const contextId =
+    context.type === "WORKSHOP" ? context.workshopId : context.dealershipId;
+  request.headers.set("X-Context-Id", contextId);
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +114,7 @@ export const api = ky.create({
   hooks: {
     beforeRequest: [
       // F-020 / RF-3: contexto activo por headers (no aplica a auth/*).
+      // Consignación (D-TL-12): DEALERSHIP también inyecta headers.
       (hookArg) => {
         injectActiveContextHeaders(hookArg);
       },
@@ -258,8 +272,9 @@ export const authApi = {
       .json<{ message: string }>()
       .catch(toApiError)
       // F-020 / RF-3: el logout SIEMPRE resetea el contexto a null (PERSONAL),
-      // incluso si la API falla — un workshopId stale rompería el próximo login.
-      .finally(() => clearWorkshop()),
+      // incluso si la API falla — un workshopId/dealershipId stale rompería el
+      // próximo login (ContextResolver, D-020 / D-TL-12).
+      .finally(() => clearActiveContext()),
 
   me: () =>
     api
@@ -596,6 +611,38 @@ export const vehicleApi = {
       .json<GeneratedTransferQr>()
       .catch(toApiError),
 
+  // -------------------------------------------------------------------------
+  // Milestone consignación (D-104/D-105, spec §8). Same QR machinery; the
+  // purpose (take/sale/return) is resolved server-side and echoed back.
+  // -------------------------------------------------------------------------
+
+  /**
+   * POST vehicles/:id/consignment/take-qr → QR de TOMA (purpose: take, D-104).
+   * Lo genera el vendedor (owner) y lo escanea un miembro de la concesionaria
+   * (contexto DEALERSHIP). `schedule`:
+   * - `immediate` → presencial 1h (RB-11);
+   * - `pickup`    → retiro diferido 48h (la agencia escanea al llegar el auto).
+   */
+  generateConsignmentTakeQr: (
+    vehicleId: string,
+    dto: { schedule: "immediate" | "pickup" },
+  ) =>
+    api
+      .post(`vehicles/${vehicleId}/consignment/take-qr`, { json: dto })
+      .json<GeneratedTransferQr>()
+      .catch(toApiError),
+
+  /**
+   * POST vehicles/:id/consignment/return-qr → QR inverso de DEVOLUCIÓN
+   * (purpose: return, D-105). Lo genera la concesionaria (titular intermedio,
+   * contexto DEALERSHIP); el vendedor original lo escanea y acepta.
+   */
+  generateConsignmentReturnQr: (vehicleId: string) =>
+    api
+      .post(`vehicles/${vehicleId}/consignment/return-qr`)
+      .json<GeneratedTransferQr>()
+      .catch(toApiError),
+
   /** GET vehicles/transfer/qr/:token → preview antes de aceptar. */
   previewTransferQr: (token: string) =>
     api
@@ -702,5 +749,91 @@ export const workshopApi = {
     api
       .get("workshops/search", { searchParams: { q } })
       .json<WorkshopSearchResult[]>()
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
+// Dealership API methods (milestone consignación — D-102, spec §8)
+//
+// Módulo `dealerships` espejo de workshops. Los endpoints exigen membresía
+// activa (o permisos por rol — RB-10) y el backend es la frontera de
+// enforcement; la UI solo oculta/renderiza según contexto (AGENTS.md §22).
+// ---------------------------------------------------------------------------
+
+export const dealershipApi = {
+  /** POST /dealerships → alta rápida (D-103): crea member dueño del user autenticado. */
+  create: (input: CreateDealershipInput) =>
+    api
+      .post("dealerships", { json: input })
+      .json<Dealership>()
+      .catch(toApiError),
+
+  /** GET /dealerships/mine → concesionarias del usuario (miembro). */
+  listMine: () =>
+    api
+      .get("dealerships/mine")
+      .json<Dealership[]>()
+      .catch(toApiError),
+
+  /** GET /dealerships/:id → detalle (admin/miembro). */
+  get: (id: string) =>
+    api
+      .get(`dealerships/${id}`)
+      .json<Dealership>()
+      .catch(toApiError),
+
+  /** PATCH /dealerships/:id → editar perfil (admin). */
+  update: (id: string, input: UpdateDealershipInput) =>
+    api
+      .patch(`dealerships/${id}`, { json: input })
+      .json<Dealership>()
+      .catch(toApiError),
+
+  /** GET /dealerships/:id/vehicles → vehículos en exhibición (panel). */
+  listVehicles: (id: string) =>
+    api
+      .get(`dealerships/${id}/vehicles`)
+      .json<DealershipExhibitionVehicle[]>()
+      .catch(toApiError),
+
+  /** GET /dealerships/:id/members → miembros (espejo workshops). */
+  listMembers: (id: string) =>
+    api
+      .get(`dealerships/${id}/members`)
+      .json<DealershipMember[]>()
+      .catch(toApiError),
+
+  /** GET /dealerships/:id/roles → roles de la concesionaria (RB-10). */
+  listRoles: (id: string) =>
+    api
+      .get(`dealerships/${id}/roles`)
+      .json<DealershipRoleItem[]>()
+      .catch(toApiError),
+
+  /** POST /dealerships/:id/members → invitación por email + rol (patrón workshops, D-034). */
+  inviteMember: (id: string, input: { email: string; roleId: string }) =>
+    api
+      .post(`dealerships/${id}/members`, { json: input })
+      .json<DealershipInvitation>()
+      .catch(toApiError),
+
+  /** PATCH /dealerships/:id/members/:memberId/role → cambio de rol (admin). */
+  updateMemberRole: (
+    dealershipId: string,
+    memberId: string,
+    roleId: string,
+  ) =>
+    api
+      .patch(`dealerships/${dealershipId}/members/${memberId}/role`, {
+        json: { roleId },
+      })
+      .json<DealershipMember>()
+      .catch(toApiError),
+
+  /** DELETE /dealerships/:id/members/:memberId → quitar miembro (admin). */
+  removeMember: (dealershipId: string, memberId: string) =>
+    api
+      .delete(`dealerships/${dealershipId}/members/${memberId}`)
+      .then(() => undefined as void)
       .catch(toApiError),
 };

@@ -14,6 +14,18 @@ export interface SessionUser {
     workshop: { id: string; name: string };
     role: { id: string; code: string; name: string };
   }>;
+  /**
+   * Milestone consignación (D-102 / resolución PM §3.4): membresías en
+   * concesionarias → bootstrap del contexto activo DEALERSHIP.
+   * OPCIONAL (aditivo): el backend actual aún no lo expone; la UI tolera su
+   * ausencia sin romper el bootstrap de sesión.
+   */
+  dealershipMemberships?: Array<{
+    dealershipId: string;
+    dealershipName: string;
+    logoUrl?: string | null;
+    role: string;
+  }>;
 }
 
 export interface AuthErrorEnvelope {

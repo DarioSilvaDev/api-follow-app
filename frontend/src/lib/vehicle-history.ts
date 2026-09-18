@@ -115,11 +115,15 @@ export function mergeHistory(history: VehicleHistoryResponse): TimelineEntry[] {
   // Ownerships: el primero cronológicamente es "Inicio de propiedad"; el
   // resto son transferencias de titularidad (D-055). El backend llega desc;
   // ordenamos asc solo para decidir el título y volvemos al merge global desc.
+  // Milestone consignación (D-107): un ownership de concesionaria (type
+  // company + dealership) se muestra como titular intermedio en la cadena
+  // `Propietario → Concesionaria → Comprador`, sin PII de empleados.
   const ownershipsAsc = [...history.ownerships].sort(
     (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
   );
   ownershipsAsc.forEach((ownership, index) => {
-    const owner = userName(ownership.user);
+    const owner =
+      ownership.dealership?.name ?? userName(ownership.user);
     entries.push({
       id: `ownership:${ownership.id}`,
       date: ownership.startsAt,
@@ -127,7 +131,9 @@ export function mergeHistory(history: VehicleHistoryResponse): TimelineEntry[] {
       title:
         index === 0
           ? "Inicio de propiedad"
-          : `Propiedad transferida a ${owner}`,
+          : owner
+            ? `Propiedad transferida a ${owner}`
+            : "Propiedad transferida",
       actor: owner || undefined,
       notes: ownership.notes ?? undefined,
     });
