@@ -1,13 +1,19 @@
 "use client";
 
 /**
- * Paso 2 del wizard de invitación de concesionaria.
- * El nombre viene pre-cargado (read-only). Se completan los datos públicos de
- * la concesionaria: email de contacto, teléfono, website y descripción.
+ * Paso 2 del wizard de invitación (concesionaria Y taller, D-106).
+ * Componente único parametrizado por `kind`:
+ *
+ * - dealership: el nombre viene pre-cargado (read-only). Se completan los
+ *   datos públicos: email de contacto, teléfono, website y descripción.
+ * - workshop: el nombre es SOLO lectura (display + nota); el claim NO lo
+ *   envía (el backend lo fija en el alta admin — D-106). El resto del
+ *   formulario es idéntico.
+ *
  * El submit dispara el POST claim (página) con estos datos (+ los del paso 1
  * cuando el flujo es registro).
  */
-import { useForm } from "react-hook-form";
+import { useForm, type DefaultValues } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,35 +22,48 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   invitationDealershipSchema,
-  type InvitationDealershipValues,
+  invitationWorkshopSchema,
+  type InvitationEntityValues,
 } from "@/lib/invitation-schema";
+import type { InvitationKind } from "@/types/invitation";
 
-export function InvitationStepDealership({
-  dealershipName,
+export function InvitationStepEntity({
+  kind,
+  entityName,
   defaultEmail,
   submitError,
   onBack,
   onSubmit,
 }: {
-  dealershipName: string;
+  kind: InvitationKind;
+  entityName: string;
   defaultEmail: string;
   submitError?: string | null;
   onBack?: () => void;
-  onSubmit: (values: InvitationDealershipValues) => void | Promise<void>;
+  onSubmit: (values: InvitationEntityValues) => void | Promise<void>;
 }) {
+  const isWorkshop = kind === "workshop";
+  // El resolver se elige por kind; ambos outputs encajan en
+  // InvitationEntityValues (name opcional).
+  const resolver = zodResolver(
+    isWorkshop ? invitationWorkshopSchema : invitationDealershipSchema,
+  );
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<InvitationDealershipValues>({
-    resolver: zodResolver(invitationDealershipSchema),
-    defaultValues: {
-      name: dealershipName,
-      email: defaultEmail,
-      phone: "",
-      website: "",
-      description: "",
-    },
+  } = useForm<InvitationEntityValues>({
+    resolver,
+    defaultValues: (isWorkshop
+      ? { email: defaultEmail, phone: "", website: "", description: "" }
+      : {
+          name: entityName,
+          email: defaultEmail,
+          phone: "",
+          website: "",
+          description: "",
+        }) as DefaultValues<InvitationEntityValues>,
   });
 
   return (
@@ -53,34 +72,49 @@ export function InvitationStepDealership({
       className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="wizard-dealership-name">
-          Nombre <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="wizard-dealership-name"
-          type="text"
-          readOnly
-          className="bg-muted/50 text-muted-foreground"
-          aria-invalid={Boolean(errors.name)}
-          {...register("name")}
-        />
-        {errors.name && (
-          <p className="text-xs text-destructive" role="alert">
-            {errors.name.message}
+      {isWorkshop ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="wizard-entity-name-readonly">Nombre</Label>
+          <div
+            id="wizard-entity-name-readonly"
+            className="rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+          >
+            {entityName}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tal como lo registró el administrador. No puede modificarse aquí.
           </p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="wizard-entity-name">
+            Nombre <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="wizard-entity-name"
+            type="text"
+            readOnly
+            className="bg-muted/50 text-muted-foreground"
+            aria-invalid={Boolean(errors.name)}
+            {...register("name")}
+          />
+          {errors.name && (
+            <p className="text-xs text-destructive" role="alert">
+              {errors.name.message}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="wizard-dealership-email">
+          <Label htmlFor="wizard-entity-email">
             Email de contacto <span className="text-destructive">*</span>
           </Label>
           <Input
-            id="wizard-dealership-email"
+            id="wizard-entity-email"
             type="email"
-            placeholder="contacto@miagencia.com"
+            placeholder="contacto@taller.com"
             aria-invalid={Boolean(errors.email)}
             {...register("email")}
           />
@@ -91,9 +125,9 @@ export function InvitationStepDealership({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="wizard-dealership-phone">Teléfono (opcional)</Label>
+          <Label htmlFor="wizard-entity-phone">Teléfono (opcional)</Label>
           <Input
-            id="wizard-dealership-phone"
+            id="wizard-entity-phone"
             type="tel"
             inputMode="tel"
             placeholder="Ej. 11 5555 1234"
@@ -109,12 +143,12 @@ export function InvitationStepDealership({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="wizard-dealership-website">Website (opcional)</Label>
+        <Label htmlFor="wizard-entity-website">Website (opcional)</Label>
         <Input
-          id="wizard-dealership-website"
+          id="wizard-entity-website"
           type="url"
           inputMode="url"
-          placeholder="https://miagencia.com"
+          placeholder="https://mitaller.com"
           aria-invalid={Boolean(errors.website)}
           {...register("website")}
         />
@@ -126,12 +160,16 @@ export function InvitationStepDealership({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="wizard-dealership-description">
+        <Label htmlFor="wizard-entity-description">
           Descripción (opcional)
         </Label>
         <Textarea
-          id="wizard-dealership-description"
-          placeholder="Contanos sobre tu concesionaria..."
+          id="wizard-entity-description"
+          placeholder={
+            isWorkshop
+              ? "Contanos sobre tu taller..."
+              : "Contanos sobre tu concesionaria..."
+          }
           aria-invalid={Boolean(errors.description)}
           {...register("description")}
         />
@@ -165,7 +203,11 @@ export function InvitationStepDealership({
         )}
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isSubmitting ? "Activando..." : "Activar concesionaria"}
+          {isSubmitting
+            ? "Activando..."
+            : isWorkshop
+              ? "Activar taller"
+              : "Activar concesionaria"}
         </Button>
       </div>
     </form>

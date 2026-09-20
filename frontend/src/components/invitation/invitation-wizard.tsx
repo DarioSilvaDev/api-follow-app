@@ -7,23 +7,29 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "cn";
+import type { InvitationKind } from "@/types/invitation";
 
 /**
- * Stepper visual de 2 pasos del wizard de invitación + shell de Card.
+ * Stepper visual de 2 pasos del wizard de invitación + shell de Card
+ * (concesionaria Y taller — D-106).
  *
  * Paso 1 "Tu cuenta" (registro o login según requiresRegister) y paso 2
- * "Tu concesionaria". El paso activo lleva `aria-current="step"` (requerido
- * por la spec). Los pasos completados muestran un check.
+ * "Tu {entidad}" parametrizado por `kind`. El paso activo lleva
+ * `aria-current="step"` (requerido por la spec). Los pasos completados
+ * muestran un check.
  */
 export function InvitationWizard({
   currentStep,
   mode,
+  kind,
   children,
 }: {
   currentStep: 1 | 2;
   mode: "register" | "login";
+  kind: InvitationKind;
   children: React.ReactNode;
 }) {
+  const entityName = kind === "workshop" ? "taller" : "concesionaria";
   const steps = [
     {
       n: 1 as const,
@@ -32,7 +38,7 @@ export function InvitationWizard({
     },
     {
       n: 2 as const,
-      label: "Tu concesionaria",
+      label: `Tu ${entityName}`,
       description: "Completá los datos",
     },
   ];
@@ -42,7 +48,7 @@ export function InvitationWizard({
       <CardHeader>
         {/* Stepper verticalmente accesible: aria-current="step" en el activo. */}
         <ol
-          aria-label="Progreso del alta de concesionaria"
+          aria-label={`Progreso del alta de ${entityName}`}
           className="flex items-center justify-center gap-2"
         >
           {steps.map((step, index) => {
@@ -102,12 +108,12 @@ export function InvitationWizard({
             ? mode === "register"
               ? "Creá tu cuenta"
               : "Iniciá sesión"
-            : "Completá los datos de tu concesionaria"}
+            : `Completá los datos de tu ${entityName}`}
         </CardTitle>
         <CardDescription className="text-center">
           {currentStep === 1
             ? mode === "register"
-              ? "Registrá tu cuenta para continuar con el alta de tu concesionaria."
+              ? `Registrá tu cuenta para continuar con el alta de tu ${entityName}.`
               : "Ya tenés una cuenta. Ingresá para continuar con el alta."
             : "El nombre ya está cargado. Completá el resto del perfil público."}
         </CardDescription>

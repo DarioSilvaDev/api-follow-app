@@ -20,14 +20,23 @@ import type {
 } from "@/types/dealership";
 import type {
   AdminDealershipListResponse,
+  AdminWorkshopDetail,
+  AdminWorkshopListResponse,
   CreateAdminDealershipInput,
   CreateAdminDealershipResult,
+  CreateAdminWorkshopInput,
+  CreateAdminWorkshopResult,
   ResendInvitationResult,
+  ResendWorkshopInvitationResult,
+  UpdateAdminWorkshopStatusInput,
 } from "@/types/admin";
 import type {
   InvitationClaimInput,
   InvitationClaimPreview,
   InvitationClaimResult,
+  WorkshopClaimPayload,
+  WorkshopClaimPreview,
+  WorkshopClaimResult,
 } from "@/types/invitation";
 import type {
   WorkshopDetail,
@@ -98,9 +107,10 @@ function isAuthApiPath(path: string): boolean {
 
 /**
  * Prefijos SIN contexto activo (además de `auth/*`):
- * - `dealerships/wizard/*` — endpoints PÚBLICOS del wizard de invitación
- *   (onboarding de concesionaria). Un contexto DEALERSHIP/WORKSHOP stale NO
- *   debe inyectarse en una operación pública de claim/validación.
+ * - `dealerships/wizard/*` y `workshops/wizard/*` — endpoints PÚBLICOS del
+ *   wizard de invitación (onboarding de concesionaria Y de taller, D-106). Un
+ *   contexto DEALERSHIP/WORKSHOP stale NO debe inyectarse en una operación
+ *   pública de claim/validación.
  * - `admin/*` — workspace admin de plataforma (workspace PLATFORM); el
  *   contexto operativo del usuario no aplica a estas operaciones.
  *
@@ -110,6 +120,7 @@ function isContextFreePath(path: string): boolean {
   return (
     isAuthApiPath(path) ||
     path.startsWith("dealerships/wizard/") ||
+    path.startsWith("workshops/wizard/") ||
     path.startsWith("admin/")
   );
 }
@@ -182,14 +193,16 @@ export const api = ky.create({
           if (publicEndpoints.some((ep) => relativePath.startsWith(ep))) {
             return ky.stop;
           }
-          // Wizard público de invitación (onboarding de concesionaria): el
-          // GET de validación es PÚBLICO y NUNCA debe disparar el refresh
-          // 401 (contrato: token inválido/vencido/usado → 404/400/409, jamás
-          // 401). El claim POST (auth opcional por cookie) sí puede devolver
-          // 401 AUTH_REQUIRED y en ese caso el refresh sí corresponde.
+          // Wizard público de invitación (onboarding de concesionaria y de
+          // taller, D-106): el GET de validación es PÚBLICO y NUNCA debe
+          // disparar el refresh 401 (contrato: token inválido/vencido/usado →
+          // 404/400/409, jamás 401). El claim POST (auth opcional por cookie)
+          // sí puede devolver 401 AUTH_REQUIRED y en ese caso el refresh sí
+          // corresponde.
           const isInvitationPreviewGet =
             error.request.method === "GET" &&
-            relativePath.startsWith("dealerships/wizard/invitations");
+            (relativePath.startsWith("dealerships/wizard/invitations") ||
+              relativePath.startsWith("workshops/wizard/invitations"));
           if (isInvitationPreviewGet) {
             return ky.stop;
           }
@@ -880,16 +893,20 @@ export const dealershipApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Invitation API (onboarding administrado de concesionaria — wizard público)
+// Invitation API (onboarding administrado — wizard público de concesionaria y
+// de taller, D-106)
 //
-// Contrato backend congelado:
+// Contrato backend congelado (espejo dealership/workshop):
 // - GET  /dealerships/wizard/invitations/:token  (PÚBLICO)
 // - POST /dealerships/wizard/claim               (PÚBLICO, auth opcional por
 //   cookie; el body lleva TODO — cuenta + datos de la concesionaria — cuando
 //   requiresRegister=true; NO se llama /auth/register desde el wizard).
+// - GET  /workshops/wizard/invitations/:token   (PÚBLICO)
+// - POST /workshops/wizard/claim                (PÚBLICO, auth opcional por
+//   cookie; el name del taller NO es editable — el backend lo fija).
 //
 // El GET de validación está en la skip-list del refresh 401 (solo GET) y el
-// prefijo `dealerships/wizard/` no inyecta headers de contexto (público).
+// prefijo `*/wizard/` no inyecta headers de contexto (público).
 // ---------------------------------------------------------------------------
 
 export const invitationApi = {
@@ -906,15 +923,35 @@ export const invitationApi = {
       .post("dealerships/wizard/claim", { json: input })
       .json<InvitationClaimResult>()
       .catch(toApiError),
+
+  /** GET /workshops/wizard/invitations/:token → preview del claim del taller. */
+  getWorkshopClaimPreview: (token: string) =>
+    api
+      .get(`workshops/wizard/invitations/${encodeURIComponent(token)}`)
+      .json<WorkshopClaimPreview>()
+      .catch(toApiError),
+
+  /** POST /workshops/wizard/claim → crea/activa la cuenta + activa el taller. */
+  claimWorkshop: (input: WorkshopClaimPayload) =>
+    api
+      .post("workshops/wizard/claim", { json: input })
+      .json<WorkshopClaimResult>()
+      .catch(toApiError),
 };
 
 // ---------------------------------------------------------------------------
-// Admin API (workspace admin de plataforma — sección concesionarias)
+// Admin API (workspace admin de plataforma — secciones concesionarias y
+// talleres, D-106)
 //
-// Contrato backend congelado (permisos admin.dealerships.list/create/manage):
+// Contrato backend congelado:
 // - GET  /admin/dealerships?page&limit&status
 // - POST /admin/dealerships { name, taxId?, ownerEmail }
 // - POST /admin/dealerships/:id/invitations (reenvío de invitación)
+// - GET  /admin/workshops?page&limit&status
+// - POST /admin/workshops { name, taxId?, ownerEmail }
+// - POST /admin/workshops/:id/invitations (reenvío de invitación)
+// - GET  /admin/workshops/:id (detalle admin)
+// - PATCH /admin/workshops/:id/status { isActive }
 //
 // El prefijo `admin/` no inyecta headers de contexto (workspace PLATFORM).
 // ---------------------------------------------------------------------------
@@ -953,5 +990,59 @@ export const adminApi = {
     api
       .post(`admin/dealerships/${dealershipId}/invitations`)
       .json<ResendInvitationResult>()
+      .catch(toApiError),
+
+  /** GET /admin/workshops → envelope paginado filtrable por status. */
+  listWorkshops: ({
+    page = 1,
+    limit = 10,
+    status,
+  }: {
+    page?: number;
+    limit?: number;
+    status?: "pending_claim" | "active";
+  } = {}) =>
+    api
+      .get("admin/workshops", {
+        searchParams: {
+          page,
+          limit,
+          ...(status ? { status } : {}),
+        },
+      })
+      .json<AdminWorkshopListResponse>()
+      .catch(toApiError),
+
+  /** POST /admin/workshops → alta administrada (pending_claim + invitación). */
+  createWorkshop: (input: CreateAdminWorkshopInput) =>
+    api
+      .post("admin/workshops", { json: input })
+      .json<CreateAdminWorkshopResult>()
+      .catch(toApiError),
+
+  /** POST /admin/workshops/:id/invitations → reenvía la invitación al dueño. */
+  resendWorkshopInvitation: (workshopId: string) =>
+    api
+      .post(`admin/workshops/${workshopId}/invitations`)
+      .json<ResendWorkshopInvitationResult>()
+      .catch(toApiError),
+
+  /** GET /admin/workshops/:id → detalle admin (branches + members). */
+  getWorkshop: (workshopId: string) =>
+    api
+      .get(`admin/workshops/${encodeURIComponent(workshopId)}`)
+      .json<AdminWorkshopDetail>()
+      .catch(toApiError),
+
+  /** PATCH /admin/workshops/:id/status → habilitar/deshabilitar taller. */
+  updateWorkshopStatus: (
+    workshopId: string,
+    input: UpdateAdminWorkshopStatusInput,
+  ) =>
+    api
+      .patch(`admin/workshops/${encodeURIComponent(workshopId)}/status`, {
+        json: input,
+      })
+      .then(() => undefined as void)
       .catch(toApiError),
 };

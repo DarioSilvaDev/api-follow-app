@@ -11,15 +11,20 @@
  *   paso 2 → claim SIN credenciales (solo token/email + dealership).
  * - Éxito → CTA según membresía de la session (dealership claim).
  * - Errores del claim: terminales → pantalla de error; CONFLICT → inline.
+ * - `?kind` en la URL (mails D-106): el preview se resuelve contra la entidad
+ *   indicada DIRECTAMENTE (sin probe). Sin `kind` → probe de compatibilidad
+ *   (dealership 404 INVITATION_INVALID → taller).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import InvitationWizardPage from "@/app/invitations/[token]/page";
 
 const mockPreview = vi.fn();
 const mockClaim = vi.fn();
+const mockWorkshopPreview = vi.fn();
+const mockWorkshopClaim = vi.fn();
 const mockLogin = vi.fn();
 const mockRefreshSession = vi.fn();
 const mockParams = vi.fn<() => Record<string, string>>(
@@ -33,6 +38,9 @@ vi.mock("@/lib/api", () => ({
   invitationApi: {
     getClaimPreview: (...args: unknown[]) => mockPreview(...args),
     claim: (...args: unknown[]) => mockClaim(...args),
+    getWorkshopClaimPreview: (...args: unknown[]) =>
+      mockWorkshopPreview(...args),
+    claimWorkshop: (...args: unknown[]) => mockWorkshopClaim(...args),
   },
 }));
 
@@ -77,6 +85,49 @@ function makeClaimResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeWorkshopPreview(overrides: Record<string, unknown> = {}) {
+  return {
+    valid: true,
+    status: "pending",
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    workshop: { id: "w1", name: "Taller Mecánico Centro" },
+    email: "dueno@taller.com",
+    account: { exists: false, status: null },
+    requiresRegister: true,
+    ...overrides,
+  };
+}
+
+function makeWorkshopClaimResult(overrides: Record<string, unknown> = {}) {
+  return {
+    user: { id: "u1", email: "dueno@taller.com", firstName: "Juan", lastName: "Pérez" },
+    workshop: { id: "w1", name: "Taller Mecánico Centro", status: "active" },
+    member: { id: "m1", role: { code: "owner" } },
+    ...overrides,
+  };
+}
+
+/**
+ * Render del wizard con `searchParams` (page prop promise, patrón Next 16).
+ *
+ * IMPORTANTE: `use(searchParams)` SIEMPRE suspende en el primer render
+ * (React 19 resuelve la promise en una microtask aunque ya esté fulfilled).
+ * El rnder debe ocurrir DENTRO de `act(async () => ...)` y esperarse, para
+ * que React flushee la suspensión y haga commit → el helper ES async y cada
+ * test debe `await renderWizard(...)`.
+ */
+async function renderWizard(
+  searchParams: Record<string, string | string[] | undefined> = {},
+) {
+  let utils: ReturnType<typeof render>;
+  await act(async () => {
+    utils = render(
+      <InvitationWizardPage searchParams={Promise.resolve(searchParams)} />,
+    );
+  });
+  return utils!;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockRefreshSession.mockResolvedValue(undefined);
@@ -90,11 +141,14 @@ beforeEach(() => {
 describe("InvitationWizardPage", () => {
   it("token inválido (404): pantalla de error SIN formulario y sin claim", async () => {
     mockPreview.mockRejectedValue({ status: 404, message: "no encontrado" });
+    // El probe de taller también falla (mismo token no existe allí).
+    mockWorkshopPreview.mockRejectedValue({ status: 404, message: "no encontrado" });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     expect(await screen.findByText("Invitación inválida")).toBeInTheDocument();
     expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockWorkshopClaim).not.toHaveBeenCalled();
     // Sin formulario de reenvío (decisión PM D-B: solo panel admin reenvía).
     expect(screen.queryByRole("button", { name: /continuar/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /reintentar/i })).toBeNull();
@@ -103,7 +157,7 @@ describe("InvitationWizardPage", () => {
   it("token vencido (400 code): pantalla de error mapeada", async () => {
     mockPreview.mockRejectedValue({ status: 400, code: "INVITATION_EXPIRED" });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     expect(
       await screen.findByText("La invitación venció"),
@@ -114,7 +168,7 @@ describe("InvitationWizardPage", () => {
   it("token usado (409 code): pantalla de error mapeada", async () => {
     mockPreview.mockRejectedValue({ status: 409, code: "INVITATION_USED" });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     expect(
       await screen.findByText("Invitación ya utilizada"),
@@ -126,7 +180,7 @@ describe("InvitationWizardPage", () => {
     mockPreview.mockResolvedValue(makePreview());
     mockClaim.mockResolvedValue(makeClaimResult());
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     // Paso 1: registro (email read-only pre-cargado).
     expect(
@@ -184,7 +238,7 @@ describe("InvitationWizardPage", () => {
     mockLogin.mockResolvedValue({ user: { id: "u1" } });
     mockClaim.mockResolvedValue(makeClaimResult());
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     expect(
       await screen.findByText("Iniciá sesión"),
@@ -234,7 +288,7 @@ describe("InvitationWizardPage", () => {
       refreshSession: mockRefreshSession,
     });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     await user.type(await screen.findByLabelText(/^nombre/i), "Juan");
     await user.type(screen.getByLabelText(/apellido/i), "Pérez");
@@ -265,7 +319,7 @@ describe("InvitationWizardPage", () => {
       message: "email already registered",
     });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     // Saltar el registro: submit directo del paso 2 no es posible sin pasar
     // por el paso 1, así que se completa el registro mínimo.
@@ -297,7 +351,7 @@ describe("InvitationWizardPage", () => {
     mockPreview.mockResolvedValue(makePreview());
     mockClaim.mockRejectedValue({ status: 409, code: "INVITATION_USED" });
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     await user.type(await screen.findByLabelText(/^nombre/i), "Juan");
     await user.type(screen.getByLabelText(/apellido/i), "Pérez");
@@ -320,10 +374,189 @@ describe("InvitationWizardPage", () => {
     ).toBeNull();
   });
 
-  it("token faltante: pantalla de error sin llamar a la API", () => {
+  it("flujo TALLER por PROBE (URL sin ?kind): dealership 404 → preview taller → claimWorkshop", async () => {
+    const user = userEvent.setup();
+    mockPreview.mockRejectedValue({ status: 404, code: "INVITATION_INVALID" });
+    mockWorkshopPreview.mockResolvedValue(makeWorkshopPreview());
+    mockWorkshopClaim.mockResolvedValue(makeWorkshopClaimResult());
+
+    await renderWizard();
+
+    // El probe primero pide dealership (404) y luego taller (200).
+    expect(
+      await screen.findByText("Creá tu cuenta"),
+    ).toBeInTheDocument();
+    expect(mockPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(mockWorkshopPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(screen.getByLabelText(/email/i)).toHaveValue("dueno@taller.com");
+
+    await user.type(screen.getByLabelText(/^nombre/i), "Juan");
+    await user.type(screen.getByLabelText(/apellido/i), "Pérez");
+    await user.type(screen.getByLabelText(/teléfono/i), "11 5555 1234");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "password123");
+    await user.type(
+      screen.getByLabelText(/confirmar contraseña/i),
+      "password123",
+    );
+    await user.click(screen.getByRole("button", { name: /continuar/i }));
+
+    // Paso 2: paso TALLER — el nombre se muestra solo lectura (no campo input).
+    expect(
+      await screen.findByText("Completá los datos de tu taller"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Taller Mecánico Centro")).toBeInTheDocument();
+
+    const contactEmail = screen.getByLabelText(/email de contacto/i);
+    await user.clear(contactEmail);
+    await user.type(contactEmail, "contacto@taller.com");
+    await user.click(
+      screen.getByRole("button", { name: /activar taller/i }),
+    );
+
+    await waitFor(() =>
+      expect(mockWorkshopClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "TOKEN123",
+          email: "dueno@taller.com",
+          firstName: "Juan",
+          lastName: "Pérez",
+          phone: "11 5555 1234",
+          password: "password123",
+          workshop: expect.objectContaining({
+            email: "contacto@taller.com",
+          }),
+        }),
+      ),
+    );
+    // El claim del taller NO envía name (el backend lo fija).
+    const claimBody = mockWorkshopClaim.mock.calls[0][0] as Record<string, unknown>;
+    expect(claimBody.workshop).not.toHaveProperty("name");
+
+    expect(
+      await screen.findByText("¡Taller activado!"),
+    ).toBeInTheDocument();
+    // CTA: aún no existe /workshops/{id} → "Ir al inicio" (decisión PM).
+    const cta = screen.getByRole("link", { name: /ir al inicio/i });
+    expect(cta).toHaveAttribute("href", "/dashboard");
+    expect(mockClaim).not.toHaveBeenCalled();
+  });
+
+  it("?kind=workshop en la URL: preview directo de taller y NUNCA llama al preview de dealership (sin probe)", async () => {
+    const user = userEvent.setup();
+    mockWorkshopPreview.mockResolvedValue(makeWorkshopPreview());
+    mockWorkshopClaim.mockResolvedValue(makeWorkshopClaimResult());
+
+    await renderWizard({ kind: "workshop" });
+
+    // El preview se resuelve contra el endpoint de taller DIRECTAMENTE.
+    expect(
+      await screen.findByText("Creá tu cuenta"),
+    ).toBeInTheDocument();
+    expect(mockWorkshopPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(mockPreview).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/email/i)).toHaveValue("dueno@taller.com");
+
+    await user.type(screen.getByLabelText(/^nombre/i), "Juan");
+    await user.type(screen.getByLabelText(/apellido/i), "Pérez");
+    await user.type(screen.getByLabelText(/teléfono/i), "11 5555 1234");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "password123");
+    await user.type(
+      screen.getByLabelText(/confirmar contraseña/i),
+      "password123",
+    );
+    await user.click(screen.getByRole("button", { name: /continuar/i }));
+
+    expect(
+      await screen.findByText("Completá los datos de tu taller"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Taller Mecánico Centro")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /activar taller/i }),
+    );
+
+    await waitFor(() =>
+      expect(mockWorkshopClaim).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "TOKEN123",
+          email: "dueno@taller.com",
+          workshop: expect.objectContaining({
+            email: "dueno@taller.com",
+          }),
+        }),
+      ),
+    );
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(await screen.findByText("¡Taller activado!")).toBeInTheDocument();
+  });
+
+  it("?kind=dealership en la URL: preview directo de concesionaria y NUNCA llama al preview de taller", async () => {
+    const user = userEvent.setup();
+    mockPreview.mockResolvedValue(makePreview());
+    mockClaim.mockResolvedValue(makeClaimResult());
+
+    await renderWizard({ kind: "dealership" });
+
+    expect(
+      await screen.findByText("Creá tu cuenta"),
+    ).toBeInTheDocument();
+    expect(mockPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(mockWorkshopPreview).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(/email/i)).toHaveValue("dueno@fm.com");
+
+    await user.type(screen.getByLabelText(/^nombre/i), "Juan");
+    await user.type(screen.getByLabelText(/apellido/i), "Pérez");
+    await user.type(screen.getByLabelText(/teléfono/i), "11 5555 1234");
+    await user.type(screen.getByLabelText(/^contraseña$/i), "password123");
+    await user.type(
+      screen.getByLabelText(/confirmar contraseña/i),
+      "password123",
+    );
+    await user.click(screen.getByRole("button", { name: /continuar/i }));
+
+    expect(
+      await screen.findByText("Completá los datos de tu concesionaria"),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /activar concesionaria/i }),
+    );
+
+    expect(
+      await screen.findByText("¡Concesionaria activada!"),
+    ).toBeInTheDocument();
+  });
+
+  it("?kind=workshop con preview 404: error terminal SIN probe a dealership", async () => {
+    mockWorkshopPreview.mockRejectedValue({
+      status: 404,
+      code: "INVITATION_INVALID",
+    });
+
+    await renderWizard({ kind: "workshop" });
+
+    expect(
+      await screen.findByText("Invitación inválida"),
+    ).toBeInTheDocument();
+    expect(mockWorkshopPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(mockPreview).not.toHaveBeenCalled();
+    expect(mockWorkshopClaim).not.toHaveBeenCalled();
+  });
+
+  it("?kind=dealership con preview inválido (404): error terminal SIN probe a taller", async () => {
+    mockPreview.mockRejectedValue({ status: 404, code: "INVITATION_INVALID" });
+
+    await renderWizard({ kind: "dealership" });
+
+    expect(
+      await screen.findByText("Invitación inválida"),
+    ).toBeInTheDocument();
+    expect(mockPreview).toHaveBeenCalledWith("TOKEN123");
+    expect(mockWorkshopPreview).not.toHaveBeenCalled();
+  });
+
+  it("token faltante: pantalla de error sin llamar a la API", async () => {
     mockParams.mockReturnValue({});
 
-    render(<InvitationWizardPage />);
+    await renderWizard();
 
     expect(screen.getByText("Invitación inválida")).toBeInTheDocument();
     expect(mockPreview).not.toHaveBeenCalled();

@@ -8,24 +8,31 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { InvitationKind } from "@/types/invitation";
 
 /**
- * Pantalla de éxito del wizard de invitación (claim 201).
+ * Pantalla de éxito del wizard de invitación (claim 201) — concesionaria y
+ * taller (D-106).
  *
  * CTA (decisión PM):
- * - Si la sesión ya tiene la membresía de la concesionaria → "Ir a mi
- *   concesionaria" → /dealerships/{id}.
- * - Si no → "Ir al inicio" → /dashboard.
+ * - Concesionaria + membresía de sesión → "Ir a mi concesionaria" →
+ *   /dealerships/{id}.
+ * - Resto (incluye taller; aún no existe /workshops/{id}) → "Ir al inicio" →
+ *   /dashboard.
  */
 export function InvitationSuccess({
-  dealershipId,
-  dealershipName,
+  kind,
+  entityId,
+  entityName,
   hasMembership,
 }: {
-  dealershipId: string;
-  dealershipName: string;
+  kind: InvitationKind;
+  entityId: string;
+  entityName: string;
   hasMembership: boolean;
 }) {
+  const isWorkshop = kind === "workshop";
+
   return (
     <Card className="w-full">
       <CardHeader className="text-center">
@@ -33,19 +40,20 @@ export function InvitationSuccess({
           <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
         </div>
         <CardTitle className="text-xl font-semibold">
-          ¡Concesionaria activada!
+          {isWorkshop ? "¡Taller activado!" : "¡Concesionaria activada!"}
         </CardTitle>
       </CardHeader>
       <CardContent className="text-center text-sm text-muted-foreground">
         <p>
           Ya sos el propietario de{" "}
-          <span className="font-medium text-foreground">{dealershipName}</span>.
-          La concesionaria quedó activa y visible para tus clientes.
+          <span className="font-medium text-foreground">{entityName}</span>. El{" "}
+          {isWorkshop ? "taller" : "concesionaria"} quedó{" "}
+          {isWorkshop ? "activo" : "activa"} y visible para tus clientes.
         </p>
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
-        {hasMembership ? (
-          <Link href={`/dealerships/${dealershipId}`} className="w-full">
+        {!isWorkshop && hasMembership ? (
+          <Link href={`/dealerships/${entityId}`} className="w-full">
             <Button className="w-full">Ir a mi concesionaria</Button>
           </Link>
         ) : (

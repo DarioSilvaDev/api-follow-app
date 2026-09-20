@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Schemas zod del wizard público de invitación de concesionaria.
+ * Schemas zod del wizard público de invitación (concesionaria Y taller, D-106).
  *
  * WIZARD-REGISTER (paso 1, requiresRegister=true): recopila el registro
  * COMPLETO (incluye teléfono, que /auth/register NO acepta). El email viene
@@ -10,8 +10,9 @@ import { z } from "zod";
  *
  * WIZARD-LOGIN (paso 1, requiresRegister=false): email readonly + contraseña.
  *
- * WIZARD-DEALERSHIP (paso 2): el nombre viene pre-cargado; email de contacto,
- * teléfono, website y descripción son los datos públicos de la concesionaria.
+ * WIZARD-ENTITY (paso 2): el nombre viene pre-cargado (concesionaria editable
+ * en pantalla; taller SOLO lectura — el backend no acepta name en el claim);
+ * email de contacto, teléfono, website y descripción son los datos públicos.
  */
 
 export const invitationRegisterSchema = z
@@ -79,3 +80,49 @@ export type InvitationLoginValues = z.infer<typeof invitationLoginSchema>;
 export type InvitationDealershipValues = z.infer<
   typeof invitationDealershipSchema
 >;
+
+/**
+ * Paso 2 del wizard para TALLER (D-106). El nombre NO es editable ni se envía
+ * (el backend lo fija en el alta admin — WizardWorkshopDataDto sin name).
+ * Completar los contactos públicos es la única parte del paso 2.
+ */
+export const invitationWorkshopSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .email("Ingresá un email de contacto válido."),
+  phone: z
+    .string()
+    .trim()
+    .max(30, "El teléfono no puede superar los 30 caracteres.")
+    .optional()
+    .or(z.literal("")),
+  website: z
+    .string()
+    .trim()
+    .url("Ingresá una URL válida (ej. https://mitaller.com).")
+    .optional()
+    .or(z.literal("")),
+  description: z
+    .string()
+    .trim()
+    .max(500, "La descripción no puede superar los 500 caracteres.")
+    .optional()
+    .or(z.literal("")),
+});
+
+export type InvitationWorkshopValues = z.infer<typeof invitationWorkshopSchema>;
+
+/**
+ * Valores del paso 2 compartidos por el wizard (multipropósito por kind).
+ * `name` solo está presente en el flujo concesionaria; el claim del taller
+ * NO lo envía (el backend lo fija). El componente de paso 2 tipa el form con
+ * esta interfaz y el resolver se encastra a la schema del kind.
+ */
+export interface InvitationEntityValues {
+  name?: string;
+  email: string;
+  phone?: string;
+  website?: string;
+  description?: string;
+}
