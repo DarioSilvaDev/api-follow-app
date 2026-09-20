@@ -37,7 +37,12 @@ export class InviteMemberHandler {
 
     this.eventEmitter.emit(
       'dealership.member.invited',
-      new MemberInvitedEvent(command.dealershipId, command.dto.email, token),
+      new MemberInvitedEvent(
+        command.dealershipId,
+        command.dto.email,
+        token,
+        dealership.name,
+      ),
     );
 
     return invitation;

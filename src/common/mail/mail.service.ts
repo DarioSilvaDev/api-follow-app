@@ -47,9 +47,9 @@ export class MailService {
     const link = `${frontendUrl}/verify-email?token=${token}`;
     await this.send({
       to,
-      subject: 'Verifica tu correo electrónico - FollowApp',
+      subject: 'Verifica tu correo electrónico - Autentia',
       html: `
-        <h2>Bienvenido a FollowApp</h2>
+        <h2>Bienvenido a Autentia</h2>
         <p>Gracias por registrarte. Para activar tu cuenta, haz clic en el siguiente enlace:</p>
         <p><a href="${link}">${link}</a></p>
         <p>Este enlace expira en ${envs.VERIFICATION_TOKEN_EXPIRY_HOURS} horas.</p>
@@ -62,7 +62,7 @@ export class MailService {
     const link = `${frontendUrl}/reset-password?token=${token}`;
     await this.send({
       to,
-      subject: 'Restablece tu contraseña - FollowApp',
+      subject: 'Restablece tu contraseña - Autentia',
       html: `
         <h2>Restablecer contraseña</h2>
         <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace:</p>
@@ -76,7 +76,7 @@ export class MailService {
   async sendPasswordResetCompletedEmail(to: string): Promise<void> {
     await this.send({
       to,
-      subject: 'Tu contraseña ha sido cambiada - FollowApp',
+      subject: 'Tu contraseña ha sido cambiada - Autentia',
       html: `
         <h2>Contraseña cambiada</h2>
         <p>Tu contraseña ha sido restablecida exitosamente.</p>
@@ -88,7 +88,7 @@ export class MailService {
   async sendWelcomeEmail(to: string, firstName: string): Promise<void> {
     await this.send({
       to,
-      subject: '¡Cuenta activada! - FollowApp',
+      subject: '¡Cuenta activada! - Autentia',
       html: `
         <h2>¡Cuenta activada!</h2>
         <p>Hola ${firstName},</p>
@@ -107,7 +107,7 @@ export class MailService {
     const appUrl = envs.CORS_ORIGIN || 'http://localhost:3000';
     await this.send({
       to,
-      subject: 'Solicitud de transferencia de vehículo - FollowApp',
+      subject: 'Solicitud de transferencia de vehículo - Autentia',
       html: `
         <h2>Solicitud de Transferencia</h2>
         <p>Hola ${toFirstName},</p>
@@ -128,7 +128,7 @@ export class MailService {
   ): Promise<void> {
     await this.send({
       to,
-      subject: 'Transferencia completada - FollowApp',
+      subject: 'Transferencia completada - Autentia',
       html: `
         <h2>Transferencia Completada</h2>
         <p>Hola ${toFirstName},</p>
@@ -148,13 +148,61 @@ export class MailService {
     await this.send({
       to,
       // D-094: copy voseo consistente con el frontend; no nombra al destinatario (D-082).
-      subject: 'Tu QR de transferencia venció - FollowApp',
+      subject: 'Tu QR de transferencia venció - Autentia',
       html: `
         <h2>Tu QR de transferencia venció</h2>
         <p>Hola ${toFirstName},</p>
         <p>Tu QR de transferencia para el vehículo <strong>${vehicleName}</strong> (patente ${licensePlate}) venció.</p>
         <p>Si todavía querés transferir el vehículo, generá uno nuevo desde el vehículo.</p>
         <p><a href="${appUrl}/vehicles">Ir a Mis Vehículos</a></p>
+      `,
+    });
+  }
+
+  /**
+   * D-106: email de invitación al dueño en el onboarding administrado de
+   * concesionaria. El link apunta a la ruta pública del wizard del frontend
+   * (`${FRONTEND_URL}/invitations/{token}`) — el backend NO expone el token
+   * en ninguna respuesta ni listener adicional.
+   *
+   * Marca "Autentia" (marca oficial del producto; los mails legacy también
+   * usan Autentia).
+   */
+  async sendDealershipInvitationEmail(
+    to: string,
+    dealershipName: string,
+    token: string,
+  ): Promise<void> {
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/invitations/${token}`;
+    await this.send({
+      to,
+      subject: `Completá el alta de ${dealershipName} - Autentia`,
+      html: `
+        <h2>Completá el alta de ${dealershipName}</h2>
+        <p>Te invitamos a completar el alta de la concesionaria <strong>${dealershipName}</strong> en Autentia.</p>
+        <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Completar el alta</a></p>
+        <p>Este enlace expira en 7 días.</p>
+        <p>Recibís este email porque un administrador registró <strong>${dealershipName}</strong> en Autentia.</p>
+      `,
+    });
+  }
+
+  /**
+   * D-106: confirmación al dueño cuando la concesionaria quedó operativa
+   * (wizard de onboarding completado → status active / claimed_at).
+   */
+  async sendDealershipClaimedEmail(
+    to: string,
+    dealershipName: string,
+  ): Promise<void> {
+    await this.send({
+      to,
+      subject: `Tu concesionaria ${dealershipName} quedó activa - Autentia`,
+      html: `
+        <h2>¡Tu concesionaria quedó activa!</h2>
+        <p>¡Buenas noticias! <strong>${dealershipName}</strong> quedó activa en Autentia.</p>
+        <p>Ya podés administrar tus vehículos, invitaciones y operaciones desde el panel de la concesionaria.</p>
       `,
     });
   }

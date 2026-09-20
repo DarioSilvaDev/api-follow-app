@@ -23,6 +23,14 @@ import { envs } from './config/envs';
 
 @Module({
   imports: [
+    // Event bus in-process (decisión vigente: sin retry durable ni
+    // infraestructura distribuida). SC-1: @nestjs/event-emitter 3.1.0 no
+    // expone una opción `errorHandler` en forRoot(); su EventSubscribersLoader
+    // envuelve todos los listeners con suppressErrors=true por defecto
+    // (verificado en node_modules), por lo que un fallo en un listener NUNCA
+    // deriva en unhandledRejection. Los listeners de mail de dealerships usan
+    // además try/catch propio para loguear con correlación (dealershipId, sin
+    // token) sin romper el flujo post-commit.
     EventEmitterModule.forRoot(),
     // Wave P2 — B4: rate limiting. ThrottlerModule is @Global(); ThrottlerGuard
     // is applied ONLY on sensitive endpoints (login, refresh, password reset,

@@ -19,6 +19,13 @@ export const ERROR_CODES = {
   CONFLICT: 'CONFLICT',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  // D-106 wizard de onboarding: la cuenta autenticada NO es la invitada.
+  AUTH_REQUIRED: 'AUTH_REQUIRED',
+  // D-106 wizard de onboarding: token inválido / vencido / usado / cancelado.
+  INVITATION_INVALID: 'INVITATION_INVALID',
+  INVITATION_EXPIRED: 'INVITATION_EXPIRED',
+  INVITATION_USED: 'INVITATION_USED',
+  INVITATION_CANCELLED: 'INVITATION_CANCELLED',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];

@@ -34,6 +34,18 @@ export class GetDealershipHandler {
     });
 
     if (!dealership) throw new NotFoundException('Dealership', id);
+
+    // D-106: defensa en profundidad — una concesionaria no reclamada
+    // (pending_claim) no es visible para usuarios regulares, ni siquiera vía
+    // GET /dealerships/:id. Solo plataforma (super_admin) la ve.
+    if (dealership.status === 'pending_claim' && userId) {
+      if (!(await this.isSuperAdmin(userId))) {
+        throw new ForbiddenException(
+          'You are not authorized to view this dealership',
+        );
+      }
+    }
+
     return dealership;
   }
 

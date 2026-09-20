@@ -94,6 +94,13 @@ import { ListAdminSpecialtiesHandler } from '../queries/list-specialties/list-sp
 import { SpecialtyResponseDto } from '../../workshops/dto/specialty-response.dto';
 import { ImpersonateHandler } from '../commands/impersonate/impersonate.handler';
 import { ListRolesHandler } from '../../workshops/queries/list-roles/list-roles.handler';
+import { CreateDealershipDto } from '../dto/create-dealership.dto';
+import { DealershipAdminResponseDto } from '../dto/dealership-response.dto';
+import { CreateDealershipCommand } from '../commands/create-dealership/create-dealership.command';
+import { CreateDealershipHandler } from '../commands/create-dealership/create-dealership.handler';
+import { ReinviteDealershipInvitationCommand } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.command';
+import { ReinviteDealershipInvitationHandler } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
+import { ListDealershipsHandler } from '../queries/list-dealerships/list-dealerships.handler';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -131,6 +138,9 @@ export class AdministrationController {
     private readonly deleteSpecialtyHandler: DeleteSpecialtyHandler,
     private readonly listAdminSpecialtiesHandler: ListAdminSpecialtiesHandler,
     private readonly impersonateHandler: ImpersonateHandler,
+    private readonly createDealershipHandler: CreateDealershipHandler,
+    private readonly reinviteDealershipInvitationHandler: ReinviteDealershipInvitationHandler,
+    private readonly listDealershipsHandler: ListDealershipsHandler,
   ) {}
 
   @Post('roles/assign')
@@ -475,5 +485,57 @@ export class AdministrationController {
     );
 
     return { user: result.user };
+  }
+
+  /**
+   * D-106: alta administrada de concesionaria (onboarding admin).
+   * Crea la dealership en `pending_claim` + invitación del dueño (owner).
+   * El token de invitación viaja solo por email, nunca en la respuesta.
+   */
+  @Post('dealerships')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.create')
+  async createDealership(
+    @Body() dto: CreateDealershipDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.createDealershipHandler.execute(
+      new CreateDealershipCommand(dto, currentUser.id),
+    );
+  }
+
+  @Get('dealerships')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.list')
+  async listDealerships(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: 'pending_claim' | 'active',
+  ) {
+    const result = await this.listDealershipsHandler.execute({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      status,
+    });
+    return {
+      data: result.data.map((d) => DealershipAdminResponseDto.from(d)),
+      meta: result.meta,
+    };
+  }
+
+  /**
+   * D-106: reenvío de invitación al dueño (solo pending_claim).
+   * Ruta del contrato frontend congelado: POST /admin/dealerships/:id/invitations.
+   */
+  @Post('dealerships/:id/invitations')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.manage')
+  async reinviteDealership(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.reinviteDealershipInvitationHandler.execute(
+      new ReinviteDealershipInvitationCommand(id, currentUser.id),
+    );
   }
 }

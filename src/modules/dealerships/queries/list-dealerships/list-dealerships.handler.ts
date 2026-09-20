@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { MemberStatus } from '@prisma/client';
+import { MemberStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
 
@@ -44,15 +44,17 @@ export class ListDealershipsHandler {
       }
     }
 
-    // Super admins ven todas; miembros regulares solo las propias.
-    const where =
-      query.userId && !superAdmin
-        ? {
-            members: {
-              some: { userId: query.userId, status: MemberStatus.active },
-            },
-          }
-        : undefined;
+    // Super admins ven todas las operativas; miembros regulares solo las
+    // propias. D-106: las `pending_claim` NUNCA se listan aquí (onboarding
+    // admin aún no reclamado → no debe exponerse a usuarios).
+    const where: Prisma.DealershipWhereInput = {
+      status: { not: 'pending_claim' },
+    };
+    if (query.userId && !superAdmin) {
+      where.members = {
+        some: { userId: query.userId, status: MemberStatus.active },
+      };
+    }
 
     const [dealerships, total] = await Promise.all([
       this.prisma.dealership.findMany({

@@ -67,4 +67,24 @@ describe('MailService', () => {
       'https://app.followapp.test/reset-password?token=reset-token',
     );
   });
+
+  it('usa la marca oficial Autentia en todos los mails (decisión PM de marca)', async () => {
+    await service.sendVerificationEmail('a@b.com', 'tok');
+    await service.sendPasswordResetEmail('a@b.com', 'tok');
+    await service.sendPasswordResetCompletedEmail('a@b.com');
+    await service.sendWelcomeEmail('a@b.com', 'N');
+    await service.sendTransferRequestEmail('a@b.com', 'A', 'B', 'V', 'AB-123');
+    await service.sendTransferAcceptedEmail('a@b.com', 'A', 'B', 'V', 'AB-123');
+    await service.sendTransferQrExpiredEmail('a@b.com', 'A', 'V', 'AB-123');
+    await service.sendDealershipInvitationEmail('a@b.com', 'D', 'tok');
+    await service.sendDealershipClaimedEmail('a@b.com', 'D');
+
+    const payloads = sendMailMock.mock.calls.map((c) => c[0]);
+    expect(payloads.length).toBe(9);
+    for (const payload of payloads) {
+      const copy = `${payload.subject} ${payload.html}`;
+      expect(copy).toContain('Autentia');
+      expect(copy).not.toContain('FollowApp');
+    }
+  });
 });

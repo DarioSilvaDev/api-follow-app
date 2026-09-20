@@ -11,6 +11,19 @@ import { CodedHttpException } from '../exceptions/coded.exception';
 import { ErrorCode, ERROR_CODES } from '../exceptions/error-codes';
 
 /**
+ * Patrones de URL que transportan secretos one-shot (tokens) cuyo valor NUNCA
+ * debe aparecer en los logs (SC-2). El reemplazo loguea la ruta base con un
+ * placeholder y conserva la información útil para debugging del resto.
+ *
+ * - Path tokens: `/api/dealerships/wizard/invitations/{token}`.
+ * - Query tokens: `?token=...` (verify-email, reset-password, etc.).
+ */
+const SENSITIVE_URL_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/(\/dealerships\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
+  [/([?&]token=)[^&#]*/g, '$1[REDACTED]'],
+];
+
+/**
  * Global exception filter that maps all errors to the standardized
  * error envelope contract (D-025).
  *
@@ -28,11 +41,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const envelope = this.toEnvelope(exception);
 
     this.logger.error(
-      `[${request.method}] ${request.url} → ${envelope.statusCode} [${envelope.code}]`,
+      `[${request.method}] ${this.sanitizeUrl(request.url)} → ${envelope.statusCode} [${envelope.code}]`,
       exception instanceof Error ? exception.stack : undefined,
     );
 
     response.status(envelope.statusCode).json(envelope);
+  }
+
+  /**
+   * Redacta secretos (tokens) del request.url antes de loguearlo. Para rutas
+   * con placeholder (`{token}`) y para query `?token=` (`[REDACTED]`).
+   */
+  private sanitizeUrl(url: string): string {
+    let sanitized = url;
+    for (const [pattern, replacement] of SENSITIVE_URL_REPLACEMENTS) {
+      sanitized = sanitized.replace(pattern, replacement);
+    }
+    return sanitized;
   }
 
   private toEnvelope(exception: unknown): {

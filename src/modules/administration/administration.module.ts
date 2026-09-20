@@ -36,6 +36,9 @@ import { UpdateSpecialtyHandler } from './commands/update-specialty/update-speci
 import { DeleteSpecialtyHandler } from './commands/delete-specialty/delete-specialty.handler';
 import { ListAdminSpecialtiesHandler } from './queries/list-specialties/list-specialties.handler';
 import { ListRolesHandler } from '../workshops/queries/list-roles/list-roles.handler';
+import { CreateDealershipHandler } from './commands/create-dealership/create-dealership.handler';
+import { ReinviteDealershipInvitationHandler } from './commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
+import { ListDealershipsHandler } from './queries/list-dealerships/list-dealerships.handler';
 
 @Module({
   imports: [
@@ -80,6 +83,9 @@ import { ListRolesHandler } from '../workshops/queries/list-roles/list-roles.han
     UpdateSpecialtyHandler,
     DeleteSpecialtyHandler,
     ListAdminSpecialtiesHandler,
+    CreateDealershipHandler,
+    ReinviteDealershipInvitationHandler,
+    ListDealershipsHandler,
   ],
 })
 export class AdministrationModule {}
