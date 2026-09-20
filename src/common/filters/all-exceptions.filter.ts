@@ -15,11 +15,13 @@ import { ErrorCode, ERROR_CODES } from '../exceptions/error-codes';
  * debe aparecer en los logs (SC-2). El reemplazo loguea la ruta base con un
  * placeholder y conserva la información útil para debugging del resto.
  *
- * - Path tokens: `/api/dealerships/wizard/invitations/{token}`.
+ * - Path tokens: `/api/dealerships/wizard/invitations/{token}` y
+ *   `/api/workshops/wizard/invitations/{token}`.
  * - Query tokens: `?token=...` (verify-email, reset-password, etc.).
  */
 const SENSITIVE_URL_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/(\/dealerships\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
+  [/(\/workshops\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
   [/([?&]token=)[^&#]*/g, '$1[REDACTED]'],
 ];
 

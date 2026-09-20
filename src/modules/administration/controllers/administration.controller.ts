@@ -34,7 +34,7 @@ import { VehicleDetailAdminResponseDto } from '../dto/vehicle-detail-response.dt
 import { PermissionResponseDto } from '../dto/permission-response.dto';
 import { RolePermissionsResponseDto } from '../dto/role-permissions-response.dto';
 import { UpdateRolePermissionsDto } from '../dto/update-role-permissions.dto';
-import { CreateWorkshopDto } from '../dto/create-workshop.dto';
+import { CreateWorkshopOnboardingDto } from '../dto/create-workshop-onboarding.dto';
 import { UpdateWorkshopDto } from '../dto/update-workshop.dto';
 import { AddMemberDto } from '../dto/add-member.dto';
 import { CreateBranchDto } from '../dto/create-branch.dto';
@@ -101,6 +101,8 @@ import { CreateDealershipHandler } from '../commands/create-dealership/create-de
 import { ReinviteDealershipInvitationCommand } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.command';
 import { ReinviteDealershipInvitationHandler } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
 import { ListDealershipsHandler } from '../queries/list-dealerships/list-dealerships.handler';
+import { ReinviteWorkshopInvitationCommand } from '../commands/reinvite-workshop-invitation/reinvite-workshop-invitation.command';
+import { ReinviteWorkshopInvitationHandler } from '../commands/reinvite-workshop-invitation/reinvite-workshop-invitation.handler';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -141,6 +143,7 @@ export class AdministrationController {
     private readonly createDealershipHandler: CreateDealershipHandler,
     private readonly reinviteDealershipInvitationHandler: ReinviteDealershipInvitationHandler,
     private readonly listDealershipsHandler: ListDealershipsHandler,
+    private readonly reinviteWorkshopInvitationHandler: ReinviteWorkshopInvitationHandler,
   ) {}
 
   @Post('roles/assign')
@@ -221,11 +224,22 @@ export class AdministrationController {
     );
   }
 
+  /**
+   * D-106: alta administrada de taller (onboarding admin).
+   * Crea el taller en `pending_claim` + invitación del dueño (owner).
+   * Contrato congelado: { name, taxId?, ownerEmail }.
+   * El token de invitación viaja solo por email, nunca en la respuesta.
+   */
   @Post('workshops')
   @UseGuards(PermissionsGuard)
   @Permissions('admin.workshops.create')
-  async createWorkshop(@Body() dto: CreateWorkshopDto) {
-    return this.createWorkshopHandler.execute(new CreateWorkshopCommand(dto));
+  async createWorkshop(
+    @Body() dto: CreateWorkshopOnboardingDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.createWorkshopHandler.execute(
+      new CreateWorkshopCommand(dto, currentUser.id),
+    );
   }
 
   @Get('workshops')
@@ -234,15 +248,34 @@ export class AdministrationController {
   async listWorkshops(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('status') status?: 'pending_claim' | 'active',
   ) {
     const result = await this.listWorkshopsHandler.execute({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      status,
     });
     return {
       data: result.data.map((w) => WorkshopAdminResponseDto.from(w)),
       meta: result.meta,
     };
+  }
+
+  /**
+   * D-106: reenvío de invitación al dueño (solo pending_claim).
+   * Ruta del contrato frontend congelado:
+   * POST /admin/workshops/:id/invitations.
+   */
+  @Post('workshops/:id/invitations')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.workshops.manage')
+  async reinviteWorkshop(
+    @Param('id') id: string,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.reinviteWorkshopInvitationHandler.execute(
+      new ReinviteWorkshopInvitationCommand(id, currentUser.id),
+    );
   }
 
   @Get('workshops/:id')

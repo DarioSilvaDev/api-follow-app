@@ -15,7 +15,6 @@ import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
 import { WorkshopGuard } from '../../../common/guards/workshop.guard';
 import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { Permissions } from '../../../common/decorators/permissions.decorator';
-import { CreateWorkshopDto } from '../dto/create-workshop.dto';
 import { UpdateWorkshopDto } from '../dto/update-workshop.dto';
 import { CreateBranchDto } from '../dto/create-branch.dto';
 import { InviteMemberDto } from '../dto/invite-member.dto';
@@ -25,8 +24,6 @@ import { SetBusinessHoursDto } from '../dto/set-business-hours.dto';
 import { WorkshopResponseDto } from '../dto/workshop-response.dto';
 import { MemberResponseDto } from '../dto/member-response.dto';
 import { InvitationResponseDto } from '../dto/invitation-response.dto';
-import { CreateWorkshopCommand } from '../commands/create-workshop/create-workshop.command';
-import { CreateWorkshopHandler } from '../commands/create-workshop/create-workshop.handler';
 import { UpdateWorkshopCommand } from '../commands/update-workshop/update-workshop.command';
 import { UpdateWorkshopHandler } from '../commands/update-workshop/update-workshop.handler';
 import { CreateBranchCommand } from '../commands/create-branch/create-branch.command';
@@ -68,7 +65,6 @@ import { ListRolesHandler } from '../queries/list-roles/list-roles.handler';
 @UseGuards(JwtAuthGuard)
 export class WorkshopsController {
   constructor(
-    private readonly createWorkshopHandler: CreateWorkshopHandler,
     private readonly updateWorkshopHandler: UpdateWorkshopHandler,
     private readonly createBranchHandler: CreateBranchHandler,
     private readonly inviteMemberHandler: InviteMemberHandler,
@@ -88,17 +84,6 @@ export class WorkshopsController {
     private readonly deleteRoleHandler: DeleteRoleHandler,
     private readonly listRolesHandler: ListRolesHandler,
   ) {}
-
-  @Post()
-  async create(
-    @Body() dto: CreateWorkshopDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    const workshop = await this.createWorkshopHandler.execute(
-      new CreateWorkshopCommand(dto, user.id),
-    );
-    return WorkshopResponseDto.from(workshop);
-  }
 
   @Get()
   async findAll(

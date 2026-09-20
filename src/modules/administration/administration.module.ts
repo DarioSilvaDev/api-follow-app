@@ -39,6 +39,7 @@ import { ListRolesHandler } from '../workshops/queries/list-roles/list-roles.han
 import { CreateDealershipHandler } from './commands/create-dealership/create-dealership.handler';
 import { ReinviteDealershipInvitationHandler } from './commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
 import { ListDealershipsHandler } from './queries/list-dealerships/list-dealerships.handler';
+import { ReinviteWorkshopInvitationHandler } from './commands/reinvite-workshop-invitation/reinvite-workshop-invitation.handler';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ListDealershipsHandler } from './queries/list-dealerships/list-dealersh
     CreateDealershipHandler,
     ReinviteDealershipInvitationHandler,
     ListDealershipsHandler,
+    ReinviteWorkshopInvitationHandler,
   ],
 })
 export class AdministrationModule {}

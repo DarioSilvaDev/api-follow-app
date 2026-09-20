@@ -68,6 +68,48 @@ describe('MailService', () => {
     );
   });
 
+  it('incluye ?kind=dealership en el link del mail de invitación de concesionaria (D-106)', async () => {
+    await service.sendDealershipInvitationEmail(
+      'a@b.com',
+      'Concesionaria Norte',
+      'token-abc',
+    );
+
+    const payload = sendMailMock.mock.calls[0][0];
+    expect(payload.html).toContain(
+      'https://app.followapp.test/invitations/token-abc?kind=dealership',
+    );
+    expect(payload.html).not.toContain('?kind=workshop');
+  });
+
+  it('incluye ?kind=workshop en el link del mail de invitación de taller (D-106)', async () => {
+    await service.sendWorkshopInvitationEmail(
+      'a@b.com',
+      'Taller Norte',
+      'token-abc',
+    );
+
+    const payload = sendMailMock.mock.calls[0][0];
+    expect(payload.html).toContain(
+      'https://app.followapp.test/invitations/token-abc?kind=workshop',
+    );
+    expect(payload.html).not.toContain('?kind=dealership');
+  });
+
+  it('mantiene la ruta /invitations/{token} y no mueve el token a query params (D-106)', async () => {
+    await service.sendDealershipInvitationEmail('a@b.com', 'D', 'token-abc');
+    await service.sendWorkshopInvitationEmail('a@b.com', 'W', 'token-abc');
+
+    const payloads = sendMailMock.mock.calls.map((c) => c[0]);
+    expect(payloads.length).toBe(2);
+    for (const payload of payloads) {
+      expect(payload.html).toContain(
+        'https://app.followapp.test/invitations/token-abc?kind=',
+      );
+      expect(payload.html).not.toContain('?token=');
+    }
+  });
+
   it('usa la marca oficial Autentia en todos los mails (decisión PM de marca)', async () => {
     await service.sendVerificationEmail('a@b.com', 'tok');
     await service.sendPasswordResetEmail('a@b.com', 'tok');

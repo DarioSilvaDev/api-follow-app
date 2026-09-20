@@ -162,8 +162,11 @@ export class MailService {
   /**
    * D-106: email de invitación al dueño en el onboarding administrado de
    * concesionaria. El link apunta a la ruta pública del wizard del frontend
-   * (`${FRONTEND_URL}/invitations/{token}`) — el backend NO expone el token
-   * en ninguna respuesta ni listener adicional.
+   * (`${FRONTEND_URL}/invitations/{token}?kind=dealership`) — el backend NO
+   * expone el token en ninguna respuesta ni listener adicional.
+   *
+   * El query param `kind=dealership` le permite al wizard público elegir el
+   * preview sin hacer probe (decisión PM: eliminar el 404 por visita).
    *
    * Marca "Autentia" (marca oficial del producto; los mails legacy también
    * usan Autentia).
@@ -174,7 +177,7 @@ export class MailService {
     token: string,
   ): Promise<void> {
     const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
-    const link = `${frontendUrl}/invitations/${token}`;
+    const link = `${frontendUrl}/invitations/${token}?kind=dealership`;
     await this.send({
       to,
       subject: `Completá el alta de ${dealershipName} - Autentia`,
@@ -203,6 +206,57 @@ export class MailService {
         <h2>¡Tu concesionaria quedó activa!</h2>
         <p>¡Buenas noticias! <strong>${dealershipName}</strong> quedó activa en Autentia.</p>
         <p>Ya podés administrar tus vehículos, invitaciones y operaciones desde el panel de la concesionaria.</p>
+      `,
+    });
+  }
+
+  /**
+   * D-106: email de invitación al dueño en el onboarding administrado de
+   * taller. El link apunta a la ruta pública del wizard del frontend
+   * (`${FRONTEND_URL}/invitations/{token}?kind=workshop`) — el backend NO
+   * expone el token en ninguna respuesta ni listener adicional.
+   *
+   * El query param `kind=workshop` le permite al wizard público elegir el
+   * preview sin hacer probe (decisión PM: eliminar el 404 por visita).
+   *
+   * Marca "Autentia" (marca oficial del producto; los mails legacy también
+   * usan Autentia).
+   */
+  async sendWorkshopInvitationEmail(
+    to: string,
+    workshopName: string,
+    token: string,
+  ): Promise<void> {
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/invitations/${token}?kind=workshop`;
+    await this.send({
+      to,
+      subject: `Completá el alta de ${workshopName} - Autentia`,
+      html: `
+        <h2>Completá el alta de ${workshopName}</h2>
+        <p>Te invitamos a completar el alta del taller <strong>${workshopName}</strong> en Autentia.</p>
+        <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Completar el alta</a></p>
+        <p>Este enlace expira en 7 días.</p>
+        <p>Recibís este email porque un administrador registró <strong>${workshopName}</strong> en Autentia.</p>
+      `,
+    });
+  }
+
+  /**
+   * D-106: confirmación al dueño cuando el taller quedó operativo
+   * (wizard de onboarding completado → status active / claimed_at).
+   */
+  async sendWorkshopClaimedEmail(
+    to: string,
+    workshopName: string,
+  ): Promise<void> {
+    await this.send({
+      to,
+      subject: `Tu taller ${workshopName} quedó activo - Autentia`,
+      html: `
+        <h2>¡Tu taller quedó activo!</h2>
+        <p>¡Buenas noticias! <strong>${workshopName}</strong> quedó activo en Autentia.</p>
+        <p>Ya podés administrar tus vehículos, invitaciones y operaciones desde el panel del taller.</p>
       `,
     });
   }

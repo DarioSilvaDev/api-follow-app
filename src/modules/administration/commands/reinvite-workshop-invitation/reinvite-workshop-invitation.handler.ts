@@ -1,0 +1,123 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { v4 as uuid } from 'uuid';
+import {
+  CodedHttpException,
+  InvitationUsedException,
+} from '../../../../common/exceptions/coded.exception';
+import { ERROR_CODES } from '../../../../common/exceptions/error-codes';
+import { PrismaService } from '../../../../common/database/prisma.service';
+import { MemberInvitedEvent } from '../../../workshops/events/member-invited.event';
+import { ReinviteWorkshopInvitationCommand } from './reinvite-workshop-invitation.command';
+
+/**
+ * D-106: reenvío de invitación del onboarding admin (solo `pending_claim`).
+ *
+ * Semántica del contrato frontend congelado (admin-errors.ts):
+ * - taller inexistente → 404;
+ * - taller ya reclamado → 409 INVITATION_USED ("ya no está vigente");
+ * - invitación pending VIGENTE → 409 CONFLICT ("sigue vigente", NO se reenvía);
+ * - sin invitación vigente → cancela pendientes vencidas (si las hay) y crea
+ *   una nueva (token fresco, vigencia 7 días); el token va solo por email.
+ */
+@Injectable()
+export class ReinviteWorkshopInvitationHandler {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  async execute(command: ReinviteWorkshopInvitationCommand) {
+    const workshop = await this.prisma.workshop.findUnique({
+      where: { id: command.workshopId },
+    });
+    if (!workshop) {
+      throw new NotFoundException('Workshop', command.workshopId);
+    }
+
+    if (workshop.status !== 'pending_claim') {
+      // El claim ya completó el onboarding (invitación original usada).
+      throw new InvitationUsedException();
+    }
+
+    if (!workshop.email) {
+      throw new CodedHttpException(
+        409,
+        'El taller no tiene email de invitación asociado',
+        ERROR_CODES.CONFLICT,
+      );
+    }
+
+    const ownerEmail = workshop.email;
+    const now = new Date();
+
+    const latestPending = await this.prisma.workshopInvitation.findFirst({
+      where: {
+        workshopId: workshop.id,
+        email: ownerEmail,
+        status: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, expiresAt: true },
+    });
+
+    if (latestPending && latestPending.expiresAt > now) {
+      throw new CodedHttpException(
+        409,
+        'La invitación actual sigue vigente',
+        ERROR_CODES.CONFLICT,
+      );
+    }
+
+    const token = uuid();
+    const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const invitation = await this.prisma.$transaction(async (tx) => {
+      // Solo las pendientes vencidas se cancelan (las vigentes nunca llegan acá).
+      await tx.workshopInvitation.updateMany({
+        where: {
+          workshopId: workshop.id,
+          email: ownerEmail,
+          status: 'pending',
+          expiresAt: { lte: now },
+        },
+        data: { status: 'cancelled' },
+      });
+
+      const ownerRole = await tx.workshopRole.findUnique({
+        where: {
+          workshopId_code: { workshopId: workshop.id, code: 'owner' },
+        },
+      });
+      if (!ownerRole) {
+        throw new Error(`Owner role missing for workshop ${workshop.id}`);
+      }
+
+      return tx.workshopInvitation.create({
+        data: {
+          workshopId: workshop.id,
+          roleId: ownerRole.id,
+          invitedById: command.invitedById,
+          email: ownerEmail,
+          token,
+          expiresAt,
+          status: 'pending',
+        },
+      });
+    });
+
+    this.eventEmitter.emit(
+      'workshop.member.invited',
+      new MemberInvitedEvent(workshop.id, ownerEmail, token),
+    );
+
+    return {
+      invitation: {
+        id: invitation.id,
+        email: invitation.email,
+        expiresAt: invitation.expiresAt,
+        status: invitation.status,
+      },
+    };
+  }
+}

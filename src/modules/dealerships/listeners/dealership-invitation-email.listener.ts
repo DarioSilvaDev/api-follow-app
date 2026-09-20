@@ -7,7 +7,7 @@ import { MemberInvitedEvent } from '../events/member-invited.event';
 /**
  * D-106: envía el email de invitación del wizard de onboarding al dueño de
  * la concesionaria (`pending_claim`). El link apunta a la ruta pública del
- * frontend `${FRONTEND_URL}/invitations/{token}`.
+ * frontend `${FRONTEND_URL}/invitations/{token}?kind=dealership`.
  *
  * Guard explícito: SOLO se envía cuando la concesionaria está en
  * `pending_claim` (onboarding admin). El flujo D-103 / invitación regular de

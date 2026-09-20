@@ -1,10 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../common/constants';
 
-interface ListWorkshopsQuery {
+/**
+ * D-106: listado de talleres del panel de administración con foco en
+ * onboarding:
+ * - filtro opcional por status (pending_claim | active);
+ * - última invitación pending/accepted (para el estado de la invitación);
+ * - members (para el DTO del owner / conteos legacy).
+ */
+export interface ListWorkshopsQuery {
   page?: number;
   limit?: number;
+  status?: 'pending_claim' | 'active';
 }
 
 @Injectable()
@@ -19,8 +28,14 @@ export class ListWorkshopsHandler {
     );
     const skip = (page - 1) * limit;
 
+    const where: Prisma.WorkshopWhereInput = {};
+    if (query.status === 'pending_claim' || query.status === 'active') {
+      where.status = query.status;
+    }
+
     const [workshops, total] = await Promise.all([
       this.prisma.workshop.findMany({
+        where,
         skip,
         take: limit,
         include: {
@@ -42,10 +57,15 @@ export class ListWorkshopsHandler {
               },
             },
           },
+          invitations: {
+            where: { status: { in: ['pending', 'accepted'] } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.workshop.count(),
+      this.prisma.workshop.count({ where }),
     ]);
 
     return {

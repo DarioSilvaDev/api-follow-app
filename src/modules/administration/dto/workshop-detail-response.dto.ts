@@ -62,7 +62,9 @@ export class WorkshopDetailAdminResponseDto {
   website!: string | null;
   logoUrl!: string | null;
   description!: string | null;
+  status!: string;
   isActive!: boolean;
+  claimedAt!: Date | null;
   createdAt!: Date;
   updatedAt!: Date;
   branches!: WorkshopBranchAdminResponseDto[];
@@ -79,7 +81,9 @@ export class WorkshopDetailAdminResponseDto {
       website: workshop.website,
       logoUrl: workshop.logoUrl,
       description: workshop.description,
+      status: workshop.status,
       isActive: workshop.isActive,
+      claimedAt: workshop.claimedAt,
       createdAt: workshop.createdAt,
       updatedAt: workshop.updatedAt,
       branches: (workshop.branches ?? []).map((b: any) =>

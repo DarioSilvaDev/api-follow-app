@@ -51,7 +51,9 @@ describe('DealershipInvitationEmailListener — D-106 mail del wizard', () => {
     expect(to).toBe('dueno@example.com');
     expect(name).toBe('Concesionaria Norte');
     expect(token).toBe('token-abcd');
-    // el método del MailService construye `${FRONTEND_URL}/invitations/{token}`.
+    // el método del MailService construye
+    // `${FRONTEND_URL}/invitations/{token}?kind=dealership`
+    // (assert del link completo en mail.service.spec.ts).
     expect(token).toEqual(expect.stringMatching(/^token-/));
   });
 
