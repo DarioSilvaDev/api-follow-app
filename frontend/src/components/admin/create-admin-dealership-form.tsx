@@ -12,7 +12,7 @@
  * Post-success: banner + invalidate ["admin-dealerships"] + navegación al
  * listado (patrón de feedback inline del repo, sin toast).
  */
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -52,7 +52,16 @@ export function CreateAdminDealershipForm() {
   const queryClient = useQueryClient();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
-  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [pendingRedirect, setPendingRedirect] = useState(false);
+
+  // Redirect diferido para dejar ver el banner de éxito (avoid refs en render).
+  useEffect(() => {
+    if (!pendingRedirect) return;
+    const timer = setTimeout(() => {
+      router.push("/admin/dealerships");
+    }, SUCCESS_BANNER_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [pendingRedirect, router]);
 
   const {
     register,
@@ -77,9 +86,7 @@ export function CreateAdminDealershipForm() {
       );
       // Feedback visible breve → navegación al listado (decisión PM: página
       // de alta, no modal; ver "Ir al listado" con el nuevo registro).
-      redirectTimer.current = setTimeout(() => {
-        router.push("/admin/dealerships");
-      }, SUCCESS_BANNER_DURATION_MS);
+      setPendingRedirect(true);
     } catch (error) {
       setSubmitError(resolveCreateAdminDealershipError(error));
     }

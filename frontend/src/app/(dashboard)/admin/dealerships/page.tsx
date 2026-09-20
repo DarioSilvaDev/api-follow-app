@@ -16,8 +16,10 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Store } from "lucide-react";
+import { Plus, RefreshCw, Store } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AdminTablePagination } from "@/components/admin/admin-table-pagination";
+import { AdminNoAccessState } from "@/components/admin/admin-no-access-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,11 +30,13 @@ import {
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
 import { adminApi } from "@/lib/api";
 import {
   resolveAdminDealershipsListError,
   resolveResendInvitationError,
 } from "@/lib/admin-errors";
+import { can } from "@/lib/admin-access";
 import { cn } from "cn";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -53,6 +57,7 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 export default function AdminDealershipsPage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -87,6 +92,12 @@ export default function AdminDealershipsPage() {
       setBanner(resolveResendInvitationError(error));
     },
   });
+
+  // Gate defensivo por permiso de sección (UX; llegó por URL directa sin el
+  // permiso admin.dealerships.list). Backend sigue siendo la authority.
+  if (!can(user, "admin.dealerships.list")) {
+    return <AdminNoAccessState />;
+  }
 
   const items = dealershipsQuery.data?.data ?? [];
   const meta = dealershipsQuery.data?.meta;
@@ -183,14 +194,17 @@ export default function AdminDealershipsPage() {
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
+              <caption className="sr-only">
+                Listado de concesionarias de la plataforma
+              </caption>
               <thead>
                 <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Concesionaria</th>
-                  <th className="px-4 py-3 font-medium">Dueño</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium">Miembros</th>
-                  <th className="px-4 py-3 font-medium">Invitación vence</th>
-                  <th className="px-4 py-3 text-right font-medium">Acciones</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Concesionaria</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Dueño</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Estado</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Miembros</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Invitación vence</th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -274,33 +288,13 @@ export default function AdminDealershipsPage() {
           </div>
 
           {meta && meta.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-border px-4 py-3">
-              <p className="text-xs text-muted-foreground">
-                Página {meta.page} de {meta.totalPages} · {meta.total} en total
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1 || dealershipsQuery.isFetching}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    page >= (meta.totalPages ?? 1) || dealershipsQuery.isFetching
-                  }
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Siguiente
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
+            <AdminTablePagination
+              page={meta.page}
+              totalPages={meta.totalPages}
+              total={meta.total}
+              isFetching={dealershipsQuery.isFetching}
+              onPageChange={(next) => setPage(next)}
+            />
           )}
         </Card>
       )}
