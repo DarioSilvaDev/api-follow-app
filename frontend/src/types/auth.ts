@@ -24,7 +24,8 @@ export interface SessionUser {
     dealershipId: string;
     dealershipName: string;
     logoUrl?: string | null;
-    role: string;
+    /** Contrato real de GET /auth/me (§28 §3.4): objeto de rol, espejo de workshopMemberships. */
+    role: { id: string; code: string; name: string };
   }>;
 }
 

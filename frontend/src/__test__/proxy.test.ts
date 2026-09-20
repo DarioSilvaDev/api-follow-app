@@ -140,6 +140,38 @@ describe("Proxy — route protection", () => {
       const location = res.headers.get("location");
       expect(location).toBeNull();
     });
+
+    // Onboarding administrado de concesionaria: /admin es ruta protegida.
+    it("redirects /admin to /login when no cookie", () => {
+      const req = makeRequest("/admin");
+      const res = proxy(req);
+
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.status).toBeLessThan(400);
+      expect(res.headers.get("location")).toContain("/login");
+      expect(res.headers.get("location")).toContain(
+        encodeURIComponent("/admin"),
+      );
+    });
+
+    it("redirects /admin/dealerships to /login with correct next param", () => {
+      const req = makeRequest("/admin/dealerships");
+      const res = proxy(req);
+
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.status).toBeLessThan(400);
+      const location = res.headers.get("location")!;
+      expect(location).toContain("/login");
+      expect(location).toContain(encodeURIComponent("/admin/dealerships"));
+    });
+
+    it("allows /admin when access_token cookie is present", () => {
+      const req = makeRequest("/admin", { access_token: "valid" });
+      const res = proxy(req);
+
+      const location = res.headers.get("location");
+      expect(location).toBeNull();
+    });
   });
 
   describe("auth routes", () => {
@@ -189,6 +221,29 @@ describe("Proxy — route protection", () => {
     it("passes through /reset-password", () => {
       const req = makeRequest("/reset-password?token=abc");
       const res = proxy(req);
+      const location = res.headers.get("location");
+      expect(location).toBeNull();
+    });
+
+    // Onboarding administrado de concesionaria: el wizard público
+    // /invitations/[token] NO es ruta protegida — debe cargar sin sesión.
+    it("passes through /invitations/xyz without a cookie (public wizard)", () => {
+      const req = makeRequest("/invitations/xyz");
+      const res = proxy(req);
+
+      const location = res.headers.get("location");
+      expect(location).toBeNull();
+      expect(res.status).not.toBe(307);
+    });
+
+    it("passes through /invitations/xyz even with a cookie (no auth-route redirect)", () => {
+      const req = makeRequest("/invitations/xyz", {
+        access_token: "valid-token",
+      });
+      const res = proxy(req);
+
+      // El wizard no es una ruta de auth: con cookie NO debe redirigir a
+      // /dashboard (solo /login y /register lo hacen).
       const location = res.headers.get("location");
       expect(location).toBeNull();
     });

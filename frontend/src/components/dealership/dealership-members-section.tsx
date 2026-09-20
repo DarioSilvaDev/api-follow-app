@@ -53,7 +53,7 @@ export function DealershipMembersSection({
     (m) => m.dealershipId === dealershipId,
   );
   const isAdmin =
-    membership?.role === "owner" || membership?.role === "admin";
+    membership?.role.code === "owner" || membership?.role.code === "admin";
 
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");

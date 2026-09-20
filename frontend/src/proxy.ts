@@ -11,6 +11,9 @@ import { NextRequest, NextResponse } from "next/server";
 // Milestone consignación: /dealerships (rutas del módulo, D-102); /escaneo es
 // deuda conocida del escáner QR (Fase 3 / D-090) — un usuario sin sesión no
 // debe poder escanear.
+// Onboarding administrado de concesionaria: /admin (workspace admin) queda
+// protegido; /invitations/[token] NO se agrega — el wizard público debe
+// permanecer accesible sin sesión.
 const protectedRoutes = [
   "/dashboard",
   "/profile",
@@ -19,6 +22,7 @@ const protectedRoutes = [
   "/transferencias",
   "/dealerships",
   "/escaneo",
+  "/admin",
 ];
 const authRoutes = ["/login", "/register"];
 

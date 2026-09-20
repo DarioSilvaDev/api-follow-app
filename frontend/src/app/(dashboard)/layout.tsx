@@ -9,6 +9,7 @@ import { WorkshopSelector } from "@/components/layout/workshop-selector";
 import { DealershipSelector } from "@/components/layout/dealership-selector";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { useAuth } from "@/hooks/use-auth";
+import { hasAdminAccess } from "@/lib/admin-access";
 import { authApi } from "@/lib/api";
 import { cn } from "cn";
 
@@ -77,6 +78,10 @@ export default function DashboardLayout({
   // el acceso del header al selector ya es condicional (§8 RB-10).
   const hasDealerships = (user?.dealershipMemberships?.length ?? 0) > 0;
 
+  // Onboarding administrado de concesionaria: "Administración" (workspace
+  // admin) solo para roles/permisos de plataforma (UX — el backend enforcea).
+  const isAdmin = hasAdminAccess(user);
+
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
@@ -85,6 +90,7 @@ export default function DashboardLayout({
   const navLinks = [
     ...NAV_ITEMS_BASE,
     ...(isWorkshop ? NAV_ITEMS_WORKSHOP : []),
+    ...(isAdmin ? [{ href: "/admin", label: "Administración" }] : []),
   ].filter(
     (item) => item.href !== "/dealerships" || hasDealerships,
   );

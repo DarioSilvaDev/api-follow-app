@@ -56,7 +56,7 @@ export function DealershipSelector() {
       <option value="">Personal</option>
       {memberships.map((membership) => (
         <option key={membership.dealershipId} value={membership.dealershipId}>
-          {membership.dealershipName} ({dealershipRoleLabel(membership.role)})
+          {membership.dealershipName} ({dealershipRoleLabel(membership.role.code)})
         </option>
       ))}
     </select>

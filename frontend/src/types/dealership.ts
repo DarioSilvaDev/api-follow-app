@@ -17,8 +17,12 @@ export interface DealershipMembership {
   dealershipId: string;
   dealershipName: string;
   logoUrl?: string | null;
-  /** Código del rol: owner | admin | seller (RB-10). */
-  role: string;
+  /**
+   * Rol del usuario en la concesionaria (espejo de `workshopMemberships[].role`):
+   * `{ id, code, name }` — contrato real de `GET /auth/me` (§28 §3.4).
+   * `code` = owner | admin | seller (RB-10).
+   */
+  role: { id: string; code: string; name: string };
 }
 
 /** `GET /dealerships/mine` → concesionaria del usuario (miembro). */
@@ -37,6 +41,23 @@ export interface Dealership {
   updatedAt: string;
   memberCount?: number;
   vehicleCount?: number;
+}
+
+/**
+ * `GET /dealerships/mine` → envelope paginado (mismo patrón
+ * `VehicleListResponse` / backend `ListDealershipsHandler`):
+ * `{ data, meta }`. El frontend NO inventa el shape: lo consume tal cual.
+ */
+export interface DealershipListMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface DealershipListResponse {
+  data: Dealership[];
+  meta: DealershipListMeta;
 }
 
 /** `GET /dealerships/:id/roles` → roles de la concesionaria (seed RB-10). */

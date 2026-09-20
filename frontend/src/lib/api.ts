@@ -14,9 +14,21 @@ import type {
   Dealership,
   DealershipExhibitionVehicle,
   DealershipInvitation,
+  DealershipListResponse,
   DealershipMember,
   DealershipRoleItem,
 } from "@/types/dealership";
+import type {
+  AdminDealershipListResponse,
+  CreateAdminDealershipInput,
+  CreateAdminDealershipResult,
+  ResendInvitationResult,
+} from "@/types/admin";
+import type {
+  InvitationClaimInput,
+  InvitationClaimPreview,
+  InvitationClaimResult,
+} from "@/types/invitation";
 import type {
   WorkshopDetail,
   WorkshopSearchResult,
@@ -84,13 +96,31 @@ function isAuthApiPath(path: string): boolean {
   return path.startsWith("auth/");
 }
 
-/** Inyecta los headers de contexto si hay taller/concesionaria seleccionado y NO es auth/*. */
+/**
+ * Prefijos SIN contexto activo (además de `auth/*`):
+ * - `dealerships/wizard/*` — endpoints PÚBLICOS del wizard de invitación
+ *   (onboarding de concesionaria). Un contexto DEALERSHIP/WORKSHOP stale NO
+ *   debe inyectarse en una operación pública de claim/validación.
+ * - `admin/*` — workspace admin de plataforma (workspace PLATFORM); el
+ *   contexto operativo del usuario no aplica a estas operaciones.
+ *
+ * Extiende la exclusión existente de `auth/*` (RF-3).
+ */
+function isContextFreePath(path: string): boolean {
+  return (
+    isAuthApiPath(path) ||
+    path.startsWith("dealerships/wizard/") ||
+    path.startsWith("admin/")
+  );
+}
+
+/** Inyecta los headers de contexto si hay taller/concesionaria seleccionado y NO es auth/* ni público. */
 function injectActiveContextHeaders({ request }: { request: Request }): void {
   const context = getActiveContext();
   if (!context) {
     return;
   }
-  if (isAuthApiPath(apiRelativePath(request.url))) {
+  if (isContextFreePath(apiRelativePath(request.url))) {
     return;
   }
   request.headers.set("X-Context-Type", context.type);
@@ -150,6 +180,17 @@ export const api = ky.create({
             "auth/verify-email",
           ];
           if (publicEndpoints.some((ep) => relativePath.startsWith(ep))) {
+            return ky.stop;
+          }
+          // Wizard público de invitación (onboarding de concesionaria): el
+          // GET de validación es PÚBLICO y NUNCA debe disparar el refresh
+          // 401 (contrato: token inválido/vencido/usado → 404/400/409, jamás
+          // 401). El claim POST (auth opcional por cookie) sí puede devolver
+          // 401 AUTH_REQUIRED y en ese caso el refresh sí corresponde.
+          const isInvitationPreviewGet =
+            error.request.method === "GET" &&
+            relativePath.startsWith("dealerships/wizard/invitations");
+          if (isInvitationPreviewGet) {
             return ky.stop;
           }
         } catch {
@@ -768,11 +809,11 @@ export const dealershipApi = {
       .json<Dealership>()
       .catch(toApiError),
 
-  /** GET /dealerships/mine → concesionarias del usuario (miembro). */
+  /** GET /dealerships/mine → concesionarias del usuario (miembro). Envelope paginado `{ data, meta }`. */
   listMine: () =>
     api
       .get("dealerships/mine")
-      .json<Dealership[]>()
+      .json<DealershipListResponse>()
       .catch(toApiError),
 
   /** GET /dealerships/:id → detalle (admin/miembro). */
@@ -835,5 +876,82 @@ export const dealershipApi = {
     api
       .delete(`dealerships/${dealershipId}/members/${memberId}`)
       .then(() => undefined as void)
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
+// Invitation API (onboarding administrado de concesionaria — wizard público)
+//
+// Contrato backend congelado:
+// - GET  /dealerships/wizard/invitations/:token  (PÚBLICO)
+// - POST /dealerships/wizard/claim               (PÚBLICO, auth opcional por
+//   cookie; el body lleva TODO — cuenta + datos de la concesionaria — cuando
+//   requiresRegister=true; NO se llama /auth/register desde el wizard).
+//
+// El GET de validación está en la skip-list del refresh 401 (solo GET) y el
+// prefijo `dealerships/wizard/` no inyecta headers de contexto (público).
+// ---------------------------------------------------------------------------
+
+export const invitationApi = {
+  /** GET /dealerships/wizard/invitations/:token → preview del claim. */
+  getClaimPreview: (token: string) =>
+    api
+      .get(`dealerships/wizard/invitations/${encodeURIComponent(token)}`)
+      .json<InvitationClaimPreview>()
+      .catch(toApiError),
+
+  /** POST /dealerships/wizard/claim → crea/activa la cuenta + activa la concesionaria. */
+  claim: (input: InvitationClaimInput) =>
+    api
+      .post("dealerships/wizard/claim", { json: input })
+      .json<InvitationClaimResult>()
+      .catch(toApiError),
+};
+
+// ---------------------------------------------------------------------------
+// Admin API (workspace admin de plataforma — sección concesionarias)
+//
+// Contrato backend congelado (permisos admin.dealerships.list/create/manage):
+// - GET  /admin/dealerships?page&limit&status
+// - POST /admin/dealerships { name, taxId?, ownerEmail }
+// - POST /admin/dealerships/:id/invitations (reenvío de invitación)
+//
+// El prefijo `admin/` no inyecta headers de contexto (workspace PLATFORM).
+// ---------------------------------------------------------------------------
+
+export const adminApi = {
+  /** GET /admin/dealerships → envelope paginado filtrable por status. */
+  listDealerships: ({
+    page = 1,
+    limit = 10,
+    status,
+  }: {
+    page?: number;
+    limit?: number;
+    status?: "pending_claim" | "active";
+  } = {}) =>
+    api
+      .get("admin/dealerships", {
+        searchParams: {
+          page,
+          limit,
+          ...(status ? { status } : {}),
+        },
+      })
+      .json<AdminDealershipListResponse>()
+      .catch(toApiError),
+
+  /** POST /admin/dealerships → alta administrada (pending_claim + invitación). */
+  createDealership: (input: CreateAdminDealershipInput) =>
+    api
+      .post("admin/dealerships", { json: input })
+      .json<CreateAdminDealershipResult>()
+      .catch(toApiError),
+
+  /** POST /admin/dealerships/:id/invitations → reenvía la invitación al dueño. */
+  resendInvitation: (dealershipId: string) =>
+    api
+      .post(`admin/dealerships/${dealershipId}/invitations`)
+      .json<ResendInvitationResult>()
       .catch(toApiError),
 };
