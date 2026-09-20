@@ -382,6 +382,34 @@ const permissions = [
   },
   {
     module: 'admin',
+    resource: 'dealerships',
+    action: 'create',
+    code: 'admin.dealerships.create',
+    description: 'Create dealerships (admin onboarding)',
+  },
+  {
+    module: 'admin',
+    resource: 'dealerships',
+    action: 'list',
+    code: 'admin.dealerships.list',
+    description: 'List all dealerships',
+  },
+  {
+    module: 'admin',
+    resource: 'dealerships',
+    action: 'read',
+    code: 'admin.dealerships.read',
+    description: 'View dealership details',
+  },
+  {
+    module: 'admin',
+    resource: 'dealerships',
+    action: 'manage',
+    code: 'admin.dealerships.manage',
+    description: 'Manage dealership onboarding and invitations',
+  },
+  {
+    module: 'admin',
     resource: 'vehicles',
     action: 'list',
     code: 'admin.vehicles.list',
@@ -555,6 +583,10 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
     'admin.roles.list',
     'admin.users.list',
     'admin.users.read',
+    'admin.dealerships.create',
+    'admin.dealerships.list',
+    'admin.dealerships.read',
+    'admin.dealerships.manage',
     'admin.dashboard',
     'admin.vehicle-catalog.brands.list',
     'admin.vehicle-catalog.brands.read',
@@ -1590,6 +1622,9 @@ async function seedDealerships() {
         email: d.email,
         phone: d.phone,
         isActive: true,
+        // Demo nacen operativas (D-103 / seed): owner directo + memberships
+        // activas, no pasan por el wizard de claim → status 'active', claimed_at NULL.
+        status: 'active',
       },
     });
 

@@ -635,6 +635,17 @@ model WorkshopRolePermission {
 // Espejo del patrón Workshop (identidad + roles + miembros + invitaciones).
 // NO reutiliza tablas workshop (D-102): son actores distintos.
 // Sucursales/specialties quedan fuera del MVP (D-TL-8, D-103).
+//
+// Onboarding administrado (decisión PM): la concesionaria nace en
+// `pending_claim` (alta por admin de plataforma con invitación al dueño) y
+// pasa a `active` cuando el dueño completa el wizard público (se setea
+// `claimed_at`). El alta rápida D-103 y las demo del seed deben setear
+// `active` explícitamente.
+enum DealershipStatus {
+  pending_claim
+  active
+}
+
 model Dealership {
   id String @id @default(uuid()) @db.Uuid
 
@@ -655,6 +666,13 @@ model Dealership {
   description String?
 
   isActive Boolean @default(true) @map("is_active")
+
+  // Estado de onboarding: `pending_claim` = creada por admin, dueño aún no
+  // reclamó; `active` = operativa (D-103 / seed / wizard completado).
+  status DealershipStatus @default(pending_claim) @map("status")
+
+  // Cuándo el dueño reclamó la concesionaria (wizard completado).
+  claimedAt DateTime? @map("claimed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 
