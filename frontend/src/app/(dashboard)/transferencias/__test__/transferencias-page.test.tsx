@@ -64,13 +64,22 @@ vi.mock("@/components/transfer/transfer-dialog", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Fecha relativa a hoy (días desde Date.now()): fixtures robustos que no se
+ * vencen con el paso del tiempo (los viáticos fijos con expiresAt pasado
+ * hacían que el recomputo client-side marcara "Expirada").
+ */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 /** Transferencia entrante válida: emisor = Ana, receptor = user-1 (Juan). */
 function makeIncoming(overrides: Record<string, unknown> = {}) {
   return {
     id: "t1",
     status: "pending",
-    requestedAt: "2026-09-10T15:00:00.000Z",
-    expiresAt: "2026-09-17T15:00:00.000Z",
+    requestedAt: daysFromNow(-5),
+    expiresAt: daysFromNow(5),
     notes: null,
     vehicle: {
       id: "v1",
