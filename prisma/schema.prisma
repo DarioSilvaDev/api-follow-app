@@ -379,6 +379,16 @@ model OauthAccount {
   @@map("oauth_accounts")
 }
 
+// Espejo del patrón concesionaria (D-106): el taller nace en `pending_claim`
+// (alta por admin de plataforma con invitación al dueño) y pasa a `active`
+// cuando el dueño completa el wizard público (se setea `claimed_at`). El alta
+// rápida D-103 y las demo del seed deben setear `active` explícitamente.
+// `isActive` sigue gobernando habilitado/deshabilitado operativo (ORTOGONAL).
+enum WorkshopStatus {
+  pending_claim
+  active
+}
+
 model Workshop {
   id String @id @default(uuid()) @db.Uuid
 
@@ -399,6 +409,13 @@ model Workshop {
   description String?
 
   isActive Boolean @default(true) @map("is_active")
+
+  // Estado de onboarding: `pending_claim` = creado por admin, dueño aún no
+  // reclamó; `active` = operativo (alta rápida / seed / wizard completado).
+  status WorkshopStatus @default(pending_claim) @map("status")
+
+  // Cuándo el dueño reclamó el taller (wizard completado).
+  claimedAt DateTime? @map("claimed_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 

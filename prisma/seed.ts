@@ -382,6 +382,13 @@ const permissions = [
   },
   {
     module: 'admin',
+    resource: 'workshops',
+    action: 'create',
+    code: 'admin.workshops.create',
+    description: 'Create workshops (admin onboarding)',
+  },
+  {
+    module: 'admin',
     resource: 'dealerships',
     action: 'create',
     code: 'admin.dealerships.create',
@@ -583,6 +590,11 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
     'admin.roles.list',
     'admin.users.list',
     'admin.users.read',
+    'admin.workshops.create',
+    'admin.workshops.list',
+    'admin.workshops.read',
+    'admin.workshops.manage',
+    'admin.workshops.members',
     'admin.dealerships.create',
     'admin.dealerships.list',
     'admin.dealerships.read',
@@ -1469,6 +1481,10 @@ async function seedWorkshops() {
         email: w.email,
         phone: w.phone,
         isActive: true,
+        // Demo nacen operativas (mismo criterio que seedDealerships): owner
+        // directo + memberships activas, no pasan por el wizard de claim →
+        // status 'active', claimed_at NULL.
+        status: 'active',
       },
     });
 
