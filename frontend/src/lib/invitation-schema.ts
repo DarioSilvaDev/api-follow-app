@@ -82,6 +82,37 @@ export type InvitationDealershipValues = z.infer<
 >;
 
 /**
+ * Registro del wizard de USUARIO de plataforma (kind=user, D-106).
+ *
+ * El claim (POST /users/wizard/claim) exige firstName/lastName/password (el
+ * backend responde 400 VALIDATION_ERROR si faltan); el email NUNCA viaja en el
+ * body (lo fija la invitación) y phone es opcional en el DTO. A diferencia de
+ * InvitationRegisterValues, NO se recopila teléfono: solo los campos que pide
+ * el claim.
+ */
+export const userWizardRegisterSchema = z
+  .object({
+    firstName: z
+      .string()
+      .trim()
+      .min(2, "El nombre debe tener al menos 2 caracteres."),
+    lastName: z
+      .string()
+      .trim()
+      .min(2, "El apellido debe tener al menos 2 caracteres."),
+    password: z
+      .string()
+      .min(8, "La contraseña debe tener al menos 8 caracteres."),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Las contraseñas no coinciden.",
+    path: ["confirmPassword"],
+  });
+
+export type UserWizardRegisterValues = z.infer<typeof userWizardRegisterSchema>;
+
+/**
  * Paso 2 del wizard para TALLER (D-106). El nombre NO es editable ni se envía
  * (el backend lo fija en el alta admin — WizardWorkshopDataDto sin name).
  * Completar los contactos públicos es la única parte del paso 2.

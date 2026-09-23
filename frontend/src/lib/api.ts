@@ -3,10 +3,15 @@ import { clearActiveContext, getActiveContext } from "@/lib/active-context";
 import type { SessionUser } from "@/types/auth";
 import type {
   CareEpisode,
+  CareEpisodeAttachment,
+  CareEpisodeAttachmentPhase,
+  CareEpisodeDetail,
   CareEpisodeLookupVehicle,
   CareEpisodeVerificationItem,
   CreateCareEpisodeInput,
   CreateOwnerCareEpisodeInput,
+  CreateOwnerCareEpisodeResult,
+  RemovedAttachmentReason,
 } from "@/types/care-episode";
 import type {
   CreateDealershipInput,
@@ -19,21 +24,36 @@ import type {
   DealershipRoleItem,
 } from "@/types/dealership";
 import type {
+  AdminDealershipDetail,
   AdminDealershipListResponse,
+  AdminSystemRoleItem,
+  AdminUserDetail,
+  AdminUserListResponse,
   AdminWorkshopDetail,
   AdminWorkshopListResponse,
+  AssignSystemRoleInput,
   CreateAdminDealershipInput,
   CreateAdminDealershipResult,
   CreateAdminWorkshopInput,
   CreateAdminWorkshopResult,
+  InvitePlatformUserInput,
+  InvitePlatformUserResult,
+  ListAdminUsersInput,
   ResendInvitationResult,
   ResendWorkshopInvitationResult,
+  RevokeSystemRoleInput,
+  UpdateAdminDealershipInput,
+  UpdateAdminDealershipStatusInput,
+  UpdateAdminUserStatusInput,
   UpdateAdminWorkshopStatusInput,
 } from "@/types/admin";
 import type {
   InvitationClaimInput,
   InvitationClaimPreview,
   InvitationClaimResult,
+  UserWizardClaimInput,
+  UserWizardClaimPreview,
+  UserWizardClaimResult,
   WorkshopClaimPayload,
   WorkshopClaimPreview,
   WorkshopClaimResult,
@@ -121,6 +141,7 @@ function isContextFreePath(path: string): boolean {
     isAuthApiPath(path) ||
     path.startsWith("dealerships/wizard/") ||
     path.startsWith("workshops/wizard/") ||
+    path.startsWith("users/wizard/") ||
     path.startsWith("admin/")
   );
 }
@@ -202,7 +223,8 @@ export const api = ky.create({
           const isInvitationPreviewGet =
             error.request.method === "GET" &&
             (relativePath.startsWith("dealerships/wizard/invitations") ||
-              relativePath.startsWith("workshops/wizard/invitations"));
+              relativePath.startsWith("workshops/wizard/invitations") ||
+              relativePath.startsWith("users/wizard/invitations"));
           if (isInvitationPreviewGet) {
             return ky.stop;
           }
@@ -762,6 +784,112 @@ export const careEpisodeApi = {
       .json<CareEpisode>()
       .catch(toApiError),
 
+  // -----------------------------------------------------------------------
+  // Iteración 2-4 — Evidencia del episodio (S1/S4/S5/S6)
+  //
+  // GET /care-episodes/:id  → detalle con proyección por actor (S1). La ruta
+  // NO es workshop-only: PERSONAL con acceso al vehículo también la lee (el
+  // 403 de acceso se traduce a 404 por ausencia de revelación).
+  // POST /:id/attachments → evidencia del taller (S4), UN archivo por request
+  // (FileInterceptor single 'files' — el lote se resuelve en el cliente
+  // enviando secuencialmente, espejo de vehicleApi.uploadPhoto).
+  // DELETE /:id/attachments/:attachmentId → void auditado (S5), body opcional
+  // { removedReason } (obligatorio en los paths de auditoría del backend).
+  // -----------------------------------------------------------------------
+
+  /** S1: GET /care-episodes/:id (+?signed=true) → CareEpisodeDetailResponseDto. */
+  getCareEpisodeDetail: (id: string, options: { signed?: boolean } = {}) =>
+    api
+      .get(`care-episodes/${encodeURIComponent(id)}`, {
+        searchParams: options.signed ? { signed: "true" } : {},
+      })
+      .json<CareEpisodeDetail>()
+      .catch(toApiError),
+
+  /**
+   * S4: POST /care-episodes/:id/attachments — adjunta UNA imagen de evidencia
+   * (contexto WORKSHOP + permiso `care-episode.attach`). Multipart con campo
+   * `files` (single), `phase` requerido y `caption` opcional.
+   */
+  uploadAttachment: (
+    id: string,
+    dto: {
+      file: File;
+      phase: Exclude<CareEpisodeAttachmentPhase, null>;
+      caption?: string;
+    },
+    onProgress?: (percent: number) => void,
+  ) => {
+    const formData = new FormData();
+    formData.append("files", dto.file);
+    formData.append("phase", dto.phase);
+    if (dto.caption?.trim()) {
+      formData.append("caption", dto.caption.trim());
+    }
+    return api
+      .post(`care-episodes/${encodeURIComponent(id)}/attachments`, {
+        body: formData,
+        onUploadProgress: onProgress
+          ? (event) => onProgress(Math.round(event.percent * 100))
+          : undefined,
+      })
+      .json<CareEpisodeAttachment>()
+      .catch(toApiError);
+  },
+
+  /** S5: DELETE /care-episodes/:id/attachments/:attachmentId → 204 (void auditado). */
+  deleteAttachment: (
+    id: string,
+    attachmentId: string,
+    options: { removedReason?: RemovedAttachmentReason } = {},
+  ) =>
+    api
+      .delete(`care-episodes/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`, {
+        ...(options.removedReason ? { json: { removedReason: options.removedReason } } : {}),
+      })
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  /**
+   * S6: POST /care-episodes/owner con multipart — crea el servicio del
+   * propietario + evidencia opcional (máx. 5, captions index-matched,
+   * phase=null → grupo General). El path JSON histórico (`createOwnerCareEpisode`)
+   * queda intacto; esta ruta se usa cuando el form eligió archivos.
+   */
+  createOwnerCareEpisodeWithFiles: (
+    input: CreateOwnerCareEpisodeInput,
+    files: File[],
+    captions?: string[],
+    onProgress?: (percent: number) => void,
+  ) => {
+    const formData = new FormData();
+    formData.append("vehicleId", input.vehicleId);
+    formData.append("title", input.title);
+    formData.append("serviceDate", input.serviceDate);
+    if (input.workshopId) formData.append("workshopId", input.workshopId);
+    if (input.workshopName) formData.append("workshopName", input.workshopName);
+    if (input.mileageIn !== undefined) {
+      formData.append("mileageIn", String(input.mileageIn));
+    }
+    if (input.notes) formData.append("notes", input.notes);
+    for (const file of files) {
+      formData.append("files", file);
+    }
+    const safeCaptions = captions ?? [];
+    for (const caption of safeCaptions) {
+      formData.append("captions", caption);
+    }
+    return api
+      .post("care-episodes/owner", {
+        body: formData,
+        onUploadProgress: onProgress
+          ? (event) => onProgress(Math.round(event.percent * 100))
+          : undefined,
+      })
+      .json<CreateOwnerCareEpisodeResult>()
+      .catch(toApiError);
+  },
+
   /** Iteración 2-2 RF-4: GET /care-episodes/verifications → cola del taller (contexto WORKSHOP). */
   getCareEpisodeVerifications: () =>
     api
@@ -937,6 +1065,23 @@ export const invitationApi = {
       .post("workshops/wizard/claim", { json: input })
       .json<WorkshopClaimResult>()
       .catch(toApiError),
+
+  /** GET /users/wizard/invitations/:token → preview del claim de usuario de plataforma (PÚBLICO). */
+  getUserWizardPreview: (token: string) =>
+    api
+      .get(`users/wizard/invitations/${encodeURIComponent(token)}`)
+      .json<UserWizardClaimPreview>()
+      .catch(toApiError),
+
+  /**
+   * POST /users/wizard/claim → crea/activa la cuenta de plataforma.
+   * IMPORTANTE: el body NUNCA lleva email (lo fija la invitación).
+   */
+  claimUser: (input: UserWizardClaimInput) =>
+    api
+      .post("users/wizard/claim", { json: input })
+      .json<UserWizardClaimResult>()
+      .catch(toApiError),
 };
 
 // ---------------------------------------------------------------------------
@@ -947,6 +1092,11 @@ export const invitationApi = {
 // - GET  /admin/dealerships?page&limit&status
 // - POST /admin/dealerships { name, taxId?, ownerEmail }
 // - POST /admin/dealerships/:id/invitations (reenvío de invitación)
+// - GET  /admin/dealerships/:id (detalle admin)
+// - PATCH /admin/dealerships/:id { identidad/contacto } (handoff PM P1/P7;
+//   Fase 1 backend: ENDPOINT COMPROMETIDO, aún no implementado)
+// - PATCH /admin/dealerships/:id/status { isActive } (P2/P3; Fase 1 backend:
+//   ENDPOINT COMPROMETIDO, aún no implementado)
 // - GET  /admin/workshops?page&limit&status
 // - POST /admin/workshops { name, taxId?, ownerEmail }
 // - POST /admin/workshops/:id/invitations (reenvío de invitación)
@@ -985,11 +1135,51 @@ export const adminApi = {
       .json<CreateAdminDealershipResult>()
       .catch(toApiError),
 
-  /** POST /admin/dealerships/:id/invitations → reenvía la invitación al dueño. */
+  /** PUT /admin/dealerships/:id/invitations alias del reenvío (D-106). */
   resendInvitation: (dealershipId: string) =>
     api
       .post(`admin/dealerships/${dealershipId}/invitations`)
       .json<ResendInvitationResult>()
+      .catch(toApiError),
+
+  /** GET /admin/dealerships/:id → detalle admin (DealershipDetailAdminResponseDto). */
+  getDealership: (dealershipId: string) =>
+    api
+      .get(`admin/dealerships/${encodeURIComponent(dealershipId)}`)
+      .json<AdminDealershipDetail>()
+      .catch(toApiError),
+
+  /**
+   * PATCH /admin/dealerships/:id → edición de identidad/contacto (P1).
+   * PATCH parcial — solo campos modificados; devuelve el detalle actualizado
+   * (P7). NOTA Fase 1 backend: endpoint comprometido en el handoff PM, aún no
+   * implementado en el controller (404 hasta que se entregue).
+   */
+  updateDealership: (
+    dealershipId: string,
+    input: UpdateAdminDealershipInput,
+  ) =>
+    api
+      .patch(`admin/dealerships/${encodeURIComponent(dealershipId)}`, {
+        json: input,
+      })
+      .json<AdminDealershipDetail>()
+      .catch(toApiError),
+
+  /**
+   * PATCH /admin/dealerships/:id/status → habilitar/deshabilitar (P2, permiso
+   * P3). Devuelve el detalle actualizado (P7). NOTA Fase 1 backend: endpoint
+   * comprometido en el handoff PM, aún no implementado en el controller.
+   */
+  updateDealershipStatus: (
+    dealershipId: string,
+    input: UpdateAdminDealershipStatusInput,
+  ) =>
+    api
+      .patch(`admin/dealerships/${encodeURIComponent(dealershipId)}/status`, {
+        json: input,
+      })
+      .json<AdminDealershipDetail>()
       .catch(toApiError),
 
   /** GET /admin/workshops → envelope paginado filtrable por status. */
@@ -1044,5 +1234,69 @@ export const adminApi = {
         json: input,
       })
       .then(() => undefined as void)
+      .catch(toApiError),
+
+  // -----------------------------------------------------------------------
+  // Sección Usuarios (D-106) — contrato backend verificado administration
+  // module. Assign/revoke roles usan roleId (UUID), NUNCA roleType.
+  // -----------------------------------------------------------------------
+
+  /** GET /admin/users?page&limit&q&status&role → envelope { data, meta }. */
+  listUsers: (input: ListAdminUsersInput) =>
+    api
+      .get("admin/users", {
+        searchParams: {
+          page: input.page ?? 1,
+          limit: input.limit ?? 10,
+          ...(input.q ? { q: input.q } : {}),
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.role ? { role: input.role } : {}),
+        },
+      })
+      .json<AdminUserListResponse>()
+      .catch(toApiError),
+
+  /** GET /admin/users/:id → detalle admin (UserDetailAdminResponseDto). */
+  getUser: (userId: string) =>
+    api
+      .get(`admin/users/${encodeURIComponent(userId)}`)
+      .json<AdminUserDetail>()
+      .catch(toApiError),
+
+  /** POST /admin/users → invita usuario de plataforma (rol directo o invitación). */
+  inviteUser: (input: InvitePlatformUserInput) =>
+    api
+      .post("admin/users", { json: input })
+      .json<InvitePlatformUserResult>()
+      .catch(toApiError),
+
+  /** PATCH /admin/users/:id/status → suspender/reactivar (UserStatus). */
+  updateUserStatus: (userId: string, input: UpdateAdminUserStatusInput) =>
+    api
+      .patch(`admin/users/${encodeURIComponent(userId)}/status`, {
+        json: input,
+      })
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  /** POST /admin/roles/assign → asigna rol por UUID (roleId). */
+  assignUserRole: (input: AssignSystemRoleInput) =>
+    api
+      .post("admin/roles/assign", { json: input })
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  /** DELETE /admin/roles/revoke → quita rol por UUID (roleId). */
+  revokeUserRole: (input: RevokeSystemRoleInput) =>
+    api
+      .delete("admin/roles/revoke", { json: input })
+      .then(() => undefined as void)
+      .catch(toApiError),
+
+  /** GET /admin/roles → roles de sistema (resuelve roleType → roleId). */
+  listRoles: () =>
+    api
+      .get("admin/roles")
+      .json<AdminSystemRoleItem[]>()
       .catch(toApiError),
 };

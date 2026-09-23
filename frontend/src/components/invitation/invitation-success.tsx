@@ -11,12 +11,14 @@ import {
 import type { InvitationKind } from "@/types/invitation";
 
 /**
- * Pantalla de éxito del wizard de invitación (claim 201) — concesionaria y
- * taller (D-106).
+ * Pantalla de éxito del wizard de invitación (claim 201) — concesionaria,
+ * taller (D-106) y usuario de plataforma (D-106 users).
  *
  * CTA (decisión PM):
  * - Concesionaria + membresía de sesión → "Ir a mi concesionaria" →
  *   /dealerships/{id}.
+ * - Usuario de plataforma → "Ir a iniciar sesión" → /login (la cuenta quedó
+ *   activa; el claim NO abre sesión automática — contrato backend).
  * - Resto (incluye taller; aún no existe /workshops/{id}) → "Ir al inicio" →
  *   /dashboard.
  */
@@ -32,6 +34,7 @@ export function InvitationSuccess({
   hasMembership: boolean;
 }) {
   const isWorkshop = kind === "workshop";
+  const isUser = kind === "user";
 
   return (
     <Card className="w-full">
@@ -40,19 +43,34 @@ export function InvitationSuccess({
           <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
         </div>
         <CardTitle className="text-xl font-semibold">
-          {isWorkshop ? "¡Taller activado!" : "¡Concesionaria activada!"}
+          {isUser
+            ? "¡Cuenta activada!"
+            : isWorkshop
+              ? "¡Taller activado!"
+              : "¡Concesionaria activada!"}
         </CardTitle>
       </CardHeader>
       <CardContent className="text-center text-sm text-muted-foreground">
-        <p>
-          Ya sos el propietario de{" "}
-          <span className="font-medium text-foreground">{entityName}</span>. El{" "}
-          {isWorkshop ? "taller" : "concesionaria"} quedó{" "}
-          {isWorkshop ? "activo" : "activa"} y visible para tus clientes.
-        </p>
+        {isUser ? (
+          <p>
+            Tu cuenta quedó activa con el rol de plataforma asignado por el
+            administrador. Ya podés iniciar sesión.
+          </p>
+        ) : (
+          <p>
+            Ya sos el propietario de{" "}
+            <span className="font-medium text-foreground">{entityName}</span>. El{" "}
+            {isWorkshop ? "taller" : "concesionaria"} quedó{" "}
+            {isWorkshop ? "activo" : "activa"} y visible para tus clientes.
+          </p>
+        )}
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
-        {!isWorkshop && hasMembership ? (
+        {isUser ? (
+          <Link href="/login" className="w-full">
+            <Button className="w-full">Ir a iniciar sesión</Button>
+          </Link>
+        ) : !isWorkshop && hasMembership ? (
           <Link href={`/dealerships/${entityId}`} className="w-full">
             <Button className="w-full">Ir a mi concesionaria</Button>
           </Link>

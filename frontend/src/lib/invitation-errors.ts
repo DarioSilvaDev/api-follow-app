@@ -170,3 +170,54 @@ export function resolveWizardLoginErrorMessage(error: unknown): string {
   if (status === 429) return "Demasiados intentos. Intentá más tarde.";
   return "No se pudo iniciar sesión. Intentá nuevamente.";
 }
+
+// ---------------------------------------------------------------------------
+// POST /users/wizard/claim — resolución de errores del wizard de usuario de
+// plataforma (D-106). El claim SIEMPRE exige firstName/lastName/password
+// (el backend produce 400 VALIDATION_ERROR si faltan) y rechaza con 409
+// CONFLICT: cuenta soft-deleted (D-S3), cuenta activa, cuenta suspendida.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mensaje de UI para el claim de usuario de plataforma
+ * (POST /users/wizard/claim). Los estados terminales de la invitación
+ * (INVITATION_*) los debe transicionar el caller a la pantalla de error; acá
+ * se devuelve el copy correspondiente. Para el resto se mapea por status/code.
+ */
+export function resolveUserWizardClaimErrorMessage(error: unknown): string {
+  const kind = invitationErrorKind(error);
+  if (kind === "invalid") return INVITATION_KIND_BODIES.invalid;
+  if (kind === "expired") return INVITATION_KIND_BODIES.expired;
+  if (kind === "used") return INVITATION_KIND_BODIES.used;
+  if (kind === "cancelled") return INVITATION_KIND_BODIES.cancelled;
+
+  const status = invitationErrorStatus(error);
+  const code = invitationErrorCode(error);
+
+  if (status === 409 || code === "CONFLICT") {
+    // D-S3: cuenta soft-deleted (mismo code CONFLICT que el resto; solo el
+    // mensaje distingue la variante — matcher por "desactivad").
+    if (invitationErrorIsSoftDeletedAccount(error)) {
+      return "Este email está asociado a una cuenta desactivada. Si creés que es un error, escribinos a soporte.";
+    }
+    const message = ((error as InvitationApiError)?.message ?? "").toLowerCase();
+    if (message.includes("activa")) {
+      return "Ya existe una cuenta activa con ese email. Si te olvidaste la contraseña, usá la recuperación de cuenta.";
+    }
+    if (message.includes("suspend")) {
+      return "La cuenta está suspendida. Contactá a un administrador de la plataforma.";
+    }
+    return "Ya existe una cuenta con ese email. Iniciá sesión e intentá nuevamente.";
+  }
+  if (status === 400 || code === "VALIDATION_ERROR") {
+    return "Completá nombre, apellido y contraseña para activar tu cuenta.";
+  }
+  if (status === 401) {
+    return "Necesitás iniciar sesión para continuar. Volvé e intentá nuevamente.";
+  }
+  if (status === 403) {
+    return "No tenés permisos para reclamar esta invitación.";
+  }
+  // 5xx / red / desconocido → genérico (patrón transfer-errors.ts).
+  return "No se pudo completar el trámite. Intentá nuevamente.";
+}

@@ -48,6 +48,7 @@ import { InvitationLayout } from "@/components/invitation/invitation-layout";
 import { InvitationStepEntity } from "@/components/invitation/invitation-step-entity";
 import { InvitationStepLogin } from "@/components/invitation/invitation-step-login";
 import { InvitationStepRegister } from "@/components/invitation/invitation-step-register";
+import { InvitationStepUserRegister } from "@/components/invitation/invitation-step-user-register";
 import { InvitationSuccess } from "@/components/invitation/invitation-success";
 import { InvitationWizard } from "@/components/invitation/invitation-wizard";
 import { useAuth } from "@/hooks/use-auth";
@@ -55,12 +56,14 @@ import { authApi, invitationApi } from "@/lib/api";
 import {
   invitationErrorKind,
   resolveInvitationClaimErrorMessage,
+  resolveUserWizardClaimErrorMessage,
   resolveWizardLoginErrorMessage,
 } from "@/lib/invitation-errors";
 import type { InvitationKind } from "@/types/invitation";
 import type {
   InvitationEntityValues,
   InvitationRegisterValues,
+  UserWizardRegisterValues,
 } from "@/lib/invitation-schema";
 
 type WizardPhase =
@@ -108,7 +111,7 @@ export default function InvitationWizardPage({
   // en Client Components se resuelve con React `use()` (patrón documentado).
   const query = use(searchParams ?? EMPTY_SEARCH_PARAMS);
   const kindFromUrl: InvitationKind | null =
-    query.kind === "dealership" || query.kind === "workshop"
+    query.kind === "dealership" || query.kind === "workshop" || query.kind === "user"
       ? query.kind
       : null;
 
@@ -147,6 +150,22 @@ export default function InvitationWizardPage({
     setPhase("validating");
     setFormError(null);
     try {
+      if (kindFromUrl === "user") {
+        const data = await invitationApi.getUserWizardPreview(token);
+        setKind("user");
+        setPreview({
+          email: data.email,
+          requiresRegister: data.requiresRegister,
+          entityId: "",
+          entityName: data.email,
+        });
+        // El claim de usuario SIEMPRE exige firstName/lastName/password (el
+        // backend responde 400 VALIDATION_ERROR si faltan), por lo que NO hay
+        // rama login para kind=user: requiereRegister=false (cuenta activa) se
+        // resuelve en el claim con 409 activa y su mensaje mapeado.
+        setPhase("register");
+        return;
+      }
       if (kindFromUrl === "workshop") {
         const data = await invitationApi.getWorkshopClaimPreview(token);
         setKind("workshop");
@@ -214,6 +233,40 @@ export default function InvitationWizardPage({
     setRegisterData(values);
     setFormError(null);
     setPhase("step-2");
+  };
+
+  /**
+   * Wizard de USUARIO (kind=user): el registro ES el claim (flujo de 1 solo
+   * paso, sin paso de entidad). El body del claim NO lleva email (lo fija la
+   * invitación) y solo exige token + firstName/lastname/password.
+   */
+  const handleUserRegister = async (values: UserWizardRegisterValues) => {
+    if (!token) return;
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const result = await invitationApi.claimUser({
+        token,
+        firstName: values.firstName,
+        lastName: values.lastName,
+        password: values.password,
+      });
+      // Best-effort: el claim NO abre sesión automática (contrato backend), el
+      // CTA de éxito lleva a /login; refreshSession solo refresca el menú.
+      await refreshSession().catch(() => undefined);
+      setClaimResult({
+        entityId: result.user.id,
+        entityName: result.user.email,
+      });
+      setPhase("success");
+    } catch (error: unknown) {
+      const kind = invitationErrorKind(error);
+      const terminal = TERMINAL_BY_KIND[kind];
+      if (terminal) setPhase(terminal);
+      else setFormError(resolveUserWizardClaimErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /** Paso 1 login → /auth/login (cookies) + refreshSession, avanza al paso 2. */
@@ -347,7 +400,7 @@ export default function InvitationWizardPage({
         />
       )}
 
-      {phase === "register" && preview && kind && (
+      {phase === "register" && preview && kind && kind !== "user" && (
         <InvitationWizard currentStep={1} mode="register" kind={kind}>
           <InvitationStepRegister
             email={preview.email}
@@ -355,6 +408,26 @@ export default function InvitationWizardPage({
             onSubmit={handleRegisterNext}
           />
         </InvitationWizard>
+      )}
+
+      {phase === "register" && preview && kind === "user" && (
+        <Card className="w-full">
+          <CardHeader className="text-center">
+            <CardTitle className="text-lg font-semibold">
+              Creá tu cuenta
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-center text-sm text-muted-foreground">
+              Activá tu cuenta de plataforma con los datos de tu invitación.
+            </p>
+            <InvitationStepUserRegister
+              email={preview.email}
+              submitError={submitting ? null : formError}
+              onSubmit={handleUserRegister}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {phase === "login" && preview && kind && (
