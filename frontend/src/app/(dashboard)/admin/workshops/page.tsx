@@ -1,30 +1,33 @@
 "use client";
 
 /**
- * Listado admin de talleres — /admin/workshops (D-106, espejo de
- * concesionarias).
+ * Listado admin de talleres — /admin/workshops (Fase 2/3 handoff PM: listado
+ * expandible Propuesta B; espejo de concesionarias).
  *
- * Fuente: GET /admin/workshops?page&limit&status. Estados:
- * - isActive=false → Badge destructive "Deshabilitado" (SIEMPRE gana, incluso
- *   en pending_claim: un taller deshabilitado no puede operar aunque no haya
- *   sido reclamado).
- * - status pending_claim → Badge warning "Pendiente de claim" + texto
- *   secundario "Sin propietario aún" + acción "Reenviar invitación" (POST
- *   /admin/workshops/:id/invitations).
- * - status active → Badge success "Activo".
+ * Fuente: GET /admin/workshops?page&limit&status (permiso
+ * admin.workshops.list). Cada fila expande un panel con:
+ * - Badge de estado efectivo (helper único src/lib/admin-status.ts — P2, D3).
+ * - Datos: dueño, email de contacto, sucursales, miembros, invitación vence,
+ *   alta.
+ * - Acciones: Reenviar invitación (pending + admin.workshops.manage),
+ *   Habilitar/Deshabilitar (admin.workshops.manage, PATCH existente
+ *   /admin/workshops/:id/status), Ver detalle. SIN Editar (no existe ruta
+ *   /admin/workshops/[id]/editar — fuera de alcance).
  *
- * Query key: ["admin-workshops", page, statusFilter]. Fila clickeable →
- * /admin/workshops/[id] (el nombre también es link accesible).
+ * Interacción (acordeón): una sola fila expandida; se cierra al cambiar
+ * filtro o página (NO al refetch de fondo). Nombre NO navega.
+ *
+ * Query key: ["admin-workshops", page, statusFilter].
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Plus, RefreshCw, Wrench } from "lucide-react";
+import { ChevronDown, RefreshCw, Wrench } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AdminTablePagination } from "@/components/admin/admin-table-pagination";
 import { AdminNoAccessState } from "@/components/admin/admin-no-access-state";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { AdminEntityStatusBadge } from "@/components/admin/admin-entity-status-badge";
+import { AdminStatusChangeDialog } from "@/components/admin/admin-status-change-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardDescription,
@@ -38,34 +41,26 @@ import { adminApi } from "@/lib/api";
 import {
   resolveAdminWorkshopsListError,
   resolveResendWorkshopInvitationError,
+  resolveUpdateWorkshopStatusError,
 } from "@/lib/admin-errors";
 import { can } from "@/lib/admin-access";
-import type { AdminWorkshopStatus } from "@/types/admin";
+import { formatAdminDate } from "@/lib/admin-status";
 import { cn } from "cn";
-import { buttonVariants } from "@/components/ui/button";
+import type { AdminWorkshopStatus } from "@/types/admin";
 
 const PAGE_SIZE = 10;
 const BANNER_DURATION_MS = 4000;
 
 type StatusFilter = "all" | AdminWorkshopStatus;
 
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("es-AR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 export default function AdminWorkshopsPage() {
-  const router = useRouter();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusDialogId, setStatusDialogId] = useState<string | null>(null);
+  const [statusDialogError, setStatusDialogError] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
   // Banner transitorio inline (sin toast, patrón paneles del repo).
@@ -98,19 +93,46 @@ export default function AdminWorkshopsPage() {
     },
   });
 
-  // Gate defensivo por permiso de sección (UX; llegó por URL directa sin el
-  // permiso admin.workshops.list). Backend sigue siendo la authority.
+  const statusMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      adminApi.updateWorkshopStatus(id, { isActive }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-workshops"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-workshop", variables.id],
+      });
+      setStatusDialogId(null);
+      setStatusDialogError(null);
+      setBanner("Estado del taller actualizado.");
+    },
+    onError: (error) => {
+      // Error persistente DENTRO del dialog (role="alert") para reintento; el
+      // dialog queda abierto (D6).
+      setStatusDialogError(resolveUpdateWorkshopStatusError(error));
+    },
+  });
+
+  // Gate defensivo por permiso de sección (UX; backend es la authority).
   if (!can(user, "admin.workshops.list")) {
     return <AdminNoAccessState />;
   }
 
+  const canManage = can(user, "admin.workshops.manage");
   const items = workshopsQuery.data?.data ?? [];
   const meta = workshopsQuery.data?.meta;
 
   const handleStatusFilter = (value: string) => {
     setStatusFilter(value as StatusFilter);
     setPage(1);
+    // Cerrar la fila expandida al cambiar filtro o página (decisión UX; NO al
+    // refetch de fondo — preserva contexto tras mutaciones).
+    setExpandedId(null);
   };
+
+  const statusDialogWorkshop =
+    statusDialogId !== null
+      ? items.find((item) => item.id === statusDialogId) ?? null
+      : null;
 
   return (
     <>
@@ -126,7 +148,7 @@ export default function AdminWorkshopsPage() {
           href="/admin/workshops/nueva"
           className={cn(buttonVariants({ size: "sm" }), "gap-1.5")}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Wrench className="h-3.5 w-3.5" />
           Nuevo taller
         </Link>
       </div>
@@ -150,6 +172,9 @@ export default function AdminWorkshopsPage() {
             <option value="active">Activos</option>
           </Select>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Orden: pendientes primero (server-side)
+        </p>
       </div>
 
       {banner && (
@@ -172,7 +197,12 @@ export default function AdminWorkshopsPage() {
         </div>
       ) : workshopsQuery.isError ? (
         <Card>
-          <CardContentEmpty message={resolveAdminWorkshopsListError()} />
+          <CardHeader>
+            <CardTitle className="text-base">
+              No se pudieron cargar los datos
+            </CardTitle>
+            <CardDescription>{resolveAdminWorkshopsListError()}</CardDescription>
+          </CardHeader>
         </Card>
       ) : items.length === 0 ? (
         <Card>
@@ -189,123 +219,180 @@ export default function AdminWorkshopsPage() {
                 href="/admin/workshops/nueva"
                 className={cn(buttonVariants({ size: "sm" }), "gap-1.5")}
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Wrench className="h-3.5 w-3.5" />
                 Nuevo taller
               </Link>
             }
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <caption className="sr-only">Listado de talleres de la plataforma</caption>
-              <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                  <th scope="col" className="px-4 py-3 font-medium">Taller</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Dueño</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Estado</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Miembros</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Sucursales</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Invitación vence</th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((workshop) => {
-                  const isPending = workshop.status === "pending_claim";
-                  const isDisabled = !workshop.isActive;
-                  const resending =
-                    resendMutation.isPending &&
-                    resendMutation.variables === workshop.id;
-                  return (
-                    <tr
-                      key={workshop.id}
-                      className="cursor-pointer border-b border-border last:border-b-0 hover:bg-muted/30"
-                      onClick={() =>
-                        router.push(`/admin/workshops/${workshop.id}`)
+        <>
+          <ul
+            aria-busy={workshopsQuery.isFetching}
+            className="overflow-hidden rounded-xl border bg-card shadow-sm"
+          >
+            {items.map((workshop) => {
+              const expanded = expandedId === workshop.id;
+              const pendingForInvitation =
+                workshop.status === "pending_claim";
+              const resending =
+                resendMutation.isPending &&
+                resendMutation.variables === workshop.id;
+              return (
+                <li
+                  key={workshop.id}
+                  className="border-b border-border last:border-b-0"
+                >
+                  <div className="px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : workshop.id)}
+                      aria-expanded={expanded}
+                      aria-controls={
+                        expanded ? `workshop-panel-${workshop.id}` : undefined
                       }
+                      className="flex min-h-12 w-full items-center gap-4 rounded-lg px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
                     >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/admin/workshops/${workshop.id}`}
-                          className="font-medium text-foreground transition-colors hover:text-primary"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">
                           {workshop.name}
-                        </Link>
-                        <p className="text-xs text-muted-foreground">
-                          {workshop.taxId || "Sin CUIT"}
                         </p>
-                      </td>
-                      <td className="px-4 py-3">
-                        {workshop.owner ? (
-                          <div>
-                            <p className="text-foreground">
-                              {workshop.owner.firstName}{" "}
-                              {workshop.owner.lastName}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
+                        <p className="truncate text-xs text-muted-foreground">
+                          {workshop.taxId ? `CUIT ${workshop.taxId}` : "Sin CUIT"}{" "}
+                          ·{" "}
+                          {workshop.owner
+                            ? `${workshop.owner.firstName} ${workshop.owner.lastName}`
+                            : workshop.ownerEmail ?? "Sin propietario aún"}
+                        </p>
+                      </div>
+                      <div className="shrink-0">
+                        <AdminEntityStatusBadge
+                          entityType="workshop"
+                          entity={workshop}
+                        />
+                      </div>
+                      <ChevronDown
+                        aria-hidden="true"
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+                          expanded && "rotate-180",
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  {expanded && (
+                    <div
+                      id={`workshop-panel-${workshop.id}`}
+                      className="border-t border-border bg-muted/30 px-4 py-4"
+                    >
+                      <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Dueño
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {workshop.owner
+                              ? `${workshop.owner.firstName} ${workshop.owner.lastName}`
+                              : workshop.ownerEmail ?? "Sin propietario aún"}
+                          </dd>
+                          {workshop.owner && (
+                            <dd className="text-xs text-muted-foreground">
                               {workshop.owner.email}
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            {workshop.ownerEmail || "—"}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDisabled ? (
-                          <Badge variant="destructive">Deshabilitado</Badge>
-                        ) : isPending ? (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <Badge variant="warning">Pendiente de claim</Badge>
-                            <span className="text-xs text-muted-foreground">
-                              Sin propietario aún
-                            </span>
-                          </div>
-                        ) : (
-                          <Badge variant="success">Activo</Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {workshop.membersCount}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {workshop.branchesCount}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {isPending && workshop.invitation
-                          ? formatDate(workshop.invitation.expiresAt)
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {isPending && !isDisabled ? (
+                            </dd>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Email de contacto
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {workshop.email ?? "—"}
+                          </dd>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Sucursales
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {workshop.branchesCount}
+                          </dd>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Miembros
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {workshop.membersCount}
+                          </dd>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Invitación vence
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {pendingForInvitation && workshop.invitation
+                              ? formatAdminDate(workshop.invitation.expiresAt)
+                              : "—"}
+                          </dd>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Alta
+                          </dt>
+                          <dd className="text-sm text-foreground">
+                            {formatAdminDate(workshop.createdAt)}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        {workshop.isActive &&
+                          workshop.status === "pending_claim" &&
+                          canManage && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={resending}
+                              onClick={() =>
+                                resendMutation.mutate(workshop.id)
+                              }
+                            >
+                              {resending && (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              )}
+                              Reenviar invitación
+                            </Button>
+                          )}
+                        {canManage && (
                           <Button
-                            variant="outline"
+                            variant={workshop.isActive ? "destructive" : "default"}
                             size="sm"
-                            disabled={resending}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              resendMutation.mutate(workshop.id);
+                            disabled={statusMutation.isPending}
+                            onClick={() => {
+                              setStatusDialogError(null);
+                              setStatusDialogId(workshop.id);
                             }}
                           >
-                            {resending ? (
-                              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                            ) : null}
-                            Reenviar invitación
+                            {workshop.isActive ? "Deshabilitar" : "Habilitar"}
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <Link
+                          href={`/admin/workshops/${workshop.id}`}
+                          className={cn(
+                            buttonVariants({ variant: "ghost", size: "sm" }),
+                            "gap-1",
+                          )}
+                        >
+                          Ver detalle
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
 
           {meta && meta.totalPages > 1 && (
             <AdminTablePagination
@@ -313,20 +400,55 @@ export default function AdminWorkshopsPage() {
               totalPages={meta.totalPages}
               total={meta.total}
               isFetching={workshopsQuery.isFetching}
-              onPageChange={(next) => setPage(next)}
+              onPageChange={(next) => {
+                setPage(next);
+                setExpandedId(null);
+              }}
             />
           )}
-        </Card>
+        </>
       )}
-    </>
-  );
-}
 
-function CardContentEmpty({ message }: { message: string }) {
-  return (
-    <CardHeader>
-      <CardTitle className="text-base">No se pudieron cargar los datos</CardTitle>
-      <CardDescription>{message}</CardDescription>
-    </CardHeader>
+      <AdminStatusChangeDialog
+        open={statusDialogId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setStatusDialogId(null);
+            setStatusDialogError(null);
+          }
+        }}
+        title={
+          statusDialogWorkshop
+            ? statusDialogWorkshop.isActive
+              ? `¿Deshabilitar ${statusDialogWorkshop.name}?`
+              : `¿Habilitar ${statusDialogWorkshop.name}?`
+            : ""
+        }
+        description={
+          statusDialogWorkshop
+            ? statusDialogWorkshop.isActive
+              ? "Los miembros no podrán operar desde este taller. Su historial y sus vehículos se conservan."
+              : "Los miembros podrán volver a operar desde este taller. El historial y los vehículos se conservan."
+            : ""
+        }
+        confirmLabel={
+          statusDialogWorkshop
+            ? statusDialogWorkshop.isActive
+              ? "Deshabilitar taller"
+              : "Habilitar taller"
+            : ""
+        }
+        variant={statusDialogWorkshop?.isActive ? "destructive" : "default"}
+        isPending={statusMutation.isPending}
+        dialogError={statusDialogError}
+        onConfirm={() => {
+          if (!statusDialogWorkshop) return;
+          statusMutation.mutate({
+            id: statusDialogWorkshop.id,
+            isActive: !statusDialogWorkshop.isActive,
+          });
+        }}
+      />
+    </>
   );
 }

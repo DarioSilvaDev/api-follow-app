@@ -54,3 +54,16 @@ export function can(
   const permissions = roles.flatMap((role) => role.permissions ?? []);
   return permissions.includes("*") || permissions.includes(permission);
 }
+
+/**
+ * Comprueba si el usuario tiene un role TYPE concreto (p. ej. "super_admin").
+ * Util para reglas de UX que dependen del rol y no de un permiso puntual
+ * (P1: desbloqueo del CUIT a super_admin en la edición admin).
+ */
+export function hasRole(
+  user: SessionUser | null | undefined,
+  roleType: string,
+): boolean {
+  if (!user) return false;
+  return (user.roles ?? []).some((role) => role.type === roleType);
+}

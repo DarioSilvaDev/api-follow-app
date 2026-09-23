@@ -40,6 +40,11 @@ const ADMIN_SECTIONS = [
     label: "Talleres",
     permission: "admin.workshops.list",
   },
+  {
+    href: "/admin/users",
+    label: "Usuarios",
+    permission: "admin.users.list",
+  },
 ] as const;
 
 export default function AdminLayout({
