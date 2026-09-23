@@ -22,11 +22,14 @@ import { clearWorkshop, selectWorkshop } from "@/lib/active-context";
 // ── Mocks (must be before dynamic imports) ───────────────────────────────────
 
 const mockCreateOwner = vi.fn();
+const mockCreateOwnerWithFiles = vi.fn();
 const mockSearchWorkshops = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   careEpisodeApi: {
     createOwnerCareEpisode: (...args: unknown[]) => mockCreateOwner(...args),
+    createOwnerCareEpisodeWithFiles: (...args: unknown[]) =>
+      mockCreateOwnerWithFiles(...args),
   },
   workshopApi: {
     searchWorkshops: (...args: unknown[]) => mockSearchWorkshops(...args),
@@ -565,5 +568,137 @@ describe("Registrar servicio — modal de confirmación (D-074)", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+// ── Iteración 2-4: evidencia en la creación del servicio owner (S6/D-074A) ──
+
+describe("Registrar servicio — evidencia en la creación (iteración 2-4)", () => {
+  it("con fotos adjuntas → D-074A en el modal + multipart transaccional + link al detalle", async () => {
+    const user = userEvent.setup();
+    const file = new File(["a"], "foto.jpg", { type: "image/jpeg" });
+    mockCreateOwnerWithFiles.mockResolvedValue({
+      id: "e1",
+      attachments: [],
+      attachmentCount: 0,
+    });
+
+    renderPage();
+
+    await fillServiceForm(user);
+    await user.click(screen.getByRole("button", { name: /otro taller/i }));
+    await user.type(
+      screen.getByLabelText(/nombre del taller/i),
+      "Taller de la esquina",
+    );
+    await user.upload(screen.getByTestId("owner-evidence-input"), file);
+
+    // Preview del archivo
+    expect(screen.getByText("foto.jpg")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /registrar servicio/i }),
+    );
+
+    // D-074 intacto + D-074A aditiva (evidencia).
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(
+      /no podrás editar ni cancelar este registro desde tu cuenta/i,
+    );
+    expect(dialog).toHaveTextContent(
+      /se adjuntará 1 foto como evidencia en el historial del vehículo/i,
+    );
+    expect(mockCreateOwner).not.toHaveBeenCalled();
+    expect(mockCreateOwnerWithFiles).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
+    expect(
+      await screen.findByText(
+        /quedará como "Registrado por el propietario"/i,
+      ),
+    ).toBeInTheDocument();
+
+    // Link al nuevo detalle deep-linkable (2-4) usando el id devuelto.
+    expect(
+      screen.getByRole("link", { name: /ver detalle del servicio/i }),
+    ).toHaveAttribute("href", "/vehicles/v1/servicios/e1");
+
+    expect(mockCreateOwnerWithFiles).toHaveBeenCalledTimes(1);
+    expect(mockCreateOwner).not.toHaveBeenCalled();
+
+    const [input, files, , onProgress] = mockCreateOwnerWithFiles.mock.calls[0];
+    expect(input).toMatchObject({
+      vehicleId: "v1",
+      title: "Cambio de aceite + 2 neumáticos",
+      serviceDate: "2026-06-15",
+      workshopName: "Taller de la esquina",
+    });
+    expect(files).toEqual([file]);
+    expect(typeof onProgress).toBe("function");
+  });
+
+  it("sin fotos adjuntas → JSON histórico (createOwnerCareEpisode) y sin multipart", async () => {
+    const user = userEvent.setup();
+    mockCreateOwner.mockResolvedValue({ id: "e1" });
+
+    renderPage();
+
+    await fillServiceForm(user);
+    await user.click(screen.getByRole("button", { name: /otro taller/i }));
+    await user.type(
+      screen.getByLabelText(/nombre del taller/i),
+      "Taller de la esquina",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /registrar servicio/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /confirmar/i }));
+
+    expect(
+      await screen.findByText(
+        /quedará como "Registrado por el propietario"/i,
+      ),
+    ).toBeInTheDocument();
+    expect(mockCreateOwner).toHaveBeenCalledTimes(1);
+    expect(mockCreateOwnerWithFiles).not.toHaveBeenCalled();
+  });
+
+  it("archivo de tipo no válido → error en línea y no acumula", async () => {
+    // applyAccept: false → user-event NO filtra por accept y el .txt llega al
+    // handler; queremos probar QUE la validación del handler lo rechaza.
+    const user = userEvent.setup({ applyAccept: false });
+
+    renderPage();
+
+    await user.upload(
+      screen.getByTestId("owner-evidence-input"),
+      new File(["x"], "nota.txt", { type: "text/plain" }),
+    );
+
+    expect(
+      await screen.findByText(
+        /solo se admiten imágenes jpg, png, webp o avif/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("nota.txt")).not.toBeInTheDocument();
+  });
+
+  it("lote de más de 5 fotos → error en línea y no acumula", async () => {
+    const user = userEvent.setup();
+
+    renderPage();
+
+    const files = Array.from(
+      { length: 6 },
+      (_, i) => new File(["a"], `f${i}.jpg`, { type: "image/jpeg" }),
+    );
+    await user.upload(screen.getByTestId("owner-evidence-input"), files);
+
+    expect(
+      await screen.findByText(/podés adjuntar hasta 5 imágenes por vez/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/f0\.jpg/)).not.toBeInTheDocument();
+    expect(mockCreateOwner).not.toHaveBeenCalled();
   });
 });

@@ -37,6 +37,13 @@ export interface TimelineEntry {
   badge?: string;
   /** Notas de la fuente, si existen. */
   notes?: string;
+  /**
+   * Iteración 2-4: id del CareEpisode (SIN prefijo `care:`) para entradas de
+   * tipo `care`. Habilitado → la entrada renderiza un deep-link al detalle
+   * (`/vehicles/:vehicleId/servicios/:careId`). NO tocar `id` (prefijo
+   * `care:{uuid}` — keys de React / tests D-070/D-071).
+   */
+  careId?: string;
 }
 
 const TRANSFER_STATUS_LABELS: Record<string, string> = {
@@ -173,6 +180,7 @@ export function mergeHistory(history: VehicleHistoryResponse): TimelineEntry[] {
       actor,
       badge,
       notes: care.customerNotes ?? undefined,
+      careId: care.id,
     });
   }
 

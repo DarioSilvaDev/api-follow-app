@@ -471,3 +471,58 @@ describe("mergeHistory — care episodes (iteración 2-3)", () => {
     expect(entries).toEqual([]);
   });
 });
+
+// ── Iteración 2-4: deep-link al detalle del servicio (careId) ────────────────
+
+describe("mergeHistory — careId para deep-link (iteración 2-4)", () => {
+  it("una entrada de tipo care expone careId = id SIN prefijo (para /vehicles/:id/servicios/:careId)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [makeCareEpisode()],
+      }),
+    );
+
+    expect(entries[0].id).toBe("care:c1");
+    expect(entries[0].careId).toBe("c1");
+  });
+
+  it("las entradas no-care (transfer/mileage/ownership) NO exponen careId", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        transfers: [makeTransfer({ id: "t1" })],
+        mileages: [
+          {
+            id: "m1",
+            vehicleId: "v1",
+            mileage: 25000,
+            source: "owner",
+            notes: null,
+            recordedAt: "2026-09-10T00:00:00.000Z",
+            createdAt: "2026-09-10T00:00:00.000Z",
+          },
+        ],
+        ownerships: [makeOwnership({ id: "o1" })],
+      }),
+    );
+
+    for (const entry of entries) {
+      expect(entry.careId).toBeUndefined();
+    }
+    expect(JSON.stringify(entries)).not.toContain('"careId"');
+  });
+
+  it("careId viaja con el episodio aunque el badge/título cambien (workshop verificado)", () => {
+    const entries = mergeHistory(
+      makeHistory({
+        careEpisodes: [
+          makeCareEpisode({
+            verification: "verified",
+            workshop: { id: "w1", name: "Taller Integral" },
+          }),
+        ],
+      }),
+    );
+
+    expect(entries[0].careId).toBe("c1");
+  });
+});

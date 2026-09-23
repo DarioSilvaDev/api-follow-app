@@ -1046,12 +1046,46 @@ function HistorySection({
   isLoading,
   isError,
   refetch,
+  vehicleId,
 }: {
   entries: TimelineEntry[];
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
+  vehicleId: string;
 }) {
+  /** Contenido interno de una entrada (icono + datos). Reutilizado por el
+   *  deep-link de care y por las entradas no-enlazables. */
+  const renderEntryBody = (entry: TimelineEntry) => (
+    <>
+      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
+        {(() => {
+          const Icon = TIMELINE_TYPE_ICONS[entry.type];
+          return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
+        })()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <p className="font-medium">{entry.title}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatTimelineDate(entry.date)}
+          </p>
+        </div>
+        {entry.actor ? (
+          <p className="text-xs text-muted-foreground">{entry.actor}</p>
+        ) : null}
+        {entry.badge ? (
+          <p className="mt-0.5 text-xs font-medium text-muted-foreground">
+            {entry.badge}
+          </p>
+        ) : null}
+        {entry.notes ? (
+          <p className="mt-1 text-xs text-muted-foreground/80">{entry.notes}</p>
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     <Card>
       <CardHeader>
@@ -1087,42 +1121,31 @@ function HistorySection({
           </p>
         ) : (
           <ol className="flex flex-col gap-2">
-            {entries.map((entry) => (
-              <li
-                key={entry.id}
-                className="flex items-start gap-3 rounded-lg ring-1 ring-foreground/10 px-3 py-2 text-sm"
-              >
-                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
-                  {(() => {
-                    const Icon = TIMELINE_TYPE_ICONS[entry.type];
-                    return <Icon className="h-3.5 w-3.5 text-muted-foreground" />;
-                  })()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                    <p className="font-medium">{entry.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatTimelineDate(entry.date)}
-                    </p>
-                  </div>
-                  {entry.actor ? (
-                    <p className="text-xs text-muted-foreground">
-                      {entry.actor}
-                    </p>
-                  ) : null}
-                  {entry.badge ? (
-                    <p className="mt-0.5 text-xs font-medium text-muted-foreground">
-                      {entry.badge}
-                    </p>
-                  ) : null}
-                  {entry.notes ? (
-                    <p className="mt-1 text-xs text-muted-foreground/80">
-                      {entry.notes}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+            {entries.map((entry) =>
+              entry.type === "care" && entry.careId ? (
+                <li
+                  key={entry.id}
+                  className="rounded-lg ring-1 ring-foreground/10"
+                >
+                  {/* Iteración 2-4: deep-link al detalle del servicio. Ancla
+                      nativa (next/link) → accesible por teclado / botón medio. */}
+                  <Link
+                    href={`/vehicles/${vehicleId}/servicios/${entry.careId}`}
+                    aria-label={`Ver detalle de ${entry.title}`}
+                    className="flex items-start gap-3 rounded-lg px-3 py-2 text-sm transition-colors outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {renderEntryBody(entry)}
+                  </Link>
+                </li>
+              ) : (
+                <li
+                  key={entry.id}
+                  className="flex items-start gap-3 rounded-lg ring-1 ring-foreground/10 px-3 py-2 text-sm"
+                >
+                  {renderEntryBody(entry)}
+                </li>
+              ),
+            )}
           </ol>
         )}
       </CardContent>
@@ -1333,6 +1356,7 @@ export default function VehicleDetailPage() {
             queryKey: ["vehicle", vehicle.id, "history"],
           })
         }
+        vehicleId={vehicle.id}
       />
     </div>
   );

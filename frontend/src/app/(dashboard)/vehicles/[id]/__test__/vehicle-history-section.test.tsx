@@ -410,4 +410,49 @@ describe("Vehicle detail — Historial section (F-014)", () => {
       expect(mockGetVehicleHistory).toHaveBeenCalledTimes(2);
     });
   });
+
+  // ── Iteración 2-4: deep-link al detalle del servicio ──────────────────────
+
+  it("una entrada de tipo care se envuelve en un link a /vehicles/v1/servicios/{careId} (2-4)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [],
+      mileages: [],
+      ownerships: [],
+      careEpisodes: [careOwnerUnverified], // id: "e1"
+    });
+
+    renderPage();
+
+    const link = await screen.findByRole("link", {
+      name: "Ver detalle de Cambio de aceite",
+    });
+    expect(link).toHaveAttribute("href", "/vehicles/v1/servicios/e1");
+    // El contenido de la entrada sigue visible dentro del link.
+    expect(screen.getByText("Registrado por el propietario")).toBeInTheDocument();
+    expect(screen.getByText("Pendiente de verificación")).toBeInTheDocument();
+  });
+
+  it("las entradas no-care NO se envuelven en deep-link (2-4)", async () => {
+    mockGetVehicleHistory.mockResolvedValue({
+      transfers: [transferCompleted],
+      mileages: [mileageOwner],
+      ownerships: [ownershipFirst],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Transferencia completada")).toBeInTheDocument();
+    expect(screen.getByText("Inicio de propiedad")).toBeInTheDocument();
+    // Ninguna entrada del historial es ancla: no hay hrefs a /servicios/.
+    expect(
+      screen.queryByRole("link", { name: /ver detalle de/i }),
+    ).not.toBeInTheDocument();
+    // Excluye el quick-action "Registrar servicio" (/servicios/nueva): solo
+    // nos interesan deep-links a detalle /servicios/{id} del timeline.
+    expect(
+      Array.from(document.querySelectorAll('a[href*="/servicios/"]')).filter(
+        (a) => !(a.getAttribute("href") ?? "").endsWith("/nueva"),
+      ),
+    ).toHaveLength(0);
+  });
 });

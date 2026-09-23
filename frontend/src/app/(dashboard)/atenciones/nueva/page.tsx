@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { ArrowLeft, Loader2, Search } from "lucide-react";
+import { ArrowLeft, Eye, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { AttachmentsUploader } from "@/components/care-episode/attachments-uploader";
 import { useActiveContext } from "@/hooks/use-active-context";
 import { careEpisodeApi, workshopApi } from "@/lib/api";
 import type { CareEpisodeLookupVehicle } from "@/types/care-episode";
@@ -150,7 +151,9 @@ export default function NewCareEpisodePage() {
   const branchId = watch("branchId");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [createdEpisodeId, setCreatedEpisodeId] = useState<string | null>(null);
+  const [createdVehicleId, setCreatedVehicleId] = useState<string | null>(null);
   const [createdPlate, setCreatedPlate] = useState("");
+  const queryClient = useQueryClient();
 
   // Al cambiar de taller, la branch seleccionada deja de ser válida.
   useEffect(() => {
@@ -166,6 +169,7 @@ export default function NewCareEpisodePage() {
 
   const resetAfterSuccess = () => {
     setCreatedEpisodeId(null);
+    setCreatedVehicleId(null);
     setCreatedPlate("");
     setLookup({ status: "idle" });
     setPlateInput("");
@@ -186,6 +190,7 @@ export default function NewCareEpisodePage() {
         customerNotes: data.customerNotes || undefined,
       });
       setCreatedEpisodeId(episode.id);
+      setCreatedVehicleId(lookup.vehicle.id);
       setCreatedPlate(lookup.vehicle.licensePlate);
     } catch (error) {
       const apiError = error as { status?: number; message?: string };
@@ -245,6 +250,42 @@ export default function NewCareEpisodePage() {
               El episodio quedó abierto y forma parte de la historia del
               vehículo.
             </p>
+            {createdVehicleId && (
+              <Link
+                href={`/vehicles/${createdVehicleId}/servicios/${createdEpisodeId}`}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring rounded-md"
+              >
+                <Eye className="h-4 w-4" />
+                Ver detalle del servicio
+              </Link>
+            )}
+
+            {/* Two-step (S4): el episodio ya existe (POST /care-episodes JSON) →
+                la evidencia se adjunta acá (POST /:id/attachments, fase
+                default "after"). Invalidación: detalle + timeline del vehículo. */}
+            <div className="grid gap-2 rounded-lg ring-1 ring-foreground/10 p-3">
+              <div>
+                <p className="text-sm font-medium">Evidencia (opcional)</p>
+                <p className="text-xs text-muted-foreground">
+                  Agregá fotos de la evidencia de la atención. Aparecerán en el
+                  detalle del servicio y en el historial del vehículo.
+                </p>
+              </div>
+              <AttachmentsUploader
+                episodeId={createdEpisodeId}
+                defaultPhase="after"
+                onUploaded={() => {
+                  void queryClient.invalidateQueries({
+                    queryKey: ["care-episode", createdEpisodeId],
+                  });
+                  if (createdVehicleId) {
+                    void queryClient.invalidateQueries({
+                      queryKey: ["vehicle", createdVehicleId, "history"],
+                    });
+                  }
+                }}
+              />
+            </div>
           </CardContent>
           <CardFooter>
             <Button onClick={resetAfterSuccess} variant="outline">
