@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AcceptConsignmentTakeQrHandler } from './accept-consignment-take.handler';
 import { AcceptConsignmentTakeQrCommand } from './accept-consignment-take.command';
@@ -34,6 +34,9 @@ describe('AcceptConsignmentTakeQrHandler (Fase 2b — toma)', () => {
 
   beforeEach(() => {
     prismaMock = {
+      dealership: {
+        findUnique: jest.fn().mockResolvedValue({ isActive: true }),
+      },
       vehicleTransferQr: { updateMany: jest.fn() },
       vehicleOwnership: {
         findFirst: jest.fn(),
@@ -218,5 +221,35 @@ describe('AcceptConsignmentTakeQrHandler (Fase 2b — toma)', () => {
       status: 'completed',
     });
     expect(prismaMock.vehicleAccess.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2: concesionaria inactiva → 403 sin consumir el QR', async () => {
+    prismaMock.dealership.findUnique.mockResolvedValue({ isActive: false });
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.vehicleTransfer.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('P2: concesionaria inexistente → 403 fail-closed sin consumir el QR', async () => {
+    prismaMock.dealership.findUnique.mockResolvedValue(null);
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.updateMany).not.toHaveBeenCalled();
   });
 });

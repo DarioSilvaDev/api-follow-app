@@ -22,6 +22,7 @@ describe('DealershipGuard (FIX-H2 / A2)', () => {
     id: 'member-1',
     status: 'active',
     roleId: 'role-1',
+    dealership: { isActive: true },
   };
 
   function mockContext(
@@ -131,6 +132,18 @@ describe('DealershipGuard (FIX-H2 / A2)', () => {
       id: 'member-1',
       status: 'inactive',
       roleId: 'role-1',
+    });
+    const context = mockContext(undefined, { id: 'd-params' });
+
+    await expect(guard.canActivate(context)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('P2: rechaza a miembros de una concesionaria inactiva (403)', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      ...activeMember,
+      dealership: { isActive: false },
     });
     const context = mockContext(undefined, { id: 'd-params' });
 

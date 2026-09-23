@@ -26,6 +26,11 @@ export const ERROR_CODES = {
   INVITATION_EXPIRED: 'INVITATION_EXPIRED',
   INVITATION_USED: 'INVITATION_USED',
   INVITATION_CANCELLED: 'INVITATION_CANCELLED',
+  // D-A (PM confirmado): el CUIT de una concesionaria reclamada/operativa no
+  // puede modificarse salvo super_admin. 409 con code propio para que el
+  // frontend mapee copy exacta. NUNCA se emite para duplicados normales
+  // (esos siguen usando CONFLICT).
+  DEALERSHIP_CUIT_LOCKED: 'DEALERSHIP_CUIT_LOCKED',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];

@@ -39,7 +39,11 @@ import { ListRolesHandler } from '../workshops/queries/list-roles/list-roles.han
 import { CreateDealershipHandler } from './commands/create-dealership/create-dealership.handler';
 import { ReinviteDealershipInvitationHandler } from './commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
 import { ListDealershipsHandler } from './queries/list-dealerships/list-dealerships.handler';
+import { GetDealershipHandler } from './queries/get-dealership.handler';
 import { ReinviteWorkshopInvitationHandler } from './commands/reinvite-workshop-invitation/reinvite-workshop-invitation.handler';
+import { InvitePlatformUserHandler } from './commands/invite-platform-user/invite-platform-user.handler';
+import { UpdateDealershipHandler } from './commands/update-dealership/update-dealership.handler';
+import { UpdateDealershipStatusHandler } from './commands/update-dealership-status/update-dealership-status.handler';
 
 @Module({
   imports: [
@@ -87,7 +91,11 @@ import { ReinviteWorkshopInvitationHandler } from './commands/reinvite-workshop-
     CreateDealershipHandler,
     ReinviteDealershipInvitationHandler,
     ListDealershipsHandler,
+    GetDealershipHandler,
     ReinviteWorkshopInvitationHandler,
+    InvitePlatformUserHandler,
+    UpdateDealershipHandler,
+    UpdateDealershipStatusHandler,
   ],
 })
 export class AdministrationModule {}

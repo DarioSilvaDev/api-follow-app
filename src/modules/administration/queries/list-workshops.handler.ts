@@ -63,7 +63,9 @@ export class ListWorkshopsHandler {
             take: 1,
           },
         },
-        orderBy: { createdAt: 'desc' },
+        // P5: pendientes primero (orden del enum en PG), luego los más
+        // recientes — espejo de dealerships/users.
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       }),
       this.prisma.workshop.count({ where }),
     ]);

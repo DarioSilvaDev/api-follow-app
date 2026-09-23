@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
@@ -28,6 +28,16 @@ export class AcceptConsignmentTakeQrHandler {
   async execute(command: AcceptConsignmentTakeQrCommand) {
     const { qr, userId, ctx } = command;
     const now = new Date();
+
+    // P2: la concesionaria desactivada no puede consumir QRs de toma —
+    // verificación antes de la transacción (fail-closed si no existe).
+    const dealership = await this.prisma.dealership.findUnique({
+      where: { id: ctx.dealershipId },
+      select: { isActive: true },
+    });
+    if (!dealership || !dealership.isActive) {
+      throw new ForbiddenException('This dealership is inactive');
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       // H1: gate one-shot dentro de la transacción (solo el primero matchea).

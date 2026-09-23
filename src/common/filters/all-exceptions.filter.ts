@@ -15,13 +15,15 @@ import { ErrorCode, ERROR_CODES } from '../exceptions/error-codes';
  * debe aparecer en los logs (SC-2). El reemplazo loguea la ruta base con un
  * placeholder y conserva la información útil para debugging del resto.
  *
- * - Path tokens: `/api/dealerships/wizard/invitations/{token}` y
- *   `/api/workshops/wizard/invitations/{token}`.
+ * - Path tokens: `/api/dealerships/wizard/invitations/{token}`,
+ *   `/api/workshops/wizard/invitations/{token}` y
+ *   `/api/users/wizard/invitations/{token}`.
  * - Query tokens: `?token=...` (verify-email, reset-password, etc.).
  */
 const SENSITIVE_URL_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   [/(\/dealerships\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
   [/(\/workshops\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
+  [/(\/users\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
   [/([?&]token=)[^&#]*/g, '$1[REDACTED]'],
 ];
 
@@ -121,6 +123,31 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
+    // ── Multer upload errors (multipart) — S4 evidence uploads ──
+    // FileInterceptor propaga MulterError (no es HttpException): sin este
+    // mapeo, un archivo > límite se respondería 500. El MIME inválido es
+    // rechazado por evidenceFileFilter como BadRequestException (400) y ya
+    // pasa por la rama HttpException. ERROR_CODES no define PAYLOAD_TOO_LARGE;
+    // se reutiliza VALIDATION_ERROR (cambio de contrato requeriría TL).
+    if (this.isMulterError(exception)) {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return {
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          message: 'El archivo excede el tamaño máximo permitido',
+          code: ERROR_CODES.VALIDATION_ERROR,
+        };
+      }
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message:
+          exception.code === 'LIMIT_FILE_COUNT' ||
+          exception.code === 'LIMIT_UNEXPECTED_FILE'
+            ? 'Cantidad de archivos inválida para el request'
+            : exception.message,
+        code: ERROR_CODES.VALIDATION_ERROR,
+      };
+    }
+
     // ── Prisma P2002 unique constraint violation ──
     if (this.isPrismaError(exception) && exception.code === 'P2002') {
       const target = (exception.meta as { target?: string[] })?.target;
@@ -172,6 +199,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       typeof exception === 'object' &&
       exception !== null &&
       'code' in exception &&
+      typeof (exception as Record<string, unknown>)['code'] === 'string'
+    );
+  }
+
+  private isMulterError(
+    exception: unknown,
+  ): exception is { code: string; message: string } {
+    return (
+      typeof exception === 'object' &&
+      exception !== null &&
+      (exception as Record<string, unknown>)['name'] === 'MulterError' &&
       typeof (exception as Record<string, unknown>)['code'] === 'string'
     );
   }

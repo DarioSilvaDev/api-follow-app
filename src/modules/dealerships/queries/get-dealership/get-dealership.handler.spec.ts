@@ -53,6 +53,23 @@ describe('GetDealershipHandler — dealership detail visibility (espejo #9 works
     expect(result).toEqual({ id: 'd1' });
   });
 
+  it('D-B: permite leer el detalle de una concesionaria deshabilitada (isActive=false) — badge visible en el panel', async () => {
+    prismaMock.systemRole.findUnique.mockResolvedValue({ id: 'super-role' });
+    prismaMock.systemRoleAssignment.findFirst.mockResolvedValue(null);
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      status: 'active',
+    });
+    prismaMock.dealership.findUnique.mockResolvedValue({
+      id: 'd1',
+      isActive: false,
+      status: 'active',
+    });
+
+    const result = await handler.execute('d1', 'member-1');
+
+    expect(result).toMatchObject({ id: 'd1', isActive: false });
+  });
+
   it('allows a super admin to read the detail even without membership', async () => {
     prismaMock.systemRole.findUnique.mockResolvedValue({ id: 'super-role' });
     prismaMock.systemRoleAssignment.findFirst.mockResolvedValue({

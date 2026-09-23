@@ -120,9 +120,11 @@ describe('MailService', () => {
     await service.sendTransferQrExpiredEmail('a@b.com', 'A', 'V', 'AB-123');
     await service.sendDealershipInvitationEmail('a@b.com', 'D', 'tok');
     await service.sendDealershipClaimedEmail('a@b.com', 'D');
+    await service.sendUserInvitationEmail('a@b.com', 'Admin', 'tok');
+    await service.sendUserRoleAssignedEmail('a@b.com', 'Admin');
 
     const payloads = sendMailMock.mock.calls.map((c) => c[0]);
-    expect(payloads.length).toBe(9);
+    expect(payloads.length).toBe(11);
     for (const payload of payloads) {
       const copy = `${payload.subject} ${payload.html}`;
       expect(copy).toContain('Autentia');

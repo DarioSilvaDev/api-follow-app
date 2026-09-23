@@ -104,6 +104,7 @@ describe('RevokeTransferQrHandler', () => {
     it('miembro activo con permiso sell revoca el QR pending', async () => {
       prismaMock.dealershipMember.findUnique.mockResolvedValue({
         status: 'active',
+        dealership: { isActive: true },
         role: {
           permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
         },
@@ -133,6 +134,7 @@ describe('RevokeTransferQrHandler', () => {
     it('403: miembro sin permiso sell/return no puede revocar', async () => {
       prismaMock.dealershipMember.findUnique.mockResolvedValue({
         status: 'active',
+        dealership: { isActive: true },
         role: { permissions: [] },
       });
 
@@ -150,6 +152,7 @@ describe('RevokeTransferQrHandler', () => {
     it('403: la dealership no es la titular actual (type company)', async () => {
       prismaMock.dealershipMember.findUnique.mockResolvedValue({
         status: 'active',
+        dealership: { isActive: true },
         role: {
           permissions: [{ permission: { code: 'dealership.vehicle.return' } }],
         },
@@ -173,6 +176,7 @@ describe('RevokeTransferQrHandler', () => {
     it('D-079: revoke idempotente en rama dealership (sin pending)', async () => {
       prismaMock.dealershipMember.findUnique.mockResolvedValue({
         status: 'active',
+        dealership: { isActive: true },
         role: {
           permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
         },
@@ -187,6 +191,26 @@ describe('RevokeTransferQrHandler', () => {
 
       expect(result.revoked).toBe(false);
       expect(prismaMock.vehicleTransferQr.update).not.toHaveBeenCalled();
+    });
+
+    it('P2: concesionaria inactiva → 403 sin revocar', async () => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status: 'active',
+        dealership: { isActive: false },
+        role: {
+          permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
+        },
+      });
+
+      let thrown: any;
+      try {
+        await handler.execute(dealershipCmd);
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.vehicleTransferQr.findFirst).not.toHaveBeenCalled();
     });
   });
 });

@@ -226,6 +226,7 @@ export class GenerateConsignmentQrHandler {
             permissions: { include: { permission: true } },
           },
         },
+        dealership: { select: { isActive: true } },
       },
     });
 
@@ -233,6 +234,12 @@ export class GenerateConsignmentQrHandler {
       throw new ForbiddenException(
         'You are not an active member of this dealership',
       );
+    }
+
+    // P2: la concesionaria desactivada no puede emitir QRs de venta/devolución
+    // (la rama sale del ContextGuard sin consultar isActive).
+    if (!member.dealership.isActive) {
+      throw new ForbiddenException('This dealership is inactive');
     }
 
     const hasPermission = member.role.permissions.some(

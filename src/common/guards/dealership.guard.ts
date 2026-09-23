@@ -51,13 +51,20 @@ export class DealershipGuard implements CanActivate {
       where: {
         dealershipId_userId: { dealershipId, userId: user.id },
       },
-      include: { role: true },
+      include: { role: true, dealership: { select: { isActive: true } } },
     });
 
     if (!member || member.status !== 'active') {
       throw new ForbiddenException(
         'You are not an active member of this dealership',
       );
+    }
+
+    // P2: una concesionaria desactivada no puede operar desde su workspace
+    // (gestión interna del panel). El detalle/historial de vehículos no pasa
+    // por este guard y sigue siendo legible.
+    if (!member.dealership.isActive) {
+      throw new ForbiddenException('This dealership is inactive');
     }
 
     // Sintetizar contexto cuando se resolvió vía params (fallback FIX-H2, solo

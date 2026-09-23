@@ -152,6 +152,7 @@ describe('GenerateConsignmentQrHandler (Fase 2b)', () => {
   it('sale: miembro activo con permiso sell genera QR con origen dealership', async () => {
     prismaMock.dealershipMember.findUnique.mockResolvedValue({
       status: 'active',
+      dealership: { isActive: true },
       role: {
         permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
       },
@@ -184,6 +185,7 @@ describe('GenerateConsignmentQrHandler (Fase 2b)', () => {
   it('sale: sin permiso dealership.vehicle.sell → 403', async () => {
     prismaMock.dealershipMember.findUnique.mockResolvedValue({
       status: 'active',
+      dealership: { isActive: true },
       role: {
         permissions: [{ permission: { code: 'dealership.vehicle.return' } }],
       },
@@ -210,6 +212,7 @@ describe('GenerateConsignmentQrHandler (Fase 2b)', () => {
   it('sale: la dealership no es la titular actual (type company) → 403', async () => {
     prismaMock.dealershipMember.findUnique.mockResolvedValue({
       status: 'active',
+      dealership: { isActive: true },
       role: {
         permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
       },
@@ -239,6 +242,7 @@ describe('GenerateConsignmentQrHandler (Fase 2b)', () => {
   it('return: requiere permiso dealership.vehicle.return', async () => {
     prismaMock.dealershipMember.findUnique.mockResolvedValue({
       status: 'active',
+      dealership: { isActive: true },
       role: { permissions: [] },
     });
 
@@ -344,5 +348,32 @@ describe('GenerateConsignmentQrHandler (Fase 2b)', () => {
     }
 
     expect(thrown).toBeInstanceOf(ConflictException);
+  });
+
+  it('P2: concesionaria inactiva → 403 sin emitir QR', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      status: 'active',
+      dealership: { isActive: false },
+      role: {
+        permissions: [{ permission: { code: 'dealership.vehicle.sell' } }],
+      },
+    });
+
+    let thrown: any;
+    try {
+      await handler.execute(
+        new GenerateConsignmentQrCommand(
+          'vehicle-1',
+          'user-member',
+          'sale',
+          dealershipCtx,
+        ),
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.create).not.toHaveBeenCalled();
   });
 });

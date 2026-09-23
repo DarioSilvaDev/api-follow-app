@@ -260,4 +260,52 @@ export class MailService {
       `,
     });
   }
+
+  /**
+   * D-106: email de invitación a un usuario de plataforma (panel admin). El
+   * link apunta a la ruta pública del wizard del frontend
+   * (`${FRONTEND_URL}/invitations/{token}?kind=user`) — el backend NO expone
+   * el token en ninguna respuesta.
+   *
+   * El query param `kind=user` le permite al wizard público elegir el preview
+   * sin hacer probe (mismo criterio que workshops/dealerships).
+   */
+  async sendUserInvitationEmail(
+    to: string,
+    roleName: string,
+    token: string,
+  ): Promise<void> {
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/invitations/${token}?kind=user`;
+    await this.send({
+      to,
+      subject: `Te invitamos a Autentia como ${roleName} - Autentia`,
+      html: `
+        <h2>Te invitamos a Autentia</h2>
+        <p>Te invitamos a unirte a Autentia con el rol <strong>${roleName}</strong>.</p>
+        <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Completar el alta</a></p>
+        <p>Este enlace expira en 7 días.</p>
+        <p>Recibís este email porque un administrador te invitó a la plataforma.</p>
+      `,
+    });
+  }
+
+  /**
+   * D-106: notificación de rol asignado a una cuenta de plataforma ya existente
+   * (sin wizard, porque la cuenta ya tiene credencial activa).
+   */
+  async sendUserRoleAssignedEmail(
+    to: string,
+    roleName: string,
+  ): Promise<void> {
+    await this.send({
+      to,
+      subject: `Tu rol en Autentia es ${roleName} - Autentia`,
+      html: `
+        <h2>Tu rol en Autentia</h2>
+        <p>Te notificamos que tu usuario ahora tiene el rol <strong>${roleName}</strong> en Autentia.</p>
+        <p>Ya podés acceder a las funciones correspondientes desde tu panel.</p>
+      `,
+    });
+  }
 }

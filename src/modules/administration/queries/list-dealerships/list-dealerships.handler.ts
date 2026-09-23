@@ -59,7 +59,9 @@ export class ListDealershipsHandler {
             take: 1,
           },
         },
-        orderBy: { createdAt: 'desc' },
+        // P5: pendientes primero (orden del enum en PG), luego los más
+        // recientes — espejo de workshops/users.
+        orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
       }),
       this.prisma.dealership.count({ where }),
     ]);

@@ -101,8 +101,19 @@ import { CreateDealershipHandler } from '../commands/create-dealership/create-de
 import { ReinviteDealershipInvitationCommand } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.command';
 import { ReinviteDealershipInvitationHandler } from '../commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
 import { ListDealershipsHandler } from '../queries/list-dealerships/list-dealerships.handler';
+import { GetDealershipHandler } from '../queries/get-dealership.handler';
+import { DealershipDetailAdminResponseDto } from '../dto/dealership-detail-response.dto';
 import { ReinviteWorkshopInvitationCommand } from '../commands/reinvite-workshop-invitation/reinvite-workshop-invitation.command';
 import { ReinviteWorkshopInvitationHandler } from '../commands/reinvite-workshop-invitation/reinvite-workshop-invitation.handler';
+import { UpdateDealershipDto } from '../dto/update-dealership.dto';
+import { UpdateDealershipStatusDto } from '../dto/update-dealership-status.dto';
+import { UpdateDealershipCommand } from '../commands/update-dealership/update-dealership.command';
+import { UpdateDealershipHandler } from '../commands/update-dealership/update-dealership.handler';
+import { UpdateDealershipStatusCommand } from '../commands/update-dealership-status/update-dealership-status.command';
+import { UpdateDealershipStatusHandler } from '../commands/update-dealership-status/update-dealership-status.handler';
+import { InvitePlatformUserDto } from '../dto/invite-platform-user.dto';
+import { InvitePlatformUserCommand } from '../commands/invite-platform-user/invite-platform-user.command';
+import { InvitePlatformUserHandler } from '../commands/invite-platform-user/invite-platform-user.handler';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -143,7 +154,11 @@ export class AdministrationController {
     private readonly createDealershipHandler: CreateDealershipHandler,
     private readonly reinviteDealershipInvitationHandler: ReinviteDealershipInvitationHandler,
     private readonly listDealershipsHandler: ListDealershipsHandler,
+    private readonly getDealershipHandler: GetDealershipHandler,
     private readonly reinviteWorkshopInvitationHandler: ReinviteWorkshopInvitationHandler,
+    private readonly invitePlatformUserHandler: InvitePlatformUserHandler,
+    private readonly updateDealershipHandler: UpdateDealershipHandler,
+    private readonly updateDealershipStatusHandler: UpdateDealershipStatusHandler,
   ) {}
 
   @Post('roles/assign')
@@ -178,15 +193,40 @@ export class AdministrationController {
   async listUsers(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('role') role?: string,
   ) {
     const result = await this.listUsersHandler.execute({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      q,
+      status,
+      role,
     });
     return {
       data: result.data.map((u) => UserAdminResponseDto.from(u)),
       meta: result.meta,
     };
+  }
+
+  /**
+   * D-106: invitación de usuario de plataforma (sección Usuarios).
+   * Si la cuenta destino ya existe y está activa → se asigna el rol directo
+   * (sin wizard). Si la cuenta no existe o está pending → se crea la
+   * invitación; el wizard público la activa.
+   * El token de invitación viaja solo por email, nunca en la respuesta.
+   */
+  @Post('users')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.users.manage')
+  async invitePlatformUser(
+    @Body() dto: InvitePlatformUserDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.invitePlatformUserHandler.execute(
+      new InvitePlatformUserCommand(dto, currentUser.id),
+    );
   }
 
   @Get('users/:id')
@@ -554,6 +594,55 @@ export class AdministrationController {
       data: result.data.map((d) => DealershipAdminResponseDto.from(d)),
       meta: result.meta,
     };
+  }
+
+  @Get('dealerships/:id')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.read')
+  async getDealership(@Param('id') id: string) {
+    const dealership = await this.getDealershipHandler.execute(id);
+    return DealershipDetailAdminResponseDto.from(dealership);
+  }
+
+  /**
+   * P1/P7: edición de identidad y contacto de la concesionaria.
+   * PATCH parcial (solo campos modificados o null para limpiar).
+   * Devuelve el detalle completo (contrato congelado AdminDealershipDetail).
+   */
+  @Patch('dealerships/:id')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.update')
+  async updateDealership(
+    @Param('id') id: string,
+    @Body() dto: UpdateDealershipDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    await this.updateDealershipHandler.execute(
+      new UpdateDealershipCommand(id, dto),
+      currentUser,
+    );
+    const dealership = await this.getDealershipHandler.execute(id);
+    return DealershipDetailAdminResponseDto.from(dealership);
+  }
+
+  /**
+   * P2: habilitar/deshabilitar la concesionaria (`isActive`).
+   * Devuelve el detalle completo (P7).
+   */
+  @Patch('dealerships/:id/status')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.manage')
+  async updateDealershipStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateDealershipStatusDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    await this.updateDealershipStatusHandler.execute(
+      new UpdateDealershipStatusCommand(id, dto.isActive, dto.reason),
+      currentUser,
+    );
+    const dealership = await this.getDealershipHandler.execute(id);
+    return DealershipDetailAdminResponseDto.from(dealership);
   }
 
   /**

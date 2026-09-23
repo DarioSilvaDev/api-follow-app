@@ -74,6 +74,7 @@ export class RevokeTransferQrHandler {
             permissions: { include: { permission: true } },
           },
         },
+        dealership: { select: { isActive: true } },
       },
     });
 
@@ -81,6 +82,12 @@ export class RevokeTransferQrHandler {
       throw new ForbiddenException(
         'You are not an active member of this dealership',
       );
+    }
+
+    // P2: la concesionaria desactivada no puede revocar QRs (rama inline de
+    // DELETE :id/qr, sin DealershipGuard).
+    if (!member.dealership.isActive) {
+      throw new ForbiddenException('This dealership is inactive');
     }
 
     const codes = member.role.permissions.map((rp) => rp.permission.code);
