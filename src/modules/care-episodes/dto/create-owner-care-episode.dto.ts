@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDateString,
   IsInt,
   IsOptional,
@@ -7,6 +9,9 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+
+/** Máximo de imágenes de evidencia admitidas en la creación owner (S6). */
+export const MAX_OWNER_CREATION_FILES = 5;
 
 /**
  * CreateOwnerCareEpisodeDto — POST /api/care-episodes/owner (contexto PERSONAL).
@@ -48,4 +53,19 @@ export class CreateOwnerCareEpisodeDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  /**
+   * Captions por archivo (S6), index-matched contra `files`.
+   * - JSON: array de strings.
+   * - multipart/form-data: campo repetido `captions` (FormData.append sincrónico
+   *   por archivo; busboy/multer lo entrega como array).
+   * Cada caption ≤ 500 chars; el handler aplica `captions[i] ?? null` por
+   * índice y descarta sobrantes (aditivo, no rompe clientes existentes).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_OWNER_CREATION_FILES)
+  @IsString({ each: true })
+  @MaxLength(500, { each: true })
+  captions?: string[];
 }

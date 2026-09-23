@@ -1,4 +1,8 @@
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+// uuid@14 es ESM-only; se mockea antes de importar (el controller transita
+// handlers → StorageR2Service) — patrón consistente con vehicles.controller.spec.ts.
+jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
+
+import { GUARDS_METADATA, INTERCEPTORS_METADATA } from '@nestjs/common/constants';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { CareEpisodesController } from './care-episodes.controller';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
@@ -105,6 +109,18 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
     expect(permissionsFor('createOwner')).toBeUndefined();
   });
 
+  it('POST owner is decorated with a multipart interceptor (S6 dual route: FilesInterceptor), without touching guards/permissions', () => {
+    const target = (
+      CareEpisodesController.prototype as Record<string, unknown>
+    )['createOwner'] as object | undefined;
+    const interceptors = target
+      ? (Reflect.getMetadata(INTERCEPTORS_METADATA, target) ?? [])
+      : [];
+    // El interceptor acepta JSON (multer ignora no-multipart) y agrega
+    // el parseo multipart/form-data del campo `files` — la ruta es DUAL.
+    expect(interceptors.length).toBeGreaterThan(0);
+  });
+
   // ──────────────────────────────────────────────────────
   // GET verifications (RF-4)
   // ──────────────────────────────────────────────────────
@@ -137,5 +153,74 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
     expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
       guards.indexOf(PermissionsGuard),
     );
+  });
+
+  // ──────────────────────────────────────────────────────
+  // GET :id (S1 — detail con proyección por actor)
+  // ──────────────────────────────────────────────────────
+
+  it('GET :id (getDetail) has NO method-level guards (JwtAuthGuard + ContextGuard from class, authorization in handler)', () => {
+    const guards = methodGuards('getDetail');
+    expect(guards).not.toContain(WorkshopOnlyGuard);
+    expect(guards).not.toContain(PermissionsGuard);
+  });
+
+  it('GET :id (getDetail) has NO permission requirement', () => {
+    expect(permissionsFor('getDetail')).toBeUndefined();
+  });
+
+  // ──────────────────────────────────────────────────────
+  // POST :id/attachments (S4 — attach-after del taller)
+  // ──────────────────────────────────────────────────────
+
+  it('POST attachments carries @Permissions(care-episode.attach)', () => {
+    expect(permissionsFor('attach')).toEqual(['care-episode.attach']);
+  });
+
+  it('POST attachments carries WorkshopOnlyGuard BEFORE PermissionsGuard (no super_admin bypass from PERSONAL)', () => {
+    const guards = methodGuards('attach');
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
+  });
+
+  // ──────────────────────────────────────────────────────
+  // DELETE :id/attachments/:attachmentId (S5 — void auditado)
+  // ──────────────────────────────────────────────────────
+
+  it('DELETE attachments has NO permission requirement (gates en handler)', () => {
+    expect(permissionsFor('removeAttachment')).toBeUndefined();
+  });
+
+  it('DELETE attachments has NO WorkshopOnlyGuard (PERSONAL ctx puede remover)', () => {
+    const guards = methodGuards('removeAttachment');
+    expect(guards).not.toContain(WorkshopOnlyGuard);
+    expect(guards).not.toContain(PermissionsGuard);
+  });
+
+  // ──────────────────────────────────────────────────────
+  // Route ordering (F-012)
+  // ──────────────────────────────────────────────────────
+
+  describe('route ordering (F-012)', () => {
+    const methodOrder = Object.getOwnPropertyNames(
+      CareEpisodesController.prototype,
+    ).filter((name) => name !== 'constructor');
+
+    it('declares static GET routes (lookup, verifications) BEFORE GET :id (getDetail)', () => {
+      expect(methodOrder.indexOf('lookup')).toBeLessThan(
+        methodOrder.indexOf('getDetail'),
+      );
+      expect(methodOrder.indexOf('listVerifications')).toBeLessThan(
+        methodOrder.indexOf('getDetail'),
+      );
+    });
+
+    it('declares POST owner (static) BEFORE dynamic POST :id/attachments', () => {
+      expect(methodOrder.indexOf('createOwner')).toBeLessThan(
+        methodOrder.indexOf('attach'),
+      );
+    });
   });
 });
