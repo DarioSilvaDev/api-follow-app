@@ -294,10 +294,7 @@ export class MailService {
    * D-106: notificación de rol asignado a una cuenta de plataforma ya existente
    * (sin wizard, porque la cuenta ya tiene credencial activa).
    */
-  async sendUserRoleAssignedEmail(
-    to: string,
-    roleName: string,
-  ): Promise<void> {
+  async sendUserRoleAssignedEmail(to: string, roleName: string): Promise<void> {
     await this.send({
       to,
       subject: `Tu rol en Autentia es ${roleName} - Autentia`,
