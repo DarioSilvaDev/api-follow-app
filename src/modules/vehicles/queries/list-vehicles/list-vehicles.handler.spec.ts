@@ -296,4 +296,88 @@ describe('ListVehiclesHandler — stable list contract (F-010)', () => {
       );
     });
   });
+
+  describe('D-TL-19 — contexto DEALERSHIP en el listado', () => {
+    const dealershipCtx = {
+      type: 'DEALERSHIP',
+      dealershipId: 'dealership-1',
+      userId: 'seller-1',
+      memberId: 'member-1',
+      roleId: 'role-1',
+    };
+
+    it('scope = ownership activo de la concesionaria (reemplaza el scope personal)', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
+      prismaMock.vehicle.count.mockResolvedValue(1);
+
+      await handler.execute({
+        userId: 'seller-1',
+        context: dealershipCtx as any,
+      });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({
+        ownerships: {
+          some: { dealershipId: 'dealership-1', endsAt: null },
+        },
+      });
+      // No se filtra por el userId del caller ni por VehicleAccess (no hay OR).
+      expect(arg.where).not.toHaveProperty('OR');
+      expect(arg.where).not.toHaveProperty('accesses');
+    });
+
+    it('combina la búsqueda q con el scope de la concesionaria vía AND', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
+      prismaMock.vehicle.count.mockResolvedValue(1);
+
+      await handler.execute({
+        userId: 'seller-1',
+        context: dealershipCtx as any,
+        q: 'SMK',
+      });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({
+        ownerships: {
+          some: { dealershipId: 'dealership-1', endsAt: null },
+        },
+        licensePlate: { contains: 'SMK', mode: 'insensitive' },
+      });
+    });
+
+    it('el count usa el mismo where de la concesionaria', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([]);
+      prismaMock.vehicle.count.mockResolvedValue(3);
+
+      await handler.execute({
+        userId: 'seller-1',
+        context: dealershipCtx as any,
+      });
+
+      expect(prismaMock.vehicle.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            ownerships: {
+              some: { dealershipId: 'dealership-1', endsAt: null },
+            },
+          },
+        }),
+      );
+    });
+
+    it('incluye el titular organizacional (dealership) en los ownerships', async () => {
+      prismaMock.vehicle.findMany.mockResolvedValue([rawVehicle()]);
+      prismaMock.vehicle.count.mockResolvedValue(1);
+
+      await handler.execute({
+        userId: 'seller-1',
+        context: dealershipCtx as any,
+      });
+
+      const arg = prismaMock.vehicle.findMany.mock.calls[0][0];
+      expect(arg.include.ownerships.include).toHaveProperty('dealership', {
+        select: { id: true, name: true },
+      });
+    });
+  });
 });

@@ -45,6 +45,8 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'history.view',
   ],
   seller: [
+    // D-TL-19: el vendedor también acepta QRs de TOMA (owner/admin/seller).
+    'dealership.vehicle.take',
     'dealership.vehicle.sell',
     'dealership.vehicle.return',
     'care-episode.create',

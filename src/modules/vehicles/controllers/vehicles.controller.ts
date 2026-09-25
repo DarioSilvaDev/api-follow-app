@@ -528,6 +528,9 @@ export class VehiclesController {
   ) {
     return this.listVehiclesHandler.execute({
       userId: user.id,
+      // D-TL-19: el contexto activo se reenvía al handler para que la rama
+      // DEALERSHIP liste los vehículos de la concesionaria (mismo contrato).
+      context: ctx,
       page,
       limit,
       q,

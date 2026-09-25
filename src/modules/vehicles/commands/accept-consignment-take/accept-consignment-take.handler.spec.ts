@@ -32,10 +32,24 @@ describe('AcceptConsignmentTakeQrHandler (Fase 2b — toma)', () => {
     ctx,
   );
 
+  // D-TL-19: miembro activo con permiso `dealership.vehicle.take` (owner/admin/
+  // seller). Cada test puede sobreescribir `prismaMock.dealershipMember`.
+  const activeMemberWithTake = {
+    id: 'member-1',
+    status: 'active',
+    dealership: { isActive: true },
+    role: {
+      permissions: [{ permission: { code: 'dealership.vehicle.take' } }],
+    },
+  };
+
   beforeEach(() => {
     prismaMock = {
       dealership: {
         findUnique: jest.fn().mockResolvedValue({ isActive: true }),
+      },
+      dealershipMember: {
+        findUnique: jest.fn().mockResolvedValue(activeMemberWithTake),
       },
       vehicleTransferQr: { updateMany: jest.fn() },
       vehicleOwnership: {
@@ -241,6 +255,65 @@ describe('AcceptConsignmentTakeQrHandler (Fase 2b — toma)', () => {
 
   it('P2: concesionaria inexistente → 403 fail-closed sin consumir el QR', async () => {
     prismaMock.dealership.findUnique.mockResolvedValue(null);
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.updateMany).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // D-TL-19 — enforcement de permiso `dealership.vehicle.take`
+  // ─────────────────────────────────────────────────────────────
+  it('403: miembro activo SIN permiso take → no consume el QR', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      id: 'member-1',
+      status: 'active',
+      dealership: { isActive: true },
+      role: {
+        permissions: [{ permission: { code: 'history.view' } }],
+      },
+    });
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('403: miembro inactivo → no consume el QR (defensa en profundidad)', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue({
+      id: 'member-1',
+      status: 'inactive',
+      dealership: { isActive: true },
+      role: {
+        permissions: [{ permission: { code: 'dealership.vehicle.take' } }],
+      },
+    });
+
+    let thrown: any;
+    try {
+      await handler.execute(cmd);
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.vehicleTransferQr.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('403: miembro inexistente → fail-closed sin consumir el QR', async () => {
+    prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
 
     let thrown: any;
     try {

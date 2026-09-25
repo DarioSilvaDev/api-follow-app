@@ -18,7 +18,10 @@ type VehicleWithRelations = Vehicle & {
     | null;
   photos?: VehiclePhoto[];
   documents?: VehicleDocument[];
-  ownerships?: VehicleOwnership[];
+  ownerships?: (VehicleOwnership & {
+    user?: { id: string; firstName: string; lastName: string } | null;
+    dealership?: { id: string; name: string } | null;
+  })[];
 };
 
 export class VehicleResponseDto {
@@ -40,7 +43,10 @@ export class VehicleResponseDto {
   updatedAt!: Date;
   photos?: VehiclePhoto[];
   documents?: VehicleDocument[];
-  ownerships?: VehicleOwnership[];
+  ownerships?: (VehicleOwnership & {
+    user?: { id: string; firstName: string; lastName: string } | null;
+    dealership?: { id: string; name: string } | null;
+  })[];
 
   static from(vehicle: VehicleWithRelations): VehicleResponseDto {
     return {

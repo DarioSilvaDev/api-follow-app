@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
+import { CurrentContext } from '../../../../common/context/interfaces/current-context.interface';
 import { VehicleResponseDto } from '../../dto/vehicle-response.dto';
 
 interface ListVehiclesQuery {
   userId?: string;
+  context?: CurrentContext;
   page?: number;
   limit?: number;
   q?: string;
@@ -35,24 +37,46 @@ export class ListVehiclesHandler {
     // VehicleAccess vigente, siempre filtrado por userId del caller. Esto
     // permite que el vendedor durante la exhibición vea su vehículo
     // "en consignación" (banner D-107) sin ser ya titular.
+    //
+    // D-TL-19: el listado respeta el CONTEXTO ACTIVO. En contexto DEALERSHIP
+    // el alcance es la concesionaria (ownership activo `dealershipId`, misma
+    // regla que el panel GET /dealerships/:id/vehicles, con paginación y
+    // búsqueda `q`). El ContextGuard ya garantizó la membresía activa.
     const now = new Date();
-    const where: Prisma.VehicleWhereInput | undefined = query.userId
-      ? {
-          OR: [
-            { ownerships: { some: { userId: query.userId, endsAt: null } } },
-            {
-              accesses: {
-                some: {
-                  userId: query.userId,
-                  revokedAt: null,
-                  OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-                },
+    const plateFilter: Prisma.VehicleWhereInput['licensePlate'] | undefined = q
+      ? { contains: q, mode: 'insensitive' }
+      : undefined;
+    // Esparce `licensePlate` solo cuando `q` es válida (mismo contrato previo).
+    const plateScope = plateFilter ? { licensePlate: plateFilter } : {};
+
+    let where: Prisma.VehicleWhereInput | undefined;
+    if (query.context?.type === 'DEALERSHIP') {
+      where = {
+        ownerships: {
+          some: {
+            dealershipId: query.context.dealershipId,
+            endsAt: null,
+          },
+        },
+        ...plateScope,
+      };
+    } else if (query.userId) {
+      where = {
+        OR: [
+          { ownerships: { some: { userId: query.userId, endsAt: null } } },
+          {
+            accesses: {
+              some: {
+                userId: query.userId,
+                revokedAt: null,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
               },
             },
-          ],
-          ...(q ? { licensePlate: { contains: q, mode: 'insensitive' } } : {}),
-        }
-      : undefined;
+          },
+        ],
+        ...plateScope,
+      };
+    }
 
     const [vehicles, total] = await Promise.all([
       this.prisma.vehicle.findMany({
@@ -73,6 +97,9 @@ export class ListVehiclesHandler {
             where: { endsAt: null },
             include: {
               user: { select: { id: true, firstName: true, lastName: true } },
+              // B1 / D-TL-19: titular organizacional en el listado (mismo
+              // contrato que el panel de concesionaria) — sin PII de empleados.
+              dealership: { select: { id: true, name: true } },
             },
           },
           photos: { where: { isPrimary: true }, take: 1 },

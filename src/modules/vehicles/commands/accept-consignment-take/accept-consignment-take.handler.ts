@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleConsignmentTakenEvent } from '../../events/vehicle-consignment-taken.event';
 import { AcceptConsignmentTakeQrCommand } from './accept-consignment-take.command';
+import { DealershipContext } from '../../../../common/context/interfaces/current-context.interface';
 
 /**
  * AcceptConsignmentTakeQrHandler — QR de TOMA consumido por una concesionaria
@@ -38,6 +39,13 @@ export class AcceptConsignmentTakeQrHandler {
     if (!dealership || !dealership.isActive) {
       throw new ForbiddenException('This dealership is inactive');
     }
+
+    // D-TL-19: defensa en profundidad — solo un miembro ACTIVO cuyo rol tenga
+    // el permiso `dealership.vehicle.take` puede consumir el QR de toma
+    // (owner/admin/seller según RB-10). El ContextResolver ya garantiza la
+    // membresía activa; aquí se enforcea el permiso de rol (patrón espejo del
+    // generate-consignment-qr) para que backend y UI coincidan.
+    await this.assertMemberCanTake(ctx);
 
     const result = await this.prisma.$transaction(async (tx) => {
       // H1: gate one-shot dentro de la transacción (solo el primero matchea).
@@ -188,5 +196,51 @@ export class AcceptConsignmentTakeQrHandler {
       transferId: result.id,
       status: 'completed',
     };
+  }
+
+  /**
+   * D-TL-19: valida que el miembro actuante tenga el permiso
+   * `dealership.vehicle.take` en su rol dentro de la concesionaria del
+   * contexto activo. Patrón espejo de
+   * `GenerateConsignmentQrHandler.assertDealershipMemberPermission` (rama
+   * sale/return): membresía activa (defensa en profundidad; el ContextResolver
+   * ya la garantiza) + permiso del rol.
+   */
+  private async assertMemberCanTake(ctx: DealershipContext): Promise<void> {
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: {
+          dealershipId: ctx.dealershipId,
+          userId: ctx.userId,
+        },
+      },
+      include: {
+        role: {
+          include: {
+            permissions: { include: { permission: true } },
+          },
+        },
+        dealership: { select: { isActive: true } },
+      },
+    });
+
+    if (!member || member.status !== 'active') {
+      throw new ForbiddenException(
+        'You are not an active member of this dealership',
+      );
+    }
+
+    // P2 (ya verificado pre-transacción para la dealership): fail-closed si el
+    // miembro no está vigente o la concesionaria fue desactivada entre medias.
+    if (!member.dealership.isActive) {
+      throw new ForbiddenException('This dealership is inactive');
+    }
+
+    const hasPermission = member.role.permissions.some(
+      (rp) => rp.permission.code === 'dealership.vehicle.take',
+    );
+    if (!hasPermission) {
+      throw new ForbiddenException('Missing required permissions');
+    }
   }
 }
