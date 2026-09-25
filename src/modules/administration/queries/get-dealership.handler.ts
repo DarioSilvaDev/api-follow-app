@@ -2,19 +2,21 @@
  * D-106: detalle de concesionaria del panel de administración.
  *
  * Espejo de GetWorkshopHandler: consulta la concesionaria con sus miembros
- * (user + role) y la última invitación pending/accepted, exponen solo el
- * subset definido por DealershipDetailAdminResponseDto.
+ * (user + role) y la última invitación pending/accepted, y devuelve la entidad
+ * **sin mapear**. El mapeo al subset del contrato (DealershipDetailAdminResponseDto,
+ * que además filtra el token de invitación) lo aplica el controller UNA sola
+ * vez. Devuelve raw para evitar el doble mapeo que degradaba members a
+ * "Unknown"/"" (fallbacks del DTO sobre objetos ya transformados) — D-TL-20.
  */
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/database/prisma.service';
-import { DealershipDetailAdminResponseDto } from '../dto/dealership-detail-response.dto';
 
 @Injectable()
 export class GetDealershipHandler {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(id: string): Promise<DealershipDetailAdminResponseDto> {
+  async execute(id: string) {
     const dealership = await this.prisma.dealership.findUnique({
       where: { id },
       include: {
@@ -51,6 +53,6 @@ export class GetDealershipHandler {
       throw new NotFoundException('Dealership not found');
     }
 
-    return DealershipDetailAdminResponseDto.from(dealership);
+    return dealership;
   }
 }
