@@ -3985,3 +3985,137 @@ pero NO arreglan la causa. La conectividad saliente hacia el relay SMTP desde
 Render sigue sin diagnosticar y requiere conocer `SMTP_HOST` / `SMTP_PORT` /
 proveedor. Este registro no afirma ningun proveedor concreto porque no fue
 verificado.
+
+---
+
+# 37. Registro (2026-09-27): Cambio de transporte de email a API HTTP (D-125..D-127)
+
+## 0. Contexto
+
+La instrumentacion de la seccion 36 cumplio su objetivo: los logs de produccion
+pasaron de un error generico a codigo, intentos y correlacion. Con esa senal se
+pudo cerrar la causa raiz que la seccion 36 dejo abierta.
+
+`api-follow-app` corre en Render con `plan: "free"`. La documentacion de Render
+es explicita: *"Free web services can't send outbound network traffic on ports
+25, 465, or 587, commonly used for SMTP."* Los tres puertos SMTP estan
+bloqueados. Por eso todos los envios fallaban con `ETIMEDOUT` / `ESOCKET`:
+codigos de socket de Node, nunca una respuesta SMTP. No habia ni un solo
+`Mail accepted` en los logs. El correo no habia funcionado nunca desde ese
+servicio.
+
+Decision del usuario: migrar a **Resend** (API HTTPS), no pagar el plan.
+
+## 1. Decisiones
+
+- **D-125** - El envio de email pasa de SMTP a **API HTTPS de Resend**. No es una
+  preferencia estetica: es la unica via de salida que el plan actual permite. El
+  egreso HTTPS no esta restringido.
+- **D-126** - **D-113 se reformula para HTTP.** La regla canonica ya no puede ser
+  "4xx transitorio, 5xx permanente" de RFC 5321 porque esos codigos son SMTP y en
+  HTTP la semantica se invierte en los casos que importan: un 429 es transitorio
+  y un 403 por cuota excedida es PERMANENTE hasta el reset. Se reemplaza por una
+  tabla explicita de los `name` de error del proveedor, con el `statusCode` como
+  respaldo y la excepcion de `application_error` con `statusCode: null` tratada
+  como transitoria (no hubo respuesta HTTP: es una caida de red).
+  *Consecuencia directa*: los codigos de quota (`daily_quota_exceeded`,
+  `monthly_quota_exceeded`) no se reintentan. Reintentar no los recupera y
+  descarga la API contra el limite del plan.
+- **D-127** - **El reintento ahora es idempotente por garantia del proveedor.**
+  Se genera UNA clave de idempotencia por envio logico y se reutiliza en todos
+  los intentos. Resend deduplica en vez de enviar un segundo email.
+  Por que importa: con SMTP, un timeout era ambiguo (el servidor pudo aceptar el
+  mensaje y perder la respuesta) y la unica mitigacion era adivinar. Con la clave,
+  la ambiguedad desaparece: ante la duda se reintenta con la misma clave y el
+  resultado es el mismo mensaje. La logica de negocio de D-113 queda intacta.
+
+## 2. Lo que NO cambio
+
+- `MailService` sigue siendo la **frontera de error unica** (D-109): resuelve
+  siempre, nunca lanza, y ningun comando puede responder 5xx por un fallo de
+  email. El transporte cambio; el contrato no.
+- `MailSendResult` no se toco. **Cero cambios en listeners, handlers y controllers.**
+  Ese era el objetivo de haber dejado la frontera donde estaba.
+- `accepted` sigue significando aceptacion por el proveedor, **no entrega**
+  (D-115). Sin webhook de eventos de Resend no hay senal de entrega o bounce, y
+  ofrecer ese estado seria mentir.
+- La API de `register` no cambia.
+
+## 3. Fallo critico que se corrigio durante la migracion
+
+El SDK de Resend **no lanza excepciones ante errores de API**: `emails.send()`
+resuelve con `{ data: null, error }` (verificado en el dist de resend@6.30.0).
+La adaptacion inicial hacia `const info = await send(...)` y leia `info.messageId`.
+
+Consecuencia: ante un rechazo de la API (API key invalida, remitente sin
+verificar, payload invalido) el codigo resolvia, no habia excepcion, y se
+reportaba **`ok: true` con un "Mail accepted" en el log**. `register` habria
+respondido `emailVerification.state: 'accepted'` de un mensaje que nadie iba a
+recibir.
+
+Es **peor que el 503 original**: el 503 al menos era visible. El falso `accepted`
+es invisible y deja al usuario en un dead-end sin ninguna señal de que发生了什么.
+
+Mitigaciones:
+- El `error` del SDK se convierte en excepcion para que el `catch` sea el unico
+  lugar que decide, en vez de duplicar la logica de reintento en dos caminos.
+- Test de regresion explicito: `NO reporta exito cuando el SDK resuelve con error`.
+- El identificador del mensaje ahora se lee de `data.id`, no de `messageId`.
+
+## 4. Dos detalles del SDK que condicionaron el diseno
+
+1. **El SDK descarta el error original.** Su `catch` convierte TODO fallo de
+   `fetch` (DNS, TCP, TLS, y tambien nuestro propio abort) en
+   `{ name: 'application_error', statusCode: null, message: 'Unable to fetch data.' }`.
+   Sin distinguirlos, un timeout de red y un timeout nuestro serian el mismo log.
+   Por eso el timeout es **nuestro**: se crea un `AbortController` por intento y,
+   si el signal se disparó, el diagnóstico real (`MAIL_TIMEOUT`) reemplaza al
+   genérico. Sin esto, D-123 perdía precisión justo cuando más la necesita.
+2. **`signal` no está tipado pero sí se propaga.** `post()` arma
+   `{ method, body, ...options, headers }` y se lo pasa a `fetch`. El cast está
+   acotado a una forma local y documentado; no es un `as any` genérico.
+
+Nota sobre `statusCode: null`: el SDK usa `null` para significar "no hubo
+respuesta HTTP" y `undefined` para "no aplica". Normalizar `null` a `undefined`
+hacía desaparecer la única señal que separa una caída de red de un rechazo del
+proveedor, y dejaba el mecanismo de reintentos muerto en la caida de red. Hay
+test que lo cubre.
+
+## 5. Variables de entorno
+
+- `RESEND_API_KEY` (nueva, requerida).
+- `MAIL_SEND_TIMEOUT_MS` (nueva, default 15000). Reemplaza los tres timeouts SMTP.
+- `SMTP_FROM` **se conserva con su nombre** aunque el transporte ya no sea SMTP,
+  para no tocar variables de produccion en el mismo cambio que las introduce. El
+  renombre a `MAIL_FROM` queda pendiente: es cosmético, no funcional, y hacerlo
+  junto con un deploy de migracion de proveedor suma riesgo sin benefit.
+- `SMTP_RETRY_ATTEMPTS` y `SMTP_RETRY_BASE_DELAY_MS` se conservan por el mismo
+  motivo.
+- Se eliminan `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+  `SMTP_REJECT_UNAUTHORIZED` y los tres timeouts SMTP.
+- `nodemailer` y `@types/nodemailer` salen de las dependencias.
+
+## 6. D-116 (TLS) queda satisfecho por el transporte
+
+La verificacion de certificado ya no es configuracion nuestra: el SDK habla HTTPS
+con `api.resend.com` y la validacion TLS la hace el runtime. Se elimino
+`SMTP_REJECT_UNAUTHORIZED` y con el los tests de `rejectUnauthorized` y
+`requireTLS`, que ya no tenian objeto.
+
+## 7. Pendiente
+
+- **`SMTP_FROM` debe apuntar a un dominio VERIFICADO en Resend.** El codigo
+  descartado usaba `onboarding@resend.dev`, que es el dominio de pruebas: solo
+  entrega a la casilla del dueno de la cuenta y falla en silencio para cualquier
+  otro destinatario. Hay test que verifica que el remitente enviado NO es
+  `resend.dev`, pero la verificacion real es en el panel del proveedor.
+- **Renombrar `SMTP_*` a `MAIL_*`**: cosmético, pendiente.
+- **Webhook de eventos de Resend** para `delivered` / `bounced`: es lo que
+  permitiria honestamente discutir el estado de entrega (D-115) y detecting
+  rebotes duros. Fase 2, no en el MVP.
+- **Los titulos de spec con "D-106 mail de invitacion"** siguen sin alinear.
+  Ahora el codigo de `mail.service.ts` cita D-117, que si es la decision de
+  email de invitacion.
+- **Restaurar el commit `86bc07b`**: sigue incluyendo los 170 archivos borrados de
+  `frontend/`, que no correspondian. Pide autorizacion para `reset --soft` +
+  `amend`.

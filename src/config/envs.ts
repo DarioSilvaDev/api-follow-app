@@ -11,28 +11,18 @@ interface Ienvs {
   JWT_ACCESS_EXPIRES_IN: string;
   JWT_REFRESH_SECRET: string;
   JWT_REFRESH_EXPIRES_IN: string;
-  SMTP_HOST: string;
-  SMTP_PORT: number;
-  SMTP_USER: string;
-  SMTP_PASS: string;
   SMTP_FROM: string;
-  /**
-   * Verificación del certificado TLS del relay SMTP. Default `true` (seguro).
-   * Poner en `false` SOLO si el relay usa un certificado self-signed
-   * irrecuperable; abre la conexión a MITM y debe ser una decisión explícita
-   * del operador, nunca un default.
-   */
-  SMTP_REJECT_UNAUTHORIZED: boolean;
-  /** Tope de espera del handshake TCP SMTP. Sin esto, un relay colgado retiene el listener indefinidamente. */
-  SMTP_CONNECTION_TIMEOUT_MS: number;
-  /** Tope de espera del banner 220 del servidor. */
-  SMTP_GREETING_TIMEOUT_MS: number;
-  /** Tope de espera de la respuesta del servidor durante el envío. */
-  SMTP_SOCKET_TIMEOUT_MS: number;
-  /** Intentos totales de envío (1 = sin reintento). El reintento reenvía el MISMO token y payload. */
   SMTP_RETRY_ATTEMPTS: number;
   /** Base del backoff exponencial entre reintentos, en ms. */
   SMTP_RETRY_BASE_DELAY_MS: number;
+  RESEND_API_KEY: string;
+  /**
+   * Tope de espera de la llamada HTTP al proveedor de email. El SDK no impone
+   * ninguno y su `catch` descarta el error original, así que sin este tope un
+   * request colgado retiene el listener indefinidamente sin dejar rastro
+   * (mismo motivo por el que se exigieron los timeouts SMTP en D-114).
+   */
+  MAIL_SEND_TIMEOUT_MS: number;
   API_URL: string;
   VERIFICATION_TOKEN_EXPIRY_HOURS: number;
   THROTTLE_TTL: number;
@@ -68,18 +58,9 @@ const schema = Joi.object({
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('1500'),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
   JWT_REFRESH_SECRET: Joi.string().required(),
-  SMTP_HOST: Joi.string().required(),
-  SMTP_PORT: Joi.number().required(),
-  SMTP_USER: Joi.string().required(),
-  SMTP_PASS: Joi.string().required(),
+  RESEND_API_KEY: Joi.string().required(),
+  MAIL_SEND_TIMEOUT_MS: Joi.number().default(15000),
   SMTP_FROM: Joi.string().required(),
-  SMTP_REJECT_UNAUTHORIZED: Joi.boolean()
-    .truthy('true')
-    .falsy('false')
-    .default(true),
-  SMTP_CONNECTION_TIMEOUT_MS: Joi.number().default(15000),
-  SMTP_GREETING_TIMEOUT_MS: Joi.number().default(15000),
-  SMTP_SOCKET_TIMEOUT_MS: Joi.number().default(30000),
   SMTP_RETRY_ATTEMPTS: Joi.number().integer().min(1).max(5).default(3),
   SMTP_RETRY_BASE_DELAY_MS: Joi.number().default(2000),
   API_URL: Joi.string().required(),

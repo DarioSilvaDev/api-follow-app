@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
+import { randomUUID } from 'node:crypto';
+import { Resend } from 'resend';
+import type { CreateEmailRequestOptions } from 'resend';
 import { envs } from '../../config/envs';
 import { maskEmail } from './mask-email';
 import {
@@ -10,10 +12,58 @@ import {
 } from './mail.types';
 
 /**
- * Códigos de error de red de nodemailer/Node que son TRANSITORIOS: reintentar
- * con el mismo payload tiene sentido porque el servidor pudo no haber
- * recibido nada, o haberlo recibido y perdido la respuesta.
+ * El SDK de Resend NO lanza excepciones ante un error de API: `emails.send()`
+ * resuelve con `{ data: null, error }` y solo se lanza si el propio SDK revienta
+ * (verificado en el dist de resend@6.30.0). Ignorar ese `error` hace que un
+ * rechazo se reporte como envío exitoso, que es peor que el 503 original: el
+ * usuario recibe un "accepted" de un mensaje que nadie va a recibir.
  */
+
+/**
+ * Nombres de error de Resend contra los que insistir NO cambia el resultado
+ * (D-113, translated to HTTP).
+ *
+ * La regla canónica ya no puede ser "4xx transitorio, 5xx permanente" de RFC
+ * 5321 porque esos códigos son SMTP. En HTTP la semántica cambia: un 429 es
+ * transitorio y un 403 por cuota excedida es PERMANENTE hasta que se resetea el
+ * periodo, así que un 4xx a secas sería peor que una tabla explícita.
+ */
+const PERMANENT_ERROR_NAMES = new Set([
+  // Credenciales y permisos: solo se arregla en la config del deploy.
+  'missing_api_key',
+  'invalid_api_key',
+  'restricted_api_key',
+  'invalid_access',
+  'security_error',
+  // El payload o el remitente está mal: reintentar reenvía lo mismo que falla.
+  'validation_error',
+  'missing_required_field',
+  'invalid_parameter',
+  'invalid_from_address',
+  'invalid_attachment',
+  'invalid_region',
+  'not_found',
+  'method_not_allowed',
+  // Cuota agotada: se reintenta hasta el reset y el límite de intentos se
+  // agota antes. Marcarla transitoria convertiría un rechazo conocido en
+  // carga inútil contra la API.
+  'daily_quota_exceeded',
+  'monthly_quota_exceeded',
+  // Clave de idempotencia inválida: es un bug nuestro, no una caída del
+  // proveedor. Reintentar con la misma clave no lo va a arreglar.
+  'invalid_idempotency_key',
+  'invalid_idempotent_request',
+]);
+
+/** Nombres de error de Resend que un reintento posterior puede resolver. */
+const TRANSIENT_ERROR_NAMES = new Set([
+  'rate_limit_exceeded',
+  'internal_server_error',
+  // El mismo envío lógico sigue en vuelo en el proveedor. Espera y reintenta.
+  'concurrent_idempotent_requests',
+]);
+
+/** Códigos de red de Node que son transitorios. */
 const TRANSIENT_NETWORK_CODES = new Set([
   'ETIMEDOUT',
   'ECONNECTION',
@@ -26,12 +76,11 @@ const TRANSIENT_NETWORK_CODES = new Set([
 ]);
 
 /**
- * Códigos de respuesta SMTP que son transitorios pese a ser 4xx: el servidor
- * está aplicando throttling o está momentáneamente saturado (rate limit,
- * greylisting, buzón ocupado). La diferencia con un 550 (buzón inexistente) es
- * que un reintento posterior sí funciona.
+ * El SDK no tipa `signal`, pero sí lo propaga: `post()` arma
+ * `{ method, body, ...options, headers }` y se lo entrega a `fetch`. El cast
+ * está acotado a esta forma y verificado contra el dist de resend@6.30.0.
  */
-const TRANSIENT_SMTP_CODES = new Set([421, 450, 451]);
+type ResendSendOptions = CreateEmailRequestOptions & { signal?: AbortSignal };
 
 interface MailOptions {
   to: string;
@@ -41,42 +90,22 @@ interface MailOptions {
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter | null = null;
+  private resendClient: Resend | null = null;
   private readonly logger = new Logger(MailService.name);
 
   constructor() {
-    if (envs.SMTP_HOST && envs.SMTP_USER) {
-      this.transporter = nodemailer.createTransport({
-        host: envs.SMTP_HOST,
-        port: envs.SMTP_PORT,
-        secure: envs.SMTP_PORT === 465,
-        // STARTTLS obligatorio en el puerto de submission. Sin esto, las
-        // credenciales viajan en claro si el servidor no lo exige.
-        requireTLS: envs.SMTP_PORT === 587,
-        connectionTimeout: envs.SMTP_CONNECTION_TIMEOUT_MS,
-        greetingTimeout: envs.SMTP_GREETING_TIMEOUT_MS,
-        socketTimeout: envs.SMTP_SOCKET_TIMEOUT_MS,
-        tls: {
-          // Default SEGURO. `false` solo si el relay tiene un certificado
-          // self-signed irrecuperable, y es una decisión explícita del
-          // operador (SMTP_REJECT_UNAUTHORIZED), nunca un default. Sin esto,
-          // un atacante en la red del relay puede leer y reescribir los
-          // emails de invitación, que son la vía de onboard del owner.
-          rejectUnauthorized: envs.SMTP_REJECT_UNAUTHORIZED,
-        },
-        auth: {
-          user: envs.SMTP_USER,
-          pass: envs.SMTP_PASS,
-        },
-      });
+    if (envs.RESEND_API_KEY) {
+      this.resendClient = new Resend(envs.RESEND_API_KEY);
     } else {
-      this.logger.warn('SMTP not configured. Emails will not be sent.');
+      this.logger.warn(
+        'RESEND_API_KEY not configured. Emails will not be sent.',
+      );
     }
   }
 
   /** T-4: detección de degradación sin depender de un usuario quejándose. */
   isConfigured(): boolean {
-    return this.transporter !== null;
+    return this.resendClient !== null;
   }
 
   /**
@@ -91,33 +120,74 @@ export class MailService {
 
   /**
    * Clasifica el error. Transitorio = reintentable; permanente = insistir no
-   * resuelve (D-113). La distincion importa porque reintentar un 5xx
-   * permanente convierte un error sin solucion en carga sobre el relay: tres
-   * entregas a un buzon inexistente y tres esperas de backoff por cada
-   * registro fallido.
+   * resuelve (D-113).
    *
-   * Regla canonica RFC 5321: 4xx transitorio, 5xx permanente. Se aplica la
-   * regla en vez de una lista de "5xx conocidos" porque los codigos de
-   * diagnostico de SMTP no son cerrados: 550 (buzon inexistente), 551 (usuario
-   * no local) y 552 (almacenamiento lleno) son 5xx PERMANENTES aunque
-   * parezcan un error del servidor.
+   * Prioridad de la evidencia, de más a menos específica:
+   *   1. `name` de la tabla explícita de Resend.
+   *   2. Si abortamos nosotros, el timeout es nuestro y lo sabemos con certeza.
+   *   3. Código de red, si la excepción llegó hasta acá con uno.
+   *   4. `statusCode` del proveedor, con 429 y 5xx como transitorios.
+   *
+   * El SDK envuelve TODO fallo de `fetch` (DNS, TCP, TLS, y también nuestro
+   * abort) en `{ name: 'application_error', statusCode: null }` y tira el error
+   * original. Ese `statusCode: null` es la única señal que distingue "no hubo
+   * respuesta HTTP" de "hubo respuesta", y por eso se trata como transitorio:
+   * marcarlo permanente dejaría el mecanismo de reintentos muerto justo en la
+   * caída de red que más lo necesita.
    */
   private classify(error: unknown): { code: string; permanent: boolean } {
     const err = (error ?? {}) as {
+      name?: string;
       code?: string;
-      responseCode?: number;
+      statusCode?: number | null;
     };
 
-    if (err.responseCode !== undefined) {
-      const code = String(err.responseCode);
-      const transient =
-        TRANSIENT_SMTP_CODES.has(err.responseCode) ||
-        (err.responseCode >= 400 && err.responseCode < 500);
-      return { code, permanent: !transient };
+    const name = typeof err.name === 'string' ? err.name : undefined;
+    const statusCode =
+      typeof err.statusCode === 'number' ? err.statusCode : undefined;
+    // `null` y `undefined` NO son lo mismo acá: el SDK usa `null` para
+    // significar "no hubo respuesta HTTP" y `undefined` para "noApply". Normalizar
+    // `null` a `undefined` hacía desaparecer justo la señal que distingue una
+    // caída de red de un rechazo del proveedor.
+    const noHttpResponse = err.statusCode === null;
+
+    if (name && TRANSIENT_ERROR_NAMES.has(name)) {
+      return { code: name, permanent: false };
     }
 
-    const code = err.code ?? 'UNKNOWN';
-    return { code, permanent: !TRANSIENT_NETWORK_CODES.has(code) };
+    if (name && PERMANENT_ERROR_NAMES.has(name)) {
+      return { code: name, permanent: true };
+    }
+
+    // `TimeoutError` es el nombre que Node da al abort de AbortSignal.timeout();
+    // `AbortError` al de un AbortController común.
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      return { code: 'MAIL_TIMEOUT', permanent: false };
+    }
+
+    if (err.code) {
+      return {
+        code: err.code,
+        permanent: !TRANSIENT_NETWORK_CODES.has(err.code),
+      };
+    }
+
+    if (name === 'application_error' && noHttpResponse) {
+      // El SDK descartó la causa real; el código es nuestra inferencia.
+      return { code: 'NETWORK_UNREACHABLE', permanent: false };
+    }
+
+    if (statusCode !== undefined) {
+      return {
+        code: statusCode === 429 ? 'RATE_LIMITED' : String(statusCode),
+        permanent: !(statusCode === 429 || statusCode >= 500),
+      };
+    }
+
+    // Sin evidencia en absoluto: se asume transitorio. Reintentar está acotado
+    // a 3 intentos y ahora es seguro por la clave de idempotencia, mientras que
+    // abandonar ante un error desconocido pierde recoverable.
+    return { code: name ?? 'UNKNOWN', permanent: false };
   }
 
   private sleep(ms: number): Promise<void> {
@@ -130,9 +200,9 @@ export class MailService {
    * D-109: el estado de negocio ya está confirmado en BD cuando se llega acá, así
    * que este método no puede propagar el fallo hacia el comando que lo disparó.
    * D-113: el reintento reenvía el MISMO token y el MISMO payload; nunca
-   * regenera un token, porque un timeout de SMTP es ambiguo (el servidor pudo
-   * aceptar el mensaje y perder la respuesta) y un token distinto produciría
-   * un segundo email con un enlace muerto.
+   * regenera un token, porque un timeout es ambiguo (el servidor pudo aceptar el
+   * mensaje y perder la respuesta) y un token distinto produciría un segundo
+   * email con un enlace muerto.
    */
   private async send(
     template: MailTemplate,
@@ -141,37 +211,63 @@ export class MailService {
   ): Promise<MailSendResult> {
     const recipient = this.mask(options.to);
 
-    if (!this.transporter) {
+    if (!this.resendClient) {
       this.logger.error(
-        `Mail not sent: SMTP unconfigured (template=${template}, recipient=${recipient})`,
+        `Mail not sent: provider unconfigured (template=${template}, recipient=${recipient})`,
       );
       return {
         ok: false,
         template,
         recipient,
-        code: 'SMTP_NOT_CONFIGURED',
-        // Un restart es lo único que lo arregla: insistir en el mismo proceso
-        // no aporta nada.
+        code: 'RESEND_NOT_CONFIGURED',
+        // Un restart con la variable cargada es lo único que lo arregla:
+        // insistir en el mismo proceso no aporta nada.
         permanent: true,
         attempts: 0,
       };
     }
 
     const maxAttempts = envs.SMTP_RETRY_ATTEMPTS;
-    let lastCode = 'UNKNOWN';
+    const timeoutMs = envs.MAIL_SEND_TIMEOUT_MS;
+
+    // Un envío lógico = una clave de idempotencia, generada una sola vez y
+    // reutilizada por todos los intentos. Es lo que hace seguro el reintento:
+    // el proveedor deduplica en vez de mandar un segundo email. Con SMTP esto
+    // era imposible de garantizar; acá es una garantía del proveedor.
+    const idempotencyKey = randomUUID();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // El timeout es nuestro, no del SDK: sin esto el error reportado por el
+      // proveedor es genérico y no permite distinguir un timeout de un fallo de
+      // DNS. Con el signal a la vista sí.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
       try {
-        // El tipo de retorno de nodemailer es `any`: se estrecha a la única
-        // parte que nos interesa. `messageId` es opcional en la practica
-        // (depende del transporte), y por eso el tipo lo declara opcional en
-        // vez de asumir que siempre viene.
-        const info = (await this.transporter.sendMail({
-          from: envs.SMTP_FROM,
-          to: options.to,
-          subject: options.subject,
-          html: options.html,
-        })) as { messageId?: string };
+        const { data, error } = await this.resendClient.emails.send(
+          {
+            from: envs.SMTP_FROM,
+            to: options.to,
+            subject: options.subject,
+            html: options.html,
+          },
+          {
+            idempotencyKey,
+            signal: controller.signal,
+          } as ResendSendOptions,
+        );
+
+        // El SDK resolvió, pero con error: hay que convertirlo en excepción
+        // para que el `catch` de abajo sea el ÚNICO lugar que decide. Un
+        // success silencioso acá sería un falso "Mail accepted".
+        if (error) {
+          const apiError = new Error(error.message) as Error & {
+            statusCode: number | null;
+          };
+          apiError.name = error.name;
+          apiError.statusCode = error.statusCode;
+          throw apiError;
+        }
 
         this.logger.log(
           `Mail accepted (template=${template}, recipient=${recipient}, attempts=${attempt}, ${this.correlation(context)})`,
@@ -180,16 +276,19 @@ export class MailService {
           ok: true,
           template,
           recipient,
-          messageId: info.messageId,
+          messageId: data?.id,
           attempts: attempt,
         };
       } catch (error) {
-        const { code, permanent } = this.classify(error);
-        lastCode = code;
+        const { code, permanent } = this.classify(
+          // Si abortamos nosotros, el SDK ya devolvió un `application_error`
+          // genérico; se lo reemplaza por el nuestro, que es preciso.
+          controller.signal.aborted ? { name: 'TimeoutError' } : error,
+        );
 
         if (permanent) {
-          // Destinatario inexistente, credenciales rechazadas o contenido
-          // rechazado: insistir no cambia el resultado (D-113).
+          // Credenciales, remitente, payload o cuota: insistir no cambia el
+          // resultado (D-113).
           this.logger.error(
             `Mail rejected permanently (template=${template}, recipient=${recipient}, code=${code}, attempts=${attempt}, ${this.correlation(context)})`,
           );
@@ -205,7 +304,7 @@ export class MailService {
 
         if (attempt < maxAttempts) {
           // Backoff exponencial con jitter: evita que N invitations que
-          // fallan a la vez reintenten en lockstep contra un relay caído.
+          // fallan a la vez reintenten en lockstep contra el proveedor caído.
           const base = envs.SMTP_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
           const delay = Math.round(base * (0.5 + Math.random()));
           this.logger.warn(
@@ -226,6 +325,8 @@ export class MailService {
           permanent: false,
           attempts: attempt,
         };
+      } finally {
+        clearTimeout(timer);
       }
     }
 
@@ -234,7 +335,7 @@ export class MailService {
       ok: false,
       template,
       recipient,
-      code: lastCode,
+      code: 'UNKNOWN',
       permanent: false,
       attempts: maxAttempts,
     };
@@ -419,7 +520,7 @@ export class MailService {
   }
 
   /**
-   * D-106: email de invitación al dueño en el onboarding administrado de
+   * D-117: email de invitación al dueño en el onboarding administrado de
    * concesionaria. El link apunta a la ruta pública del wizard del frontend
    * (`${FRONTEND_URL}/invitations/{token}?kind=dealership`) — el backend NO
    * expone el token en ninguna respuesta ni listener adicional.
@@ -456,7 +557,7 @@ export class MailService {
   }
 
   /**
-   * D-106: confirmación al dueño cuando la concesionaria quedó operativa
+   * Confirmación al dueño cuando la concesionaria quedó operativa
    * (wizard de onboarding completado → status active / claimed_at).
    */
   async sendDealershipClaimedEmail(
@@ -480,7 +581,7 @@ export class MailService {
   }
 
   /**
-   * D-106: email de invitación al dueño en el onboarding administrado de
+   * D-117: email de invitación al dueño en el onboarding administrado de
    * taller. El link apunta a la ruta pública del wizard del frontend
    * (`${FRONTEND_URL}/invitations/{token}?kind=workshop`) — el backend NO
    * expone el token en ninguna respuesta ni listener adicional.
@@ -517,7 +618,7 @@ export class MailService {
   }
 
   /**
-   * D-106: confirmación al dueño cuando el taller quedó operativo
+   * Confirmación al dueño cuando el taller quedó operativo
    * (wizard de onboarding completado → status active / claimed_at).
    */
   async sendWorkshopClaimedEmail(
@@ -541,7 +642,7 @@ export class MailService {
   }
 
   /**
-   * D-106: email de invitación a un usuario de plataforma (panel admin). El
+   * D-117: email de invitación a un usuario de plataforma (panel admin). El
    * link apunta a la ruta pública del wizard del frontend
    * (`${FRONTEND_URL}/invitations/{token}?kind=user`) — el backend NO expone
    * el token en ninguna respuesta.
@@ -575,7 +676,7 @@ export class MailService {
   }
 
   /**
-   * D-106: notificación de rol asignado a una cuenta de plataforma ya existente
+   * Notificación de rol asignado a una cuenta de plataforma ya existente
    * (sin wizard, porque la cuenta ya tiene credencial activa).
    */
   async sendUserRoleAssignedEmail(

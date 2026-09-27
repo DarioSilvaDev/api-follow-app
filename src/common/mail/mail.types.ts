@@ -48,10 +48,10 @@ export type MailSendResult =
       /** Destinatario enmascarado. El email en claro nunca sale del servicio. */
       recipient: string;
       /**
-       * Opcional a propósito: nodemailer solo lo garantiza cuando el
-       * transporte lo reporta, y un `string` inventado para cumplir el
-       * tipo sería peor que `undefined`. Sirve para trazar el mensaje en el
-       * panel del proveedor, no para decidir el estado del envío.
+       * Opcional a propósito: se conserva el identificador que devuelve el
+       * proveedor, y un `string` inventado para cumplir el tipo sería peor que
+       * `undefined`. Sirve para trazar el mensaje en el panel del proveedor,
+       * no para decidir el estado del envío.
        */
       messageId?: string;
       /** Intentos consumidos, incluido el exitoso. 1 = salió al primer intento. */
@@ -61,7 +61,11 @@ export type MailSendResult =
       ok: false;
       template: MailTemplate;
       recipient: string;
-      /** Código de error estable de nodemailer/red (`ETIMEDOUT`, `EAUTH`, `EENVELOPE`...) o el código de respuesta SMTP. */
+      /**
+       * Código de error estable del proveedor o de la red (`rate_limit_exceeded`,
+       * `validation_error`, `MAIL_TIMEOUT`, `NETWORK_UNREACHABLE`...).
+       * Sirve para diagnóstico; no es parte del contrato de la API.
+       */
       code: string;
       /**
        * `true` = reintentar no tiene solución por insistencia (destinatario
