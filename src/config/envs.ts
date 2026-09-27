@@ -16,6 +16,23 @@ interface Ienvs {
   SMTP_USER: string;
   SMTP_PASS: string;
   SMTP_FROM: string;
+  /**
+   * Verificación del certificado TLS del relay SMTP. Default `true` (seguro).
+   * Poner en `false` SOLO si el relay usa un certificado self-signed
+   * irrecuperable; abre la conexión a MITM y debe ser una decisión explícita
+   * del operador, nunca un default.
+   */
+  SMTP_REJECT_UNAUTHORIZED: boolean;
+  /** Tope de espera del handshake TCP SMTP. Sin esto, un relay colgado retiene el listener indefinidamente. */
+  SMTP_CONNECTION_TIMEOUT_MS: number;
+  /** Tope de espera del banner 220 del servidor. */
+  SMTP_GREETING_TIMEOUT_MS: number;
+  /** Tope de espera de la respuesta del servidor durante el envío. */
+  SMTP_SOCKET_TIMEOUT_MS: number;
+  /** Intentos totales de envío (1 = sin reintento). El reintento reenvía el MISMO token y payload. */
+  SMTP_RETRY_ATTEMPTS: number;
+  /** Base del backoff exponencial entre reintentos, en ms. */
+  SMTP_RETRY_BASE_DELAY_MS: number;
   API_URL: string;
   VERIFICATION_TOKEN_EXPIRY_HOURS: number;
   THROTTLE_TTL: number;
@@ -56,6 +73,15 @@ const schema = Joi.object({
   SMTP_USER: Joi.string().required(),
   SMTP_PASS: Joi.string().required(),
   SMTP_FROM: Joi.string().required(),
+  SMTP_REJECT_UNAUTHORIZED: Joi.boolean()
+    .truthy('true')
+    .falsy('false')
+    .default(true),
+  SMTP_CONNECTION_TIMEOUT_MS: Joi.number().default(15000),
+  SMTP_GREETING_TIMEOUT_MS: Joi.number().default(15000),
+  SMTP_SOCKET_TIMEOUT_MS: Joi.number().default(30000),
+  SMTP_RETRY_ATTEMPTS: Joi.number().integer().min(1).max(5).default(3),
+  SMTP_RETRY_BASE_DELAY_MS: Joi.number().default(2000),
   API_URL: Joi.string().required(),
   VERIFICATION_TOKEN_EXPIRY_HOURS: Joi.number().default(24),
   THROTTLE_TTL: Joi.number().default(60),
