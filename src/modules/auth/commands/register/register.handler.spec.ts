@@ -48,14 +48,32 @@ describe('RegisterHandler', () => {
       },
     };
     eventEmitterMock = {
+      // `emit` para el evento que no necesita resultado (D-109: fire-and-forget)
+      // y `emitAsync` para el que sí lo necesita (D-111: reportar el estado).
       emit: jest.fn(),
+      emitAsync: jest.fn().mockResolvedValue([{ ok: true }]),
     };
 
     handler = new RegisterHandler(
       userRepositoryMock,
       prismaMock,
-      eventEmitterMock as EventEmitter2,
+      eventEmitterMock as unknown as EventEmitter2,
     );
+  });
+
+  /** Usuario pendiente de verificación, que es el estado tras el registro. */
+  const pendingUser = (email = 'new@example.com') => ({
+    id: 'u1',
+    email,
+    firstName: 'Ana',
+    lastName: 'Pérez',
+    phone: null,
+    avatarUrl: null,
+    language: 'es',
+    status: 'pending',
+    emailVerifiedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   it('throws ConflictException (409) when the email is already registered', async () => {
@@ -98,19 +116,7 @@ describe('RegisterHandler', () => {
 
   it('creates the user, stores a verification token and emits registration events', async () => {
     userRepositoryMock.findByEmail.mockResolvedValue(null);
-    const createdUser = {
-      id: 'u1',
-      email: 'new@example.com',
-      firstName: 'Ana',
-      lastName: 'Pérez',
-      phone: null,
-      avatarUrl: null,
-      language: 'es',
-      status: 'pending',
-      emailVerifiedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const createdUser = pendingUser();
     userRepositoryMock.create.mockResolvedValue(createdUser);
 
     const result = await handler.execute(registerCommand());
@@ -129,16 +135,82 @@ describe('RegisterHandler', () => {
     expect(verificationCall.data.userId).toBe('u1');
     expect(verificationCall.data.token).toEqual(expect.any(String));
 
-    expect(eventEmitterMock.emit).toHaveBeenCalledTimes(2);
-    const emitted = eventEmitterMock.emit.mock.calls.map(
-      (call: any[]) => call[1],
+    expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitterMock.emit.mock.calls[0][0]).toBe('auth.user.registered');
+    expect(eventEmitterMock.emit.mock.calls[0][1]).toBeInstanceOf(
+      UserRegisteredEvent,
     );
-    expect(emitted[0]).toBeInstanceOf(UserRegisteredEvent);
-    expect(emitted[0].email).toBe('new@example.com');
-    expect(emitted[1]).toBeInstanceOf(EmailVerificationSentEvent);
-    expect(emitted[1].email).toBe('new@example.com');
-    expect(emitted[1].token).toBe(verificationCall.data.token);
+
+    // D-111: el email de verificación se emite por `emitAsync` porque el
+    // handler necesita conocer su resultado para informarlo al usuario.
+    expect(eventEmitterMock.emitAsync).toHaveBeenCalledTimes(1);
+    const asyncArgs = eventEmitterMock.emitAsync.mock.calls[0];
+    expect(asyncArgs[0]).toBe('auth.email.verification.sent');
+    expect(asyncArgs[1]).toBeInstanceOf(EmailVerificationSentEvent);
+    expect(asyncArgs[1].email).toBe('new@example.com');
+    // El token emitido es EXACTAMENTE el persistido: un desalineamiento
+    // produciría un link de verificación muerto sin ningún error visible.
+    expect(asyncArgs[1].token).toBe(verificationCall.data.token);
 
     expect(result.user.email).toBe('new@example.com');
+  });
+
+  describe('D-110 / D-111: el fallo de email nunca revierte el registro', () => {
+    beforeEach(() => {
+      userRepositoryMock.findByEmail.mockResolvedValue(null);
+      userRepositoryMock.create.mockResolvedValue(pendingUser());
+    });
+
+    it('reporta state=accepted cuando el relay SMTP acepta el mensaje', async () => {
+      eventEmitterMock.emitAsync.mockResolvedValue([{ ok: true }]);
+
+      const result = await handler.execute(registerCommand());
+
+      expect(result.emailVerification.state).toBe('accepted');
+    });
+
+    it('reporta state=failed sin lanzar cuando el envío falla', async () => {
+      eventEmitterMock.emitAsync.mockResolvedValue([
+        { ok: false, code: 'ETIMEDOUT', permanent: false, attempts: 3 },
+      ]);
+
+      const result = await handler.execute(registerCommand());
+
+      // D-109: la cuenta YA existe. Si esto lanzara, el usuario vería un 5xx
+      // y al reintentar recibiría 409 "ya existe una cuenta con este email",
+      // sin entender que él mismo acaba de crearla.
+      expect(result.emailVerification.state).toBe('failed');
+      expect(result.user.id).toBe('u1');
+    });
+
+    it('reporta state=failed sin lanzar si la propia emisión revienta', async () => {
+      eventEmitterMock.emitAsync.mockRejectedValue(
+        new Error('listener exploded'),
+      );
+
+      const result = await handler.execute(registerCommand());
+
+      expect(result.emailVerification.state).toBe('failed');
+      expect(result.user.id).toBe('u1');
+    });
+
+    it('reporta state=failed si no hay ningun listener registrado', async () => {
+      // EventEmitter2 devuelve [] cuando nadie escucha el evento.
+      eventEmitterMock.emitAsync.mockResolvedValue([]);
+
+      const result = await handler.execute(registerCommand());
+
+      expect(result.emailVerification.state).toBe('failed');
+    });
+
+    it('D-115: nunca ofrece un estado "delivered" (no hay DSN ni webhook)', async () => {
+      eventEmitterMock.emitAsync.mockResolvedValue([{ ok: true }]);
+
+      const result = await handler.execute(registerCommand());
+
+      expect(Object.keys(result.emailVerification)).toEqual(['state']);
+      expect(result.emailVerification).not.toHaveProperty('delivered');
+      expect(['accepted', 'failed']).toContain(result.emailVerification.state);
+    });
   });
 });
