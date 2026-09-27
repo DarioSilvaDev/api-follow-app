@@ -48,9 +48,7 @@ describe('WorkshopClaimedEmailListener — D-106 mail de confirmación', () => {
     prismaMock.workshop.findUnique.mockResolvedValue(null);
 
     await expect(
-      listener.handle(
-        new WorkshopClaimedEvent('w-missing', 'u1', 'a@b.com'),
-      ),
+      listener.handle(new WorkshopClaimedEvent('w-missing', 'u1', 'a@b.com')),
     ).resolves.toBeUndefined();
     expect(mailServiceMock.sendWorkshopClaimedEmail).not.toHaveBeenCalled();
   });

@@ -35,7 +35,7 @@ describe('SendPasswordResetCompletedEmailListener', () => {
     });
     expect(
       mailServiceMock.sendPasswordResetCompletedEmail,
-    ).toHaveBeenCalledWith('user@example.com');
+    ).toHaveBeenCalledWith('user@example.com', { userId: 'user-1' });
   });
 
   it('does not send email when user does not exist', async () => {

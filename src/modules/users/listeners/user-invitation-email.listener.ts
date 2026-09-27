@@ -1,16 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MailService } from '../../../common/mail/mail.service';
+import { maskEmail } from '../../../common/mail/mask-email';
+import type { MailSendResult } from '../../../common/mail/mail.types';
 import { UserInvitedEvent } from '../events/user-invited.event';
 
 /**
- * D-106: envía el email de invitación de usuario de plataforma (panel admin).
- * El link apunta a la ruta pública del wizard del frontend
+ * D-109 / D-117: envía el email de invitación de usuario de plataforma (panel
+ * admin). El link apunta a la ruta pública del wizard del frontend
  * `${FRONTEND_URL}/invitations/{token}?kind=user`.
  *
- * SC-1: un fallo de SMTP post-commit NO debe tumbar el proceso ni romper el
- * flujo de respuesta. El error se loguea con el email enmascarado y NUNCA se
- * escribe el token de invitación en los logs.
+ * D-109: si el envío falla, la invitación ya está creada y el comando que la
+ * originó NO se revierte ni devuelve 5xx. El `try/catch` ya no cubre el SMTP
+ * (MailService es la frontera de error y no lanza); queda solo como red de
+ * seguridad del contrato.
  */
 @Injectable()
 export class UserInvitationEmailListener {
@@ -19,23 +22,26 @@ export class UserInvitationEmailListener {
   constructor(private readonly mailService: MailService) {}
 
   @OnEvent('user.invited', { suppressErrors: true })
-  async handle(event: UserInvitedEvent) {
+  async handle(event: UserInvitedEvent): Promise<MailSendResult | undefined> {
     try {
-      await this.mailService.sendUserInvitationEmail(
+      return await this.mailService.sendUserInvitationEmail(
         event.email,
         event.roleName,
         event.token,
       );
     } catch (error) {
+      // Red de seguridad del contrato, no el camino esperado: MailService es
+      // la frontera de error y no lanza (D-109). Se mantiene igual para que un
+      // cambio futuro en MailService no pueda tumbar el listener.
+      //
+      // `UserInvitedEvent` no transporta ningún id de dominio, así que la
+      // única correlación posible es el email enmascarado. El token de
+      // invitación NUNCA se loguea: es la credencial del link de onboarding.
       this.logger.error(
-        `Failed to send platform user invitation email (email=${this.mask(event.email)})`,
+        `User invitation email failed (email=${maskEmail(event.email)})`,
         error instanceof Error ? error.stack : undefined,
       );
+      return undefined;
     }
-  }
-
-  private mask(email: string): string {
-    const [local, domain] = email.split('@');
-    return `${local?.slice(0, 2) ?? ''}***@${domain ?? '?'}`;
   }
 }

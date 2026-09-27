@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { MailService } from '../../../common/mail/mail.service';
+import type { MailSendResult } from '../../../common/mail/mail.types';
 import { SystemRoleAssignedEvent } from '../../administration/events/system-role-assigned.event';
 
 /**
@@ -15,7 +16,8 @@ import { SystemRoleAssignedEvent } from '../../administration/events/system-role
  * Se limita a roles de plataforma admin|support: asignar super_admin o user
  * sigue sin notificar por email (comportamiento previo preservado).
  *
- * SC-1: los fallos de SMTP post-commit se loguean sin tumbar el proceso.
+ * D-109: el rol ya está asignado en BD cuando este listener corre; su fallo no
+ * revierte la asignación.
  */
 @Injectable()
 export class UserRoleAssignedEmailListener {
@@ -27,30 +29,34 @@ export class UserRoleAssignedEmailListener {
   ) {}
 
   @OnEvent('admin.system_role.assigned', { suppressErrors: true })
-  async handle(event: SystemRoleAssignedEvent) {
-    if (!this.isPlatformRole(event.roleType)) return;
+  async handle(
+    event: SystemRoleAssignedEvent,
+  ): Promise<MailSendResult | undefined> {
+    if (!this.isPlatformRole(event.roleType)) return undefined;
 
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: event.userId },
         select: { email: true, deletedAt: true },
       });
-      if (!user || user.deletedAt) return;
+      if (!user || user.deletedAt) return undefined;
 
       const role = await this.prisma.systemRole.findUnique({
         where: { type: event.roleType as never },
         select: { name: true },
       });
 
-      await this.mailService.sendUserRoleAssignedEmail(
+      return await this.mailService.sendUserRoleAssignedEmail(
         user.email,
         role?.name ?? event.roleType,
+        { userId: event.userId },
       );
     } catch (error) {
       this.logger.error(
-        `Failed to send system role assigned email (userId=${event.userId}, roleType=${event.roleType})`,
+        `System role assigned email failed unexpectedly (userId=${event.userId}, roleType=${event.roleType})`,
         error instanceof Error ? error.stack : undefined,
       );
+      return undefined;
     }
   }
 

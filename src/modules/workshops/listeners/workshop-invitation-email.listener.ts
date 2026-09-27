@@ -2,12 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { MailService } from '../../../common/mail/mail.service';
+import type { MailSendResult } from '../../../common/mail/mail.types';
 import { MemberInvitedEvent } from '../events/member-invited.event';
 
 /**
- * D-106: envía el email de invitación del wizard de onboarding al dueño del
- * taller (`pending_claim`). El link apunta a la ruta pública del frontend
- * `${FRONTEND_URL}/invitations/{token}?kind=workshop`.
+ * D-109 / D-117: envía el email de invitación del wizard de onboarding al
+ * dueño del taller (`pending_claim`). El link apunta a la ruta pública del
+ * frontend `${FRONTEND_URL}/invitations/{token}?kind=workshop`.
  *
  * Guard explícito: SOLO se envía cuando el taller está en `pending_claim`
  * (onboarding admin). El flujo de invitación regular de miembros
@@ -18,8 +19,11 @@ import { MemberInvitedEvent } from '../events/member-invited.event';
  * para invitaciones regulares, por lo que el skip preserva el comportamiento
  * existente.
  *
- * El nombre del taller se resuelve con un query adicional (el evento
- * workshops member.invited no transporta el nombre: se preserva su contrato).
+ * D-117 (PM) indica que la invitación a miembro SÍ debe notificar por email en
+ * MVP, pero depende del PENDIENTE P-3 (journey de aceptación). Queda
+ * pendiente de Fase 2; no se altera el guard acá.
+ *
+ * D-109: el alta ya está creada; el fallo de SMTP no la revierte.
  */
 @Injectable()
 export class WorkshopInvitationEmailListener {
@@ -30,30 +34,28 @@ export class WorkshopInvitationEmailListener {
     private readonly mailService: MailService,
   ) {}
 
-  // SC-1: un fallo de SMTP post-commit NO debe tumbar el proceso ni romper el
-  // flujo de respuesta. El error se loguea con workshopId para correlación
-  // y NUNCA se escribe el token de invitación en los logs. `suppressErrors`
-  // explicita la red de seguridad del loader de @nestjs/event-emitter 3.x.
   @OnEvent('workshop.member.invited', { suppressErrors: true })
-  async handle(event: MemberInvitedEvent) {
+  async handle(event: MemberInvitedEvent): Promise<MailSendResult | undefined> {
     try {
       const workshop = await this.prisma.workshop.findUnique({
         where: { id: event.workshopId },
         select: { id: true, status: true, name: true },
       });
 
-      if (!workshop || workshop.status !== 'pending_claim') return;
+      if (!workshop || workshop.status !== 'pending_claim') return undefined;
 
-      await this.mailService.sendWorkshopInvitationEmail(
+      return await this.mailService.sendWorkshopInvitationEmail(
         event.email,
         workshop.name,
         event.token,
+        { workshopId: event.workshopId },
       );
     } catch (error) {
       this.logger.error(
-        `Failed to send workshop invitation email (workshopId=${event.workshopId})`,
+        `Workshop invitation email failed unexpectedly (workshopId=${event.workshopId})`,
         error instanceof Error ? error.stack : undefined,
       );
+      return undefined;
     }
   }
 }

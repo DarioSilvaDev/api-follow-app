@@ -31,9 +31,13 @@ describe('UserRoleAssignedEmailListener — D-106 mail rol asignado a cuenta act
 
     await listener.handle(new SystemRoleAssignedEvent('u1', 'admin'));
 
+    // El tercer argumento es el contexto de correlación para los logs: permite
+    // seguir un envío fallido hasta el usuario sin loguear PII (el destinatario
+    // va enmascarado). No forma parte del contenido del mail.
     expect(mailServiceMock.sendUserRoleAssignedEmail).toHaveBeenCalledWith(
       'nuevo@example.com',
       'Admin',
+      { userId: 'u1' },
     );
   });
 
