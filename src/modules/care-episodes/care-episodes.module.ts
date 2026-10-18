@@ -7,6 +7,7 @@ import { VerifyCareEpisodeHandler } from './commands/verify-care-episode/verify-
 import { AttachCareEpisodeAttachmentsHandler } from './commands/attach-care-episode-attachments/attach-care-episode-attachments.handler';
 import { RemoveCareEpisodeAttachmentHandler } from './commands/remove-care-episode-attachment/remove-care-episode-attachment.handler';
 import { LookupVehicleHandler } from './queries/lookup-vehicle/lookup-vehicle.handler';
+import { ListCareEpisodesHandler } from './queries/list-care-episodes/list-care-episodes.handler';
 import { ListVerificationsHandler } from './queries/list-verifications/list-verifications.handler';
 import { GetCareEpisodeHandler } from './queries/get-care-episode/get-care-episode.handler';
 
@@ -20,6 +21,7 @@ import { GetCareEpisodeHandler } from './queries/get-care-episode/get-care-episo
     AttachCareEpisodeAttachmentsHandler,
     RemoveCareEpisodeAttachmentHandler,
     LookupVehicleHandler,
+    ListCareEpisodesHandler,
     ListVerificationsHandler,
     GetCareEpisodeHandler,
   ],

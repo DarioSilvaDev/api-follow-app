@@ -44,6 +44,7 @@ import { AttachCareEpisodeAttachmentsHandler } from '../commands/attach-care-epi
 import { RemoveCareEpisodeAttachmentCommand } from '../commands/remove-care-episode-attachment/remove-care-episode-attachment.command';
 import { RemoveCareEpisodeAttachmentHandler } from '../commands/remove-care-episode-attachment/remove-care-episode-attachment.handler';
 import { LookupVehicleHandler } from '../queries/lookup-vehicle/lookup-vehicle.handler';
+import { ListCareEpisodesHandler } from '../queries/list-care-episodes/list-care-episodes.handler';
 import { ListVerificationsHandler } from '../queries/list-verifications/list-verifications.handler';
 import { GetCareEpisodeHandler } from '../queries/get-care-episode/get-care-episode.handler';
 import { evidenceFileFilter } from './attachment-upload.utils';
@@ -55,6 +56,8 @@ import { evidenceFileFilter } from './attachment-upload.utils';
  *   POST  — JwtAuthGuard + ContextGuard (clase), WorkshopOnlyGuard + PermissionsGuard (método)
  *           WorkshopOnly va ANTES de Permissions (evita bypass de super_admin — D-024 A2).
  *   GET lookup — JwtAuthGuard + ContextGuard (clase), WorkshopOnlyGuard + ThrottlerGuard (método)
+ *   GET list (F-023) — JwtAuthGuard + ContextGuard (clase), WorkshopOnlyGuard +
+ *           PermissionsGuard + @Permissions('care-episode.list') (método)
  *
  * Decisión TL: el lookup vive en este módulo (NO en vehicles) para evitar el
  * foot-gun de @Get(':id') de vehicles.controller (F-012).
@@ -66,6 +69,7 @@ export class CareEpisodesController {
     private readonly createCareEpisodeHandler: CreateCareEpisodeHandler,
     private readonly createOwnerCareEpisodeHandler: CreateOwnerCareEpisodeHandler,
     private readonly lookupVehicleHandler: LookupVehicleHandler,
+    private readonly listCareEpisodesHandler: ListCareEpisodesHandler,
     private readonly listVerificationsHandler: ListVerificationsHandler,
     private readonly verifyCareEpisodeHandler: VerifyCareEpisodeHandler,
     private readonly getCareEpisodeHandler: GetCareEpisodeHandler,
@@ -166,6 +170,40 @@ export class CareEpisodesController {
   }
 
   // ──────────────────────────────────────────────────────────
+  // GET /api/care-episodes — Listado paginado de atenciones del taller (F-023)
+  // ──────────────────────────────────────────────────────────
+  // Workshop-scoped: el workshopId viene del contexto WORKSHOP activo (RF-1),
+  // no de la URL. Orden F-012: la ruta raíz se declara ANTES de @Get(':id')
+  // (y después de las rutas GET estáticas lookup/verifications). La raíz no
+  // tiene segmento extra, por lo que :id jamás la capturaría — el orden se
+  // mantiene por higiene y consistencia documental con el módulo.
+  // WorkshopOnlyGuard ANTES de PermissionsGuard (anti-bypass D-024 A2,
+  // patrón verbatim de POST /, POST :id/verify y POST :id/attachments).
+  // Query params: page (default 1) / limit (default 20, clamp 1..100) — el
+  // saneo y los clamps viven en el handler (D-TL-F023-4).
+
+  @Get()
+  @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
+  @Permissions('care-episode.list')
+  async list(
+    @ActiveContext() ctx: CurrentContext,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (ctx.type !== 'WORKSHOP') {
+      // Unreachable: WorkshopOnlyGuard already rejects non-WORKSHOP contexts.
+      throw new ForbiddenException(
+        'This operation requires a WORKSHOP context',
+      );
+    }
+    return this.listCareEpisodesHandler.execute({
+      workshopId: ctx.workshopId,
+      page: page !== undefined ? Number(page) : undefined,
+      limit: limit !== undefined ? Number(limit) : undefined,
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────
   // POST /api/care-episodes/:id/verify — Confirmar verificación
   // ──────────────────────────────────────────────────────────
   // Foot-gun (F-012): la ruta estática `GET verifications` se declara ANTES de
@@ -189,7 +227,7 @@ export class CareEpisodesController {
   // GET /api/care-episodes/:id — Detalle con proyección por actor (S1)
   // ──────────────────────────────────────────────────────────
   // F-012: se declara DESPUÉS de todas las rutas GET estáticas
-  // (lookup, verifications); si llegara antes, `:id` capturaría esas rutas.
+  // (lookup, list, verifications); si llegara antes, `:id` capturaría esas rutas.
   // ?signed=true firma SOLO adjuntos activos.
 
   @Get(':id')

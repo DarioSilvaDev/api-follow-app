@@ -275,6 +275,13 @@ const permissions = [
     code: 'care-episode.attach',
     description: 'Upload evidence attachments to care episodes',
   },
+  {
+    module: 'care-episode',
+    resource: 'care-episode',
+    action: 'list',
+    code: 'care-episode.list',
+    description: 'List care episodes of the active workshop',
+  },
 
   {
     module: 'workorder',
@@ -700,6 +707,8 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'care-episode.verify',
     // care episodes (evidence attachments)
     'care-episode.attach',
+    // care episodes (workshop listing — F-023)
+    'care-episode.list',
     // history
     'history.view',
     'history.share',
@@ -716,6 +725,8 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'care-episode.create',
     'care-episode.verify',
     'care-episode.attach',
+    // care episodes (workshop listing — F-023; NO employee, fuera de alcance MVP)
+    'care-episode.list',
     'history.view',
   ],
   employee: ['appointment.create', 'history.view'],
