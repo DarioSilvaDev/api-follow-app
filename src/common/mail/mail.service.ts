@@ -581,6 +581,70 @@ export class MailService {
   }
 
   /**
+   * D-TL-5: variante combinada del email de invitación para el alta conjunta
+   * (concesionaria + taller de servicio propio). Mismo link del wizard
+   * (`kind=dealership`, D-TL-3: el taller viaja junto a la concesionaria vía
+   * `Workshop.dealershipId`, no tiene invitación propia). Copy §13.B del spec.
+   *
+   * Siempre vía `send()` para heredar retry/idempotencia (D-113). El token
+   * NUNCA se loguea; la correlación usa ambos ids (dealership + workshop).
+   */
+  async sendDealershipGroupInvitationEmail(
+    to: string,
+    dealershipName: string,
+    workshopName: string,
+    token: string,
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    const link = `${frontendUrl}/invitations/${token}?kind=dealership`;
+    return this.send(
+      MAIL_TEMPLATES.DEALERSHIP_GROUP_INVITATION,
+      {
+        to,
+        subject: `Completá el alta de ${dealershipName} y su taller - Autentia`,
+        html: `
+        <h2>Completá el alta de ${dealershipName}</h2>
+        <p>Te invitamos a completar el alta de la concesionaria <strong>${dealershipName}</strong> y de su taller de servicio <strong>${workshopName}</strong> en Autentia.</p>
+        <p>Al completarla, vas a poder administrar tus vehículos desde la concesionaria y registrar los services desde tu taller.</p>
+        <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Completar el alta</a></p>
+        <p>Este enlace expira en 7 días.</p>
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
+   * D-TL-5: variante combinada de la confirmación para el alta conjunta.
+   * Copy §13.D del spec (2 CTAs: concesionaria + taller). Las rutas de los
+   * paneles son placeholders a confirmar con el frontend (ver Tech Lead
+   * Attention) — no existe ruta documentada en este repo.
+   */
+  async sendDealershipGroupClaimedEmail(
+    to: string,
+    dealershipName: string,
+    workshopName: string,
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const frontendUrl = envs.FRONTEND_URL || 'http://localhost:3000';
+    return this.send(
+      MAIL_TEMPLATES.DEALERSHIP_GROUP_CLAIMED,
+      {
+        to,
+        subject: `${dealershipName} y su taller quedaron activos - Autentia`,
+        html: `
+        <h2>¡Tu concesionaria y tu taller quedaron activos!</h2>
+        <p>Ya podés administrar <strong>${dealershipName}</strong> desde el panel de la concesionaria.</p>
+        <p>Desde tu taller <strong>${workshopName}</strong>, vos y tus mecánicos pueden registrar los services para que queden en el historial de cada vehículo.</p>
+        <p><a href="${frontendUrl}/panels/dealership" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Ir a mi concesionaria</a>&nbsp;<a href="${frontendUrl}/panels/workshop" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Ir a mi taller</a></p>
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
    * D-117: email de invitación al dueño en el onboarding administrado de
    * taller. El link apunta a la ruta pública del wizard del frontend
    * (`${FRONTEND_URL}/invitations/{token}?kind=workshop`) — el backend NO

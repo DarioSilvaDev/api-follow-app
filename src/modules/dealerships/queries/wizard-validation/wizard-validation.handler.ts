@@ -12,6 +12,13 @@ import {
  * Los estados de la invitación se devuelven con códigos estables para que
  * el frontend muestre la pantalla correcta (formulario vs. expirada vs.
  * ya utilizada).
+ *
+ * D-TL-2/D-TL-4: si la concesionaria tiene taller vinculado (alta conjunta),
+ * la respuesta agrega `workshop: { id, name }` para que el frontend renderice
+ * el paso 2 del wizard (AC-3). El guard de `workshop.status !== 'pending_claim'`
+ * es defensivo: por el flujo normal el taller y la concesionaria se reclaman
+ * juntos, así que un taller ya activo con invitación pendiente es un estado
+ * corrupto tratado como invitación usada.
  */
 @Injectable()
 export class WizardValidationHandler {
@@ -21,7 +28,14 @@ export class WizardValidationHandler {
     const invitation = await this.prisma.dealershipInvitation.findUnique({
       where: { token },
       include: {
-        dealership: { select: { id: true, name: true, status: true } },
+        dealership: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            workshop: { select: { id: true, name: true, status: true } },
+          },
+        },
       },
     });
 
@@ -37,6 +51,15 @@ export class WizardValidationHandler {
       // no alcanzable por el flujo normal): se trata como usada.
       throw new InvitationUsedException();
     }
+    if (
+      invitation.dealership.workshop &&
+      invitation.dealership.workshop.status !== 'pending_claim'
+    ) {
+      // Taller vinculado ya reclamado con invitación pendiente: estado no
+      // alcanzable por el flujo normal (el claim es conjunto y atómico).
+      // Se trata como usada.
+      throw new InvitationUsedException();
+    }
 
     // Cuenta del dueño (case-insensitive, excluye borradas: D-106 "user
     // deletedAt → tratar como not exists").
@@ -47,6 +70,8 @@ export class WizardValidationHandler {
       },
       select: { id: true, status: true },
     });
+
+    const linkedWorkshop = invitation.dealership.workshop;
 
     return {
       valid: true,
@@ -63,6 +88,11 @@ export class WizardValidationHandler {
       // wizard las reactiva mediante el registro completo (confianza vía
       // invitación admin: la cuenta no tiene credencial usable).
       requiresRegister: !user || user.status === 'pending',
+      // D-TL-4: presente SOLO cuando hay taller vinculado pending_claim
+      // (frontend renderiza 2 pasos — AC-3).
+      ...(linkedWorkshop
+        ? { workshop: { id: linkedWorkshop.id, name: linkedWorkshop.name } }
+        : {}),
     };
   }
 }

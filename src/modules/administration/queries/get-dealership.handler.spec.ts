@@ -28,7 +28,12 @@ describe('GetDealershipHandler — D-106 detalle admin dealership', () => {
         members: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
             role: { select: { id: true, code: true, name: true } },
           },
@@ -37,6 +42,11 @@ describe('GetDealershipHandler — D-106 detalle admin dealership', () => {
           where: { status: { in: ['pending', 'accepted'] } },
           orderBy: { createdAt: 'desc' },
           take: 1,
+        },
+        // D-TL-6 (AC-7): el include del taller vinculado alimenta el derivado
+        // `hasOwnWorkshop` del DTO (RG-6/D7: derivado, nunca persistido).
+        workshop: {
+          select: { id: true, name: true },
         },
       },
     });
@@ -173,6 +183,67 @@ describe('GetDealershipHandler — D-106 detalle admin dealership', () => {
       status: 'pending',
     });
     expect(JSON.stringify(dto)).not.toContain('token-secreto');
+  });
+
+  it('D-TL-6/AC-7: el DTO deriva hasOwnWorkshop=false y workshop=null cuando NO hay taller vinculado (RG-6/D7)', async () => {
+    prismaMock.dealership.findUnique.mockResolvedValue({
+      id: 'd1',
+      name: 'Concesionaria Sur',
+      legalName: null,
+      taxId: null,
+      email: null,
+      phone: null,
+      website: null,
+      logoUrl: null,
+      description: null,
+      status: 'active',
+      isActive: true,
+      claimedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      members: [],
+      invitations: [],
+    });
+
+    const dto = DealershipDetailAdminResponseDto.from(
+      await handler.execute('d1'),
+    );
+
+    // La propiedad derivada NUNCA se persiste: sale del vínculo.
+    expect(dto.hasOwnWorkshop).toBe(false);
+    expect(dto.workshop).toBeNull();
+  });
+
+  it('D-TL-6/AC-7: el DTO deriva hasOwnWorkshop=true y workshop={ id, name } cuando hay taller vinculado', async () => {
+    prismaMock.dealership.findUnique.mockResolvedValue({
+      id: 'd1',
+      name: 'Concesionaria Norte',
+      legalName: null,
+      taxId: null,
+      email: null,
+      phone: null,
+      website: null,
+      logoUrl: null,
+      description: null,
+      status: 'pending_claim',
+      isActive: true,
+      claimedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      members: [],
+      invitations: [],
+      workshop: { id: 'w1', name: 'Concesionaria Norte Service' },
+    });
+
+    const dto = DealershipDetailAdminResponseDto.from(
+      await handler.execute('d1'),
+    );
+
+    expect(dto.hasOwnWorkshop).toBe(true);
+    expect(dto.workshop).toEqual({
+      id: 'w1',
+      name: 'Concesionaria Norte Service',
+    });
   });
 
   it('lanza 404 cuando la dealership no existe', async () => {

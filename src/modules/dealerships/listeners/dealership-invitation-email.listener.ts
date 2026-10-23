@@ -10,6 +10,12 @@ import { MemberInvitedEvent } from '../events/member-invited.event';
  * dueño de la concesionaria (`pending_claim`). El link apunta a la ruta pública
  * del frontend `${FRONTEND_URL}/invitations/{token}?kind=dealership`.
  *
+ * D-TL-5: si la concesionaria tiene un taller vinculado (alta conjunta,
+ * `Workshop.dealershipId`), se envía la variante combinada
+ * `sendDealershipGroupInvitationEmail` (copy §13.B: concesionaria + taller en
+ * un solo correo). Si no, el template actual. La variante la elige EL
+ * LISTENER consultando el link, no el handler (los eventos no cambian).
+ *
  * Guard explícito: SOLO se envía cuando la concesionaria está en
  * `pending_claim` (onboarding admin). El flujo D-103 / invitación regular de
  * miembros (`InviteMemberHandler`) también emite `dealership.member.invited`
@@ -40,11 +46,27 @@ export class DealershipInvitationEmailListener {
     try {
       const dealership = await this.prisma.dealership.findUnique({
         where: { id: event.dealershipId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, name: true },
       });
 
       if (!dealership || dealership.status !== 'pending_claim')
         return undefined;
+
+      // D-TL-5: alta conjunta → taller vinculado → variante combinada.
+      const workshop = await this.prisma.workshop.findFirst({
+        where: { dealershipId: event.dealershipId },
+        select: { id: true, name: true },
+      });
+
+      if (workshop) {
+        return await this.mailService.sendDealershipGroupInvitationEmail(
+          event.email,
+          dealership.name,
+          workshop.name,
+          event.token,
+          { dealershipId: event.dealershipId, workshopId: workshop.id },
+        );
+      }
 
       return await this.mailService.sendDealershipInvitationEmail(
         event.email,

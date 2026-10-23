@@ -29,6 +29,9 @@ describe('CreateDealershipHandler (admin) — D-106 onboarding administrado', ()
     dealershipInvitation: {
       create: jest.fn(),
     },
+    workshop: {
+      create: jest.fn(),
+    },
   });
 
   beforeEach(() => {
@@ -223,5 +226,138 @@ describe('CreateDealershipHandler (admin) — D-106 onboarding administrado', ()
       message: expect.stringContaining('CUIT'),
     });
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('AC-1: hasOwnWorkshop=true crea dealership + taller pending_claim + UNA invitación y devuelve workshop', async () => {
+    // Matriz RB-10 de permisos de taller (subset con los códigos que el
+    // handler pre-fetchea para armar el permissionMap del rol employee).
+    const workshopPermissions = [
+      { id: 'p-member.invite', code: 'member.invite' },
+      { id: 'p-workshop.update', code: 'workshop.update' },
+      { id: 'p-appointment.create', code: 'appointment.create' },
+      { id: 'p-history.view', code: 'history.view' },
+      { id: 'p-appointment.update', code: 'appointment.update' },
+      { id: 'p-appointment.cancel', code: 'appointment.cancel' },
+    ];
+    prismaMock.dealership.findFirst.mockResolvedValue(null);
+    prismaMock.dealership.findUnique.mockResolvedValue(null);
+    // D-TL-2: pre-fetch de permissions se ejecuta DOS veces (dealership y
+    // workshop) cuando hasOwnWorkshop=true.
+    prismaMock.permission.findMany
+      .mockResolvedValueOnce(permissionStub)
+      .mockResolvedValueOnce(workshopPermissions);
+    const tx = txMock();
+    tx.dealership.create.mockResolvedValue({
+      id: 'dealership-1',
+      name: 'Concesionaria Nueva',
+      taxId: '30123456789',
+      email: 'dueno@example.com',
+      status: 'pending_claim',
+      isActive: true,
+      claimedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    tx.workshop.create.mockResolvedValue({
+      id: 'workshop-1',
+      name: 'Concesionaria Nueva Service',
+      status: 'pending_claim',
+      isActive: true,
+      dealershipId: 'dealership-1',
+      taxId: null,
+      email: null,
+      phone: null,
+      website: null,
+      description: null,
+      claimedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    tx.dealershipRole.findUnique.mockResolvedValue({ id: 'role-owner' });
+    tx.dealershipInvitation.create.mockResolvedValue({
+      id: 'inv-1',
+      dealershipId: 'dealership-1',
+      roleId: 'role-owner',
+      email: 'dueno@example.com',
+      token: 'token-secreto',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      status: 'pending',
+    });
+    prismaMock.$transaction.mockImplementation(
+      async (cb: (tx: ReturnType<typeof txMock>) => unknown) => cb(tx),
+    );
+
+    const result = await handler.execute(
+      new CreateDealershipCommand(
+        {
+          name: 'Concesionaria Nueva',
+          taxId: '30-12345678-9',
+          ownerEmail: 'dueno@example.com',
+          hasOwnWorkshop: true,
+        },
+        'admin-1',
+      ),
+    );
+
+    // Taller creado DENTRO de la misma transacción, después del dealership.
+    expect(tx.workshop.create).toHaveBeenCalledTimes(1);
+    const workshopData = tx.workshop.create.mock.calls[0][0].data;
+    expect(workshopData.name).toBe('Concesionaria Nueva Service');
+    expect(workshopData.status).toBe('pending_claim');
+    expect(workshopData.isActive).toBe(true);
+    expect(workshopData.dealershipId).toBe('dealership-1');
+    // Desvío deliberado D-TL-2: el taller al alta NO lleva taxId (se completa
+    // en el claim).
+    expect(workshopData.taxId).toBeUndefined();
+    // Roles del taller con la matriz WORKSHOP_ROLE_PERMISSIONS (RB-10).
+    expect(workshopData.roles.create.map((r: any) => r.code)).toEqual([
+      'owner',
+      'mechanic',
+      'employee',
+    ]);
+    const employeeRole = workshopData.roles.create.find(
+      (r: any) => r.code === 'employee',
+    );
+    expect(
+      employeeRole.permissions.create.map((p: any) => p.permissionId),
+    ).toEqual(
+      expect.arrayContaining(['p-appointment.update', 'p-appointment.cancel']),
+    );
+    expect(employeeRole.isSystem).toBe(true);
+
+    // UNA única invitación (D-TL-3): solo dealershipInvitation, sin
+    // workshop_invitations.
+    expect(tx.dealershipInvitation.create).toHaveBeenCalledTimes(1);
+
+    // Respuesta incluye el workshop.
+    expect(result.workshop).toEqual({
+      id: 'workshop-1',
+      name: 'Concesionaria Nueva Service',
+    });
+
+    // SOLO dealership.member.invited (nunca workshop.member.invited acá).
+    expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitterMock.emit.mock.calls[0][0]).toBe(
+      'dealership.member.invited',
+    );
+  });
+
+  it('AC-2: hasOwnWorkshop ausente (default false) → flujo actual, sin taller y workshop null', async () => {
+    const { tx } = setupHappyPath();
+
+    const result = await handler.execute(
+      new CreateDealershipCommand(
+        { name: 'Concesionaria Nueva', ownerEmail: 'dueno@example.com' },
+        'admin-1',
+      ),
+    );
+
+    expect(tx.workshop.create).not.toHaveBeenCalled();
+    expect(result.workshop).toBeNull();
+    expect(tx.dealershipInvitation.create).toHaveBeenCalledTimes(1);
+    expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitterMock.emit.mock.calls[0][0]).toBe(
+      'dealership.member.invited',
+    );
   });
 });

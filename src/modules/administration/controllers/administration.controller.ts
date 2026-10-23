@@ -332,9 +332,10 @@ export class AdministrationController {
   async updateWorkshop(
     @Param('id') id: string,
     @Body() dto: UpdateWorkshopDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
   ) {
     return this.updateWorkshopHandler.execute(
-      new UpdateWorkshopCommand(id, dto),
+      new UpdateWorkshopCommand(id, dto, currentUser.id),
     );
   }
 

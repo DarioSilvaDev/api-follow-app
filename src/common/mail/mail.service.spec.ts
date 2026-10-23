@@ -315,6 +315,17 @@ describe('MailService', () => {
 
       expect(JSON.stringify(result)).not.toContain('TOKEN_SECRETO');
     });
+
+    it('nunca incluye el token en el resultado de la variante combinada (D-TL-5)', async () => {
+      const result = await service.sendDealershipGroupInvitationEmail(
+        'owner@correo.com',
+        'Concesionaria Norte',
+        'Concesionaria Norte Service',
+        'TOKEN_SECRETO',
+      );
+
+      expect(JSON.stringify(result)).not.toContain('TOKEN_SECRETO');
+    });
   });
 
   describe('links de plantillas (decisiones vigentes)', () => {
@@ -390,6 +401,44 @@ describe('MailService', () => {
       }
     });
 
+    it('D-TL-5: variante combinada de invitación usa el MISMO wizard kind=dealership y menciona ambos nombres', async () => {
+      await service.sendDealershipGroupInvitationEmail(
+        'a@b.com',
+        'Concesionaria Norte',
+        'Concesionaria Norte Service',
+        'token-abc',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Completá el alta de Concesionaria Norte y su taller - Autentia',
+      );
+      expect(payload.html).toContain(
+        'https://app.followapp.test/invitations/token-abc?kind=dealership',
+      );
+      expect(payload.html).toContain('Concesionaria Norte Service');
+      expect(payload.html).toContain('Completar el alta');
+      // D-TL-3: el taller NO tiene invitación propia → nunca kind=workshop.
+      expect(payload.html).not.toContain('?kind=workshop');
+    });
+
+    it('D-TL-5: variante combinada de confirmación tiene 2 CTAs a los paneles', async () => {
+      await service.sendDealershipGroupClaimedEmail(
+        'a@b.com',
+        'Concesionaria Norte',
+        'Concesionaria Norte Service',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Concesionaria Norte y su taller quedaron activos - Autentia',
+      );
+      expect(payload.html).toContain('Ir a mi concesionaria');
+      expect(payload.html).toContain('Ir a mi taller');
+      // Los href de los paneles están dentro del payload.
+      expect(payload.html).toContain('https://app.followapp.test/panels/');
+    });
+
     it('usa la marca oficial Autentia en todos los mails (decisión PM de marca)', async () => {
       await service.sendVerificationEmail('a@b.com', 'tok');
       await service.sendPasswordResetEmail('a@b.com', 'tok');
@@ -412,11 +461,18 @@ describe('MailService', () => {
       await service.sendTransferQrExpiredEmail('a@b.com', 'A', 'V', 'AB-123');
       await service.sendDealershipInvitationEmail('a@b.com', 'D', 'tok');
       await service.sendDealershipClaimedEmail('a@b.com', 'D');
+      await service.sendDealershipGroupInvitationEmail(
+        'a@b.com',
+        'D',
+        'W',
+        'tok',
+      );
+      await service.sendDealershipGroupClaimedEmail('a@b.com', 'D', 'W');
       await service.sendUserInvitationEmail('a@b.com', 'Admin', 'tok');
       await service.sendUserRoleAssignedEmail('a@b.com', 'Admin');
 
       const payloads = sendMock.mock.calls.map((c) => c[0]);
-      expect(payloads.length).toBe(11);
+      expect(payloads.length).toBe(13);
       for (const payload of payloads) {
         const copy = `${payload.subject} ${payload.html}`;
         expect(copy).toContain('Autentia');

@@ -7,6 +7,9 @@
  * que además filtra el token de invitación) lo aplica el controller UNA sola
  * vez. Devuelve raw para evitar el doble mapeo que degradaba members a
  * "Unknown"/"" (fallbacks del DTO sobre objetos ya transformados) — D-TL-20.
+ *
+ * D-TL-6 (AC-7): agrega `workshop: { id, name }` para que el DTO derive
+ * `hasOwnWorkshop` (RG-6/D7: derivado, nunca persistido).
  */
 import { Injectable, NotFoundException } from '@nestjs/common';
 
@@ -45,6 +48,10 @@ export class GetDealershipHandler {
           },
           orderBy: { createdAt: 'desc' },
           take: 1,
+        },
+        // D-TL-6 (AC-7): taller propio vinculado (alta conjunta).
+        workshop: {
+          select: { id: true, name: true },
         },
       },
     });

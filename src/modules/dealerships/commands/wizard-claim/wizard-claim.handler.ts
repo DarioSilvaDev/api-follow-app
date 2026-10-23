@@ -17,6 +17,8 @@ import { PermissionCache } from '../../../../common/cache/permission-cache';
 import { MemberJoinedEvent } from '../../events/member-joined.event';
 import { DealershipClaimedEvent } from '../../events/dealership-claimed.event';
 import { UserRegisteredEvent } from '../../../auth/events/user-registered.event';
+import { MemberJoinedEvent as WorkshopMemberJoinedEvent } from '../../../workshops/events/member-joined.event';
+import { WorkshopClaimedEvent } from '../../../workshops/events/workshop-claimed.event';
 import { WizardClaimCommand } from './wizard-claim.command';
 
 /**
@@ -38,8 +40,21 @@ import { WizardClaimCommand } from './wizard-claim.command';
  * 5. Acepta la invitación, marca la dealership active + claimed_at y crea el
  *    membership owner.
  *
- * Eventos posteriores al commit: dealership.member.joined, dealership.claimed
- * y (solo cuenta nueva) auth.user.registered.
+ * D-TL-4 (claim conjunto): si la dealership tiene taller vinculado
+ * (`dealership.workshop != null`), en la MISMA `$transaction`:
+ *    - valida el bloque `dto.workshop` (paso 2): `name` requerido → 400;
+ *      dedupe de nombre case-insensitive → 409; dedupe de CUIT normalizado →
+ *      409 (los dedupes corren DENTRO del tx para que el rollback cubra todo,
+ *      a diferencia del alta admin donde corren fuera — decisión documentada);
+ *    - `updateMany` del taller con condición `status: 'pending_claim'` →
+ *      `active` + `claimedAt` + patch; count 0 → InvitationUsedException;
+ *    - lookup del rol owner del taller (`workshopId_code`) + crear
+ *      `workshopMember` owner (joinedAt/invitedAt/acceptedAt = now).
+ *
+ * Eventos posteriores al commit: dealership.member.joined, dealership.claimed,
+ * (si hubo taller) workshop.member.joined + workshop.claimed, y (solo cuenta
+ * nueva) auth.user.registered. `permissionCache.invalidateUser` cubre todas
+ * las membresías del user (patrón existente).
  */
 @Injectable()
 export class WizardClaimHandler {
@@ -56,7 +71,14 @@ export class WizardClaimHandler {
     const invitation = await this.prisma.dealershipInvitation.findUnique({
       where: { token: dto.token },
       include: {
-        dealership: { select: { id: true, name: true, status: true } },
+        dealership: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            workshop: { select: { id: true, name: true, status: true } },
+          },
+        },
       },
     });
 
@@ -159,6 +181,8 @@ export class WizardClaimHandler {
       }
     }
 
+    const linkedWorkshop = invitation.dealership.workshop;
+
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         // Doble claim protección: updateMany con status 'pending' (count 0 → rollback).
@@ -245,10 +269,134 @@ export class WizardClaimHandler {
           where: { id: invitation.dealershipId },
         });
 
-        return { user: user!, member, dealership };
+        // D-TL-4: claim conjunto — taller vinculado reclamado en la misma
+        // transacción. Los dedupes de nombre/CUIT corren DENTRO del tx (a
+        // diferencia del alta admin donde corren fuera) para que el rollback
+        // cubra el estado completo si hay colisión (AC-5/AC-6).
+        let claimedWorkshop: {
+          id: string;
+          name: string;
+          status: string;
+          email: string | null;
+          phone: string | null;
+          website: string | null;
+          description: string | null;
+        } | null = null;
+        if (linkedWorkshop) {
+          const wData = dto.workshop;
+
+          // Paso 2 del wizard: el nombre del taller es obligatorio SOLO acá
+          // (el token es conjunto). El prefill "{Dealership} Service" llega
+          // como valor editable; si falta o queda vacío → 400.
+          if (!wData?.name || !wData.name.trim()) {
+            throw new CodedHttpException(
+              400,
+              'Ingresá el nombre del taller.',
+              ERROR_CODES.VALIDATION_ERROR,
+            );
+          }
+
+          const wName = wData.name.trim();
+
+          // Dedupe de nombre case-insensitive (pre-check dentro del tx; el
+          // race final lo cubre el unique de `@@index([name])` no aplica — el
+          // dedupe es best-effort porque `name` no es unique en BD; el 409 es
+          // por regla de negocio del claim, AC-6).
+          const nameClash = await tx.workshop.findFirst({
+            where: { name: { equals: wName, mode: 'insensitive' } },
+            select: { id: true },
+          });
+          if (nameClash) {
+            throw new CodedHttpException(
+              409,
+              'Ya existe un taller con este nombre.',
+              ERROR_CODES.CONFLICT,
+            );
+          }
+
+          const taxId = wData.taxId ? wData.taxId.replace(/\D/g, '') : null;
+          if (taxId) {
+            const taxIdClash = await tx.workshop.findUnique({
+              where: { taxId },
+              select: { id: true },
+            });
+            if (taxIdClash) {
+              throw new CodedHttpException(
+                409,
+                'Ya existe un taller con este CUIT.',
+                ERROR_CODES.CONFLICT,
+              );
+            }
+          }
+
+          const workshopPatch: Record<string, unknown> = {
+            status: 'active',
+            claimedAt: now,
+            name: wName,
+          };
+          if (taxId !== null) workshopPatch.taxId = taxId;
+          if (wData.email !== undefined) workshopPatch.email = wData.email;
+          if (wData.phone !== undefined) workshopPatch.phone = wData.phone;
+          if (wData.website !== undefined)
+            workshopPatch.website = wData.website;
+          if (wData.description !== undefined) {
+            workshopPatch.description = wData.description;
+          }
+
+          // Doble protección del doble claim del taller: updateMany con
+          // status 'pending_claim' (count 0 → InvitationUsedException, rollback).
+          const workshopUpdate = await tx.workshop.updateMany({
+            where: { id: linkedWorkshop.id, status: 'pending_claim' },
+            data: workshopPatch,
+          });
+          if (workshopUpdate.count === 0) throw new InvitationUsedException();
+
+          const workshopOwnerRole = await tx.workshopRole.findUnique({
+            where: {
+              workshopId_code: { workshopId: linkedWorkshop.id, code: 'owner' },
+            },
+            select: { id: true },
+          });
+          if (!workshopOwnerRole) {
+            throw new Error(
+              `Owner role missing for workshop ${linkedWorkshop.id}`,
+            );
+          }
+
+          await tx.workshopMember.create({
+            data: {
+              workshopId: linkedWorkshop.id,
+              userId: userId!,
+              roleId: workshopOwnerRole.id,
+              status: 'active',
+              joinedAt: now,
+              invitedAt: invitation.createdAt,
+              acceptedAt: now,
+            },
+          });
+
+          // Mismo patrón que la dealership: se re-lee la entidad persistida
+          // para devolver la verdad de BD en la respuesta.
+          const updatedWorkshop = await tx.workshop.findUniqueOrThrow({
+            where: { id: linkedWorkshop.id },
+          });
+          claimedWorkshop = {
+            id: updatedWorkshop.id,
+            name: updatedWorkshop.name,
+            status: updatedWorkshop.status,
+            email: updatedWorkshop.email,
+            phone: updatedWorkshop.phone,
+            website: updatedWorkshop.website,
+            description: updatedWorkshop.description,
+          };
+        }
+
+        return { user: user!, member, dealership, workshop: claimedWorkshop };
       });
 
-      // Post-commit: los permisos del user cambiaron (nuevo membership owner).
+      // Post-commit: los permisos del user cambiaron (nuevo membership owner,
+      // en el claim conjunto también el de taller). invalidateUser cubre todas
+      // las membresías del user (patrón existente).
       this.permissionCache.invalidateUser(userId!);
 
       this.eventEmitter.emit(
@@ -260,6 +408,20 @@ export class WizardClaimHandler {
         'dealership.claimed',
         new DealershipClaimedEvent(invitation.dealershipId, userId!, email),
       );
+
+      // D-TL-4: claim conjunto → el taller también queda activo; se emiten
+      // sus eventos (los listeners de workshop tienen guard `dealershipId`
+      // para no duplicar mails — D-TL-5).
+      if (result.workshop) {
+        this.eventEmitter.emit(
+          'workshop.member.joined',
+          new WorkshopMemberJoinedEvent(result.workshop.id, userId!),
+        );
+        this.eventEmitter.emit(
+          'workshop.claimed',
+          new WorkshopClaimedEvent(result.workshop.id, userId!, email),
+        );
+      }
 
       if (isNewUser) {
         this.eventEmitter.emit(
@@ -290,18 +452,33 @@ export class WizardClaimHandler {
           id: result.member.id,
           role: result.member.role ?? { code: 'owner' },
         },
+        // D-TL-4: presente solo cuando el token era conjunto y el taller se
+        // reclamó en la misma transacción.
+        ...(result.workshop ? { workshop: result.workshop } : {}),
       };
     } catch (error) {
+      // D-TL-4: el P2002 race de `workshop.tax_id` se mapea al mismo 409 de
+      // CUIT duplicado (patrón existente del alta admin). El P2002 de la
+      // cuenta nueva conserva exactamente su mensaje previo.
       if (
-        isNewUser &&
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new CodedHttpException(
-          409,
-          'Ya existe una cuenta con este email',
-          ERROR_CODES.CONFLICT,
-        );
+        const target = (error.meta as { target?: string[] })?.target ?? [];
+        if (target.includes('tax_id')) {
+          throw new CodedHttpException(
+            409,
+            'Ya existe un taller con este CUIT.',
+            ERROR_CODES.CONFLICT,
+          );
+        }
+        if (isNewUser) {
+          throw new CodedHttpException(
+            409,
+            'Ya existe una cuenta con este email',
+            ERROR_CODES.CONFLICT,
+          );
+        }
       }
       throw error;
     }

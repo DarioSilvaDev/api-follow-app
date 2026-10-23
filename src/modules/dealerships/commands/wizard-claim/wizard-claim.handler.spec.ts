@@ -33,8 +33,24 @@ describe('WizardClaimHandler — D-106 claim del wizard de onboarding', () => {
       id: 'd1',
       name: 'Concesionaria Norte',
       status: 'pending_claim',
+      workshop: null,
     },
   };
+
+  /** D-TL-4: invitación con taller vinculado (alta conjunta). */
+  const groupInvitation = () => ({
+    ...baseInvitation,
+    dealership: {
+      id: 'd1',
+      name: 'Concesionaria Norte',
+      status: 'pending_claim',
+      workshop: {
+        id: 'w1',
+        name: 'Concesionaria Norte Service',
+        status: 'pending_claim',
+      },
+    },
+  });
 
   const existingUser = {
     id: 'u1',
@@ -53,6 +69,14 @@ describe('WizardClaimHandler — D-106 claim del wizard de onboarding', () => {
     user: { create: jest.fn(), update: jest.fn() },
     dealershipRole: { findUnique: jest.fn() },
     dealershipMember: { create: jest.fn() },
+    workshop: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+    },
+    workshopRole: { findUnique: jest.fn() },
+    workshopMember: { create: jest.fn() },
   });
 
   const registerTx = (tx: ReturnType<typeof makeTxMock>) => {
@@ -112,6 +136,74 @@ describe('WizardClaimHandler — D-106 claim del wizard de onboarding', () => {
     if (txOverrides.dealership) {
       tx.dealership = txOverrides.dealership;
     }
+    registerTx(tx);
+    return tx;
+  };
+
+  /**
+   * D-TL-4: setup del claim CONJUNTO (invitación con taller vinculado).
+   * Estado por defecto del taller: pending_claim, sin dedupes conflictivos,
+   * updateMany exitoso y owner role presente.
+   */
+  const setupGroupClaim = (user: object | null = null) => {
+    prismaMock.dealershipInvitation.findUnique.mockResolvedValue(
+      groupInvitation(),
+    );
+    prismaMock.user.findFirst.mockResolvedValue(user);
+    const tx = makeTxMock();
+    tx.dealershipInvitation.updateMany.mockResolvedValue({ count: 1 });
+    tx.dealership.updateMany.mockResolvedValue({ count: 1 });
+    tx.dealershipRole.findUnique.mockResolvedValue({
+      id: 'role-owner',
+      code: 'owner',
+    });
+    // Default para el flujo de cuenta nueva (user=null): los tests que
+    // necesiten otro user.id sobrescriben después de `setupGroupClaim`.
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+    tx.dealershipMember.create.mockResolvedValue({
+      id: 'member-d1',
+      dealershipId: 'd1',
+      userId: user?.id ?? 'u-new',
+      role: { code: 'owner' },
+    });
+    tx.dealership.findUniqueOrThrow.mockResolvedValue({
+      id: 'd1',
+      name: 'Concesionaria Norte',
+      status: 'active',
+      email: 'dueno@example.com',
+      phone: null,
+      website: null,
+      description: null,
+    });
+    tx.workshop.findFirst.mockResolvedValue(null);
+    tx.workshop.findUnique.mockResolvedValue(null);
+    tx.workshop.updateMany.mockResolvedValue({ count: 1 });
+    tx.workshopRole.findUnique.mockResolvedValue({
+      id: 'role-wowner',
+      code: 'owner',
+    });
+    tx.workshopMember.create.mockResolvedValue({
+      id: 'member-w1',
+      workshopId: 'w1',
+      userId: user?.id ?? 'u-new',
+      role: { code: 'owner' },
+    });
+    tx.workshop.findUniqueOrThrow.mockResolvedValue({
+      id: 'w1',
+      name: 'Taller Centro Service',
+      status: 'active',
+      email: 'taller@example.com',
+      phone: '011-5555',
+      website: 'www.taller.com',
+      description: 'Taller oficial',
+    });
     registerTx(tx);
     return tx;
   };
@@ -429,5 +521,381 @@ describe('WizardClaimHandler — D-106 claim del wizard de onboarding', () => {
     // NO llega a la transacción: no crea user ni member, ni emite eventos.
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('AC-4: claim conjunto con cuenta nueva → 2 membresías owner, ambas entidades active+claimedAt y eventos post-commit', async () => {
+    const tx = setupGroupClaim(null);
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+
+    const result = await handler.execute(
+      new WizardClaimCommand({
+        token: 'tok-1',
+        email: 'dueno@example.com',
+        firstName: 'Dueño',
+        lastName: 'Test',
+        password: '12345678',
+        dealership: { phone: '011-9999' },
+        workshop: {
+          name: 'Concesionaria Norte Service',
+          taxId: '30-72010031-5',
+          email: 'taller@example.com',
+          phone: '011-5555',
+          website: 'www.taller.com',
+          description: 'Taller oficial',
+        },
+      }),
+    );
+
+    // Importación del include del taller en el lookup (D-TL-4).
+    const lookupArgs =
+      prismaMock.dealershipInvitation.findUnique.mock.calls[0][0];
+    expect(lookupArgs.include.dealership.select.workshop).toEqual({
+      select: { id: true, name: true, status: true },
+    });
+
+    // Ambas entidades se reclaman en la MISMA $transaction.
+    expect(tx.dealership.updateMany).toHaveBeenCalledWith({
+      where: { id: 'd1', status: 'pending_claim' },
+      data: expect.objectContaining({
+        status: 'active',
+        claimedAt: expect.any(Date),
+        phone: '011-9999',
+      }),
+    });
+    expect(tx.workshop.updateMany).toHaveBeenCalledWith({
+      where: { id: 'w1', status: 'pending_claim' },
+      data: expect.objectContaining({
+        status: 'active',
+        claimedAt: expect.any(Date),
+        name: 'Concesionaria Norte Service',
+        taxId: '30720100315', // CUIT normalizado solo dígitos
+        email: 'taller@example.com',
+        phone: '011-5555',
+        website: 'www.taller.com',
+        description: 'Taller oficial',
+      }),
+    });
+
+    // 2 membresías owner.
+    expect(tx.dealershipMember.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        dealershipId: 'd1',
+        userId: 'u-new',
+        roleId: 'role-owner',
+        status: 'active',
+        joinedAt: expect.any(Date),
+        invitedAt: baseInvitation.createdAt,
+        acceptedAt: expect.any(Date),
+      }),
+      include: { role: { select: { code: true } } },
+    });
+    expect(tx.workshopMember.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        workshopId: 'w1',
+        userId: 'u-new',
+        roleId: 'role-wowner',
+        status: 'active',
+        joinedAt: expect.any(Date),
+        invitedAt: baseInvitation.createdAt,
+        acceptedAt: expect.any(Date),
+      }),
+    });
+
+    // Respuesta incluye workshop persistido.
+    expect(result.workshop).toEqual({
+      id: 'w1',
+      name: 'Taller Centro Service',
+      status: 'active',
+      email: 'taller@example.com',
+      phone: '011-5555',
+      website: 'www.taller.com',
+      description: 'Taller oficial',
+    });
+
+    // Eventos post-commit (D-TL-4): dealership + workshop + user.registered.
+    expect(permissionCacheMock.invalidateUser).toHaveBeenCalledWith('u-new');
+    const emittedNames = eventEmitterMock.emit.mock.calls.map((c) => c[0]);
+    expect(emittedNames).toContain('dealership.member.joined');
+    expect(emittedNames).toContain('dealership.claimed');
+    expect(emittedNames).toContain('workshop.member.joined');
+    expect(emittedNames).toContain('workshop.claimed');
+    expect(emittedNames).toContain('auth.user.registered');
+  });
+
+  it('AC-4b: claim conjunto con cuenta activa y sesión del dueño → mismas membresías, sin auth.user.registered', async () => {
+    const tx = setupGroupClaim(existingUser);
+    tx.workshop.findUniqueOrThrow.mockResolvedValue({
+      id: 'w1',
+      name: 'Taller Centro Service',
+      status: 'active',
+      email: null,
+      phone: null,
+      website: null,
+      description: null,
+    });
+
+    const result = await handler.execute(
+      new WizardClaimCommand(
+        {
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          workshop: { name: 'Taller Centro Service' },
+        },
+        'u1',
+      ),
+    );
+
+    expect(tx.user.create).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.workshopMember.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ userId: 'u1', roleId: 'role-wowner' }),
+    });
+    expect(result.workshop).toBeDefined();
+    const emittedNames = eventEmitterMock.emit.mock.calls.map((c) => c[0]);
+    expect(emittedNames).not.toContain('auth.user.registered');
+    expect(emittedNames).toContain('workshop.claimed');
+  });
+
+  it('AC-4c: claim conjunto con cuenta pending → reactivación + 2 membresías', async () => {
+    const tx = setupGroupClaim({ ...existingUser, status: 'pending' });
+    tx.user.update.mockResolvedValue({ ...existingUser, status: 'active' });
+    tx.workshop.findUniqueOrThrow.mockResolvedValue({
+      id: 'w1',
+      name: 'Taller Centro Service',
+      status: 'active',
+      email: null,
+      phone: null,
+      website: null,
+      description: null,
+    });
+
+    await handler.execute(
+      new WizardClaimCommand({
+        token: 'tok-1',
+        email: 'dueno@example.com',
+        firstName: 'Dueño',
+        lastName: 'Test',
+        password: '12345678',
+        workshop: { name: 'Taller Centro Service' },
+      }),
+    );
+
+    expect(tx.user.update).toHaveBeenCalled();
+    expect(tx.workshopMember.create).toHaveBeenCalled();
+    const emittedNames = eventEmitterMock.emit.mock.calls.map((c) => c[0]);
+    expect(emittedNames).not.toContain('auth.user.registered');
+    expect(emittedNames).toContain('workshop.claimed');
+  });
+
+  it('AC-5: doble claim del taller (workshop ya reclamado) → 409 y NINGÚN cambio parcial', async () => {
+    const tx = setupGroupClaim(null);
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+    // El taller ya fue reclamado en otro intento: updateMany count 0.
+    tx.workshop.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+          workshop: { name: 'Concesionaria Norte Service' },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+
+    // Rollback: no se creó la membresía del taller ni se emitieron eventos
+    // (entidades siguen pending_claim en BD — la tx no commitea).
+    expect(tx.workshopMember.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('AC-6: taller con nombre duplicado → 409 y ROLLBACK (sin patch ni membresía)', async () => {
+    const tx = setupGroupClaim(null);
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+    tx.workshop.findFirst.mockResolvedValue({ id: 'w-otro' }); // nombre duplicado
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+          workshop: { name: 'Concesionaria Norte Service' },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('nombre'),
+    });
+
+    expect(tx.workshop.updateMany).not.toHaveBeenCalled();
+    expect(tx.workshopMember.create).not.toHaveBeenCalled();
+    expect(tx.workshop.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('AC-6: taller con CUIT duplicado → 409 y ROLLBACK', async () => {
+    const tx = setupGroupClaim(null);
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+    tx.workshop.findFirst.mockResolvedValue(null);
+    tx.workshop.findUnique.mockResolvedValue({ id: 'w-cuit' }); // CUIT duplicado
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+          workshop: {
+            name: 'Concesionaria Norte Service',
+            taxId: '30-72010031-5',
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('CUIT'),
+    });
+
+    expect(tx.workshop.updateMany).not.toHaveBeenCalled();
+    expect(tx.workshopMember.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('400 VALIDATION_ERROR si el token es conjunto y NO se envía el bloque workshop', async () => {
+    const tx = setupGroupClaim(null);
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('nombre del taller'),
+    });
+
+    expect(tx.workshop.updateMany).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('400 VALIDATION_ERROR si el nombre del taller llega vacío (solo espacios)', async () => {
+    const tx = setupGroupClaim(null);
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+          workshop: { name: '   ' },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: expect.stringContaining('nombre del taller'),
+    });
+
+    expect(tx.workshop.updateMany).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('D-S3: cuenta soft-deleted con claim conjunto → 409 y NO toca el taller', async () => {
+    prismaMock.dealershipInvitation.findUnique.mockResolvedValue(
+      groupInvitation(),
+    );
+    prismaMock.user.findFirst.mockResolvedValue({
+      ...existingUser,
+      deletedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    await expect(
+      handler.execute(
+        new WizardClaimCommand({
+          token: 'tok-1',
+          email: 'dueno@example.com',
+          firstName: 'Dueño',
+          lastName: 'Test',
+          password: '12345678',
+          workshop: { name: 'Concesionaria Norte Service' },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('desactivada'),
+    });
+
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('regresión: claim simple (sin taller vinculado) → respuesta SIN campo workshop', async () => {
+    const tx = setupHappyPath(null);
+    tx.user.create.mockResolvedValue({
+      id: 'u-new',
+      email: 'dueno@example.com',
+      firstName: 'Dueño',
+      lastName: 'Test',
+      phone: null,
+      status: 'active',
+    });
+
+    const result = await handler.execute(
+      new WizardClaimCommand({
+        token: 'tok-1',
+        email: 'dueno@example.com',
+        firstName: 'Dueño',
+        lastName: 'Test',
+        password: '12345678',
+      }),
+    );
+
+    expect(result).not.toHaveProperty('workshop');
+    expect(tx.workshopMember.create).not.toHaveBeenCalled();
+    const emittedNames = eventEmitterMock.emit.mock.calls.map((c) => c[0]);
+    expect(emittedNames).not.toContain('workshop.claimed');
+    expect(emittedNames).toContain('dealership.claimed');
   });
 });

@@ -4,5 +4,6 @@ export class UpdateWorkshopCommand {
   constructor(
     public readonly workshopId: string,
     public readonly dto: UpdateWorkshopDto,
+    public readonly actorUserId: string,
   ) {}
 }

@@ -34,6 +34,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dealership.vehicle.take',
     'dealership.vehicle.sell',
     'dealership.vehicle.return',
+    // Gap 1 (D-128 / §4.1): alta de stock propio y kilometraje inicial.
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     'care-episode.create',
     'history.view',
   ],
@@ -41,6 +45,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dealership.update',
     'dealership.members.invite',
     'dealership.vehicle.take',
+    // Gap 1 (D-128 / §4.1).
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     'care-episode.create',
     'history.view',
   ],
@@ -49,6 +57,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     'dealership.vehicle.take',
     'dealership.vehicle.sell',
     'dealership.vehicle.return',
+    // Gap 1 (D-128 / §4.1).
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     'care-episode.create',
     'history.view',
   ],

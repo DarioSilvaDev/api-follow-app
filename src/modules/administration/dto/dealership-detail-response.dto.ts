@@ -63,6 +63,10 @@ export class DealershipDetailAdminResponseDto {
     expiresAt: Date;
     status: string;
   } | null = null;
+  // D-TL-6 (AC-7): derivados de `dealership.workshop`, NUNCA persistidos
+  // (RG-6/D7). `hasOwnWorkshop` permite a la UI mostrar el vínculo.
+  hasOwnWorkshop!: boolean;
+  workshop!: { id: string; name: string } | null;
 
   static from(dealership: any): DealershipDetailAdminResponseDto {
     const owner = dealership.members?.find(
@@ -104,6 +108,10 @@ export class DealershipDetailAdminResponseDto {
             expiresAt: latestInvitation.expiresAt,
             status: latestInvitation.status,
           }
+        : null,
+      hasOwnWorkshop: !!dealership.workshop,
+      workshop: dealership.workshop
+        ? { id: dealership.workshop.id, name: dealership.workshop.name }
         : null,
     };
   }

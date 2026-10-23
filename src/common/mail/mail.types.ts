@@ -26,6 +26,11 @@ export const MAIL_TEMPLATES = {
   TRANSFER_QR_EXPIRED: 'transfer_qr_expired',
   DEALERSHIP_INVITATION: 'dealership_invitation',
   DEALERSHIP_CLAIMED: 'dealership_claimed',
+  // D-TL-5: variantes combinadas del alta conjunta (concesionaria + taller
+  // propio). Decididas por los listeners de dealership consultando el link
+  // `Workshop.dealershipId`; no son eventos nuevos.
+  DEALERSHIP_GROUP_INVITATION: 'dealership_group_invitation',
+  DEALERSHIP_GROUP_CLAIMED: 'dealership_group_claimed',
   WORKSHOP_INVITATION: 'workshop_invitation',
   WORKSHOP_CLAIMED: 'workshop_claimed',
   USER_INVITATION: 'user_invitation',

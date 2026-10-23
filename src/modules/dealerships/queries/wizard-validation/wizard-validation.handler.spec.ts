@@ -1,4 +1,3 @@
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InvitationInvalidException } from '../../../../common/exceptions/coded.exception';
 import { WizardValidationHandler } from './wizard-validation.handler';
 
@@ -20,6 +19,7 @@ describe('WizardValidationHandler — D-106 validación pública del token', () 
       id: 'd1',
       name: 'Concesionaria Norte',
       status: 'pending_claim',
+      workshop: null,
     },
   };
 
@@ -147,5 +147,59 @@ describe('WizardValidationHandler — D-106 validación pública del token', () 
     await expect(handler.execute('tok-1')).rejects.toMatchObject({
       status: 409,
     });
+  });
+
+  it('AC-3: token conjunto → respuesta con workshop { id, name } y valid: true', async () => {
+    prismaMock.dealershipInvitation.findUnique.mockResolvedValue({
+      ...baseInvitation,
+      dealership: {
+        id: 'd1',
+        name: 'Concesionaria Norte',
+        status: 'pending_claim',
+        workshop: {
+          id: 'w1',
+          name: 'Concesionaria Norte Service',
+          status: 'pending_claim',
+        },
+      },
+    });
+    prismaMock.user.findFirst.mockResolvedValue(null);
+
+    const result = await handler.execute('tok-1');
+
+    expect(result.valid).toBe(true);
+    expect(result.workshop).toEqual({
+      id: 'w1',
+      name: 'Concesionaria Norte Service',
+    });
+  });
+
+  it('token simple → respuesta SIN campo workshop (regresión)', async () => {
+    prismaMock.dealershipInvitation.findUnique.mockResolvedValue(
+      baseInvitation,
+    );
+    prismaMock.user.findFirst.mockResolvedValue({ id: 'u1', status: 'active' });
+
+    const result = await handler.execute('tok-1');
+
+    expect(result).not.toHaveProperty('workshop');
+    expect(result.requiresRegister).toBe(false);
+  });
+
+  it('guard defensivo: taller vinculado ya activo con invitación pendiente → 409 INVITATION_USED (estado no alcanzable)', async () => {
+    prismaMock.dealershipInvitation.findUnique.mockResolvedValue({
+      ...baseInvitation,
+      dealership: {
+        id: 'd1',
+        name: 'Concesionaria Norte',
+        status: 'pending_claim',
+        workshop: { id: 'w1', name: 'X Service', status: 'active' },
+      },
+    });
+
+    await expect(handler.execute('tok-1')).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
   });
 });
