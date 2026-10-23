@@ -24,7 +24,17 @@
     "db:reset": "prisma migrate reset",
     "db:seed": "prisma db seed",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "perf:token": "node perf/get-token.mjs",
+    "perf:smoke": "node perf/preflight.mjs smoke",
+    "perf:load:auth": "node perf/preflight.mjs load-auth-me",
+    "perf:load:catalog": "node perf/preflight.mjs load-catalog",
+    "perf:load:vehicles": "node perf/preflight.mjs load-vehicles",
+    "perf:stress:vehicles": "node perf/preflight.mjs stress-vehicles",
+    "perf:stress:vehicles:150": "node perf/preflight.mjs stress-vehicles-150",
+    "perf:stress:vehicles:200": "node perf/preflight.mjs stress-vehicles-200",
+    "perf:report": "node perf/report.mjs",
+    "perf:verify": "node perf/tests/report.test.mjs && node perf/tests/validate-scripts.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1092.0",
@@ -75,6 +85,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^7.0.0",
+    "artillery": "^2.0.34",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

@@ -1,0 +1,43 @@
+# load-vehicles.yml — Carga sobre el listado de vehículos (SOLO LECTURA).
+#
+# Escenarios aislados:
+#   GET /api/vehicles?page=1&limit=20        (listado paginado del owner del token)
+#   GET /api/vehicles?page=1&limit=20&q=AB   (mismo listado + filtro parcial por placa)
+# Este endpoint usa JwtAuthGuard + ContextGuard (PERSONAL) y filtra por ownership/
+# access: es más costoso que el catálogo.
+config:
+  target: "http://127.0.0.1:3001"
+  phases:
+    - name: warmup
+      duration: 60
+      arrivalRate: 2
+    - name: ramp
+      duration: 60
+      arrivalRate: 2
+      rampTo: 10
+    - name: sustained
+      duration: 120
+      arrivalRate: 10
+  ensure:
+    thresholds:
+      - http.response_time.p95: 300
+      - http.response_time.p99: 800
+
+scenarios:
+  - name: vehicles-list
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicles?page=1&limit=20"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicles-list-search
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicles?page=1&limit=20&q=AB"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json

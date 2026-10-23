@@ -63,6 +63,9 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+# Performance test artifacts (local; pueden contener muestras de requests)
+/perf/results
+
 /src/generated/prisma
 
 /src/generated/prisma

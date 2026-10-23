@@ -1,0 +1,75 @@
+# smoke.yml — Smoke de baja intensidad (SOLO LECTURA).
+#
+# Objetivo: verificar que los endpoints responden 200 con el token y medir una
+# latencia base sin carga. NO mide capacidad.
+#
+# Requiere (los valida perf/preflight.mjs):
+#   - TARGET_URL   (opcional; default http://127.0.0.1:3001, debe ser local)
+#   - ACCESS_TOKEN (obligatorio; se inyecta como variable de entorno, nunca en el YAML)
+#
+# El token NO está en este archivo: se referencia vía $processEnvironment.
+config:
+  target: "http://127.0.0.1:3001"
+  phases:
+    - name: smoke
+      duration: 30
+      arrivalRate: 1
+  ensure:
+    # Gauges PROVISIONALES (no SLO). `ensure` evalúa al finalizar y puede
+    # devolver exit code != 0 si se superan: es informativo, no aborta la corrida.
+    thresholds:
+      - http.response_time.p95: 300
+      - http.response_time.p99: 800
+
+scenarios:
+  # health es público: sin Authorization.
+  - name: health
+    weight: 1
+    flow:
+      - get:
+          url: "/api/health"
+
+  - name: auth-me
+    weight: 1
+    flow:
+      - get:
+          url: "/api/auth/me"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicle-brands
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-brands"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicle-models
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-models"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicle-versions
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-versions"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicles-list
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicles?page=1&limit=20"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json

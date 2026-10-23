@@ -1,0 +1,54 @@
+# load-catalog.yml — Carga sobre lecturas de catálogo (SOLO LECTURA).
+#
+# Escenarios aislados (uno por endpoint, mismo peso):
+#   GET /api/vehicle-brands
+#   GET /api/vehicle-models
+#   GET /api/vehicle-versions
+# Miden costo de lectura "puro" (sin filtro por usuario/contexto).
+#
+# Perfil: warmup (2 RPS, 60s) -> ramp (2->10 RPS, 60s) -> sustained (10 RPS, 120s).
+config:
+  target: "http://127.0.0.1:3001"
+  phases:
+    - name: warmup
+      duration: 60
+      arrivalRate: 2
+    - name: ramp
+      duration: 60
+      arrivalRate: 2
+      rampTo: 10
+    - name: sustained
+      duration: 120
+      arrivalRate: 10
+  ensure:
+    thresholds:
+      - http.response_time.p95: 300
+      - http.response_time.p99: 800
+
+scenarios:
+  - name: vehicle-brands
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-brands"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicle-models
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-models"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicle-versions
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicle-versions"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json

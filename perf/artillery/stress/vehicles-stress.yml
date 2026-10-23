@@ -1,0 +1,53 @@
+# vehicles-stress.yml — SONDA DE PUNTO DE QUIEBRE (SOLO LECTURA).
+#
+# Objetivo: NO medir capacidad, sino encontrar la RODILLA de degradación
+# (el RPS a partir del cual la latencia deja de ser plana). Por eso la rampa
+# sube muy por encima del sostenido del baseline (10 RPS).
+#
+# Endpoints (los más costosos: JwtAuthGuard + ContextGuard + ownership +
+# includes anidados):
+#   GET /api/vehicles?page=1&limit=20
+#   GET /api/vehicles?page=1&limit=20&q=AB
+#
+# Perfil: warmup 10 RPS 20s -> rampa 10->80 RPS en 150s -> pico 80 RPS 45s.
+# Aprox. ~10.5k requests en ~3.6 min.
+#
+# Dentro de un veredicto de stress, superar p95/p99 es ESPERADO: en
+# `perf/report.mjs` los umbrales pasan a ser WARNING (no fallan la corrida).
+# 5xx/429/timeouts/errores de conexión SIGUEN siendo fallos duros.
+config:
+  target: "http://127.0.0.1:3001"
+  phases:
+    - name: warmup
+      duration: 20
+      arrivalRate: 10
+    - name: stress_ramp
+      duration: 150
+      arrivalRate: 10
+      rampTo: 80
+    - name: peak
+      duration: 45
+      arrivalRate: 80
+  ensure:
+    thresholds:
+      - http.response_time.p95: 300
+      - http.response_time.p99: 800
+
+scenarios:
+  - name: vehicles-list
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicles?page=1&limit=20"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
+
+  - name: vehicles-list-search
+    weight: 1
+    flow:
+      - get:
+          url: "/api/vehicles?page=1&limit=20&q=AB"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.ACCESS_TOKEN }}"
+            Accept: application/json
