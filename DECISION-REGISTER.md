@@ -3,7 +3,7 @@
 > Registro Ãºnico de decisiones de producto, dominio, arquitectura y UX que condicionan la evoluciÃ³n de Historia ClÃ­nica Digital Vehicular (HCDV).
 
 **Estado del documento:** Activo
-**Ãšltima actualizaciÃ³n:** 2026-09-09
+**Ãšltima actualizaciÃ³n:** 2026-10-09
 **Producto:** Historia ClÃ­nica Digital Vehicular (HCDV)
 **Alcance:** MVP y decisiones estructurales que condicionan su evoluciÃ³n
 
@@ -4119,3 +4119,797 @@ con `api.resend.com` y la validacion TLS la hace el runtime. Se elimino
 - **Restaurar el commit `86bc07b`**: sigue incluyendo los 170 archivos borrados de
   `frontend/`, que no correspondian. Pide autorizacion para `reset --soft` +
   `amend`.
+
+---
+
+# 38. Registro (2026-10-02): Entrega de vehículos 0km por concesionaria (D-128..D-142)
+
+> **ESTADO: DECISIONES ACEPTADAS (2026-10-02).**
+> Cierra el gap funcional detectado sobre D-101..D-108: la dealership podía recibir
+> y vender vehículos, pero **no podía dar de alta los suyos**. Sin esto, la cadena de
+> consignación arrancaba siempre en un tercero y nunca nacía en el punto de partida real del negocio.
+> Diseño técnico cerrado por el Tech Lead Backend (A-0..A-7). **Ninguna de estas decisiones está implementada todavía.**
+
+## Contexto: por qué nace
+
+El producto tenía la cadena `Propietario → Concesionaria → Comprador` construida y verificada, pero el **primer eslabón no existía**: una concesionaria con 0km nuevos en su stock no tenía forma de cargarlos. Solo podía recibir vehículos de terceros.
+
+Consecuencia de negocio: **la historia digital del vehículo no nacía en el punto donde realmente empieza** (el fabricante, la fábrica, el alta). El primer registro del auto siempre era de un tercero.
+
+Consulta del product owner (2026-10-02) sobre la propuesta de que la dealership registre sus 0km y genere un QR de traspaso al comprador.
+
+## D-128 — El 0km lo da de alta la dealership y queda como primer titular
+
+**Decisión:** la dealership registra el vehículo y queda como **primer titular** (`OwnershipType = 'company'`, `dealershipId` poblado, `userId = NULL`), respetando el CHECK XOR de D-DB-1.
+
+**Razón:** tres Grounds, en orden de peso:
+
+1. **Consistencia con D-101**, que ya decidió que la dealership es propietaria intermedia. La dirección es `Propietario → Concesionaria → Comprador`; un 0km es el caso donde el eslabón inicial es la propia dealership.
+2. **Realidad legal:** un 0km en stock es inventario de la concesionaria hasta que se vende. **Sí es propietaria.** Negarlo contradice el mundo físico.
+3. **Cero costo de modelo:** el schema, los CHECKs y la machinery de ownership ya existen (migraciones M1+M2 aplicadas). No se agrega ningún enum, tabla ni CHECK nuevo.
+
+**Impacto:** el alta de vehículo 0km deja de ser una funcionalidad nueva y pasa a ser **extensión natural de la consignación ya construida**.
+
+**Alternativas descartadas:**
+
+- **Rol "originador del registro" / dealership-no-owner.** Planteado inicialmente por el product owner. Descartado: `OwnershipType` es `{owner, co_owner, company}` y un cuarto tipo rompe el CHECK `ownership_type_company` de D-DB-1 y la trazabilidad. Además contradice D-101. La preocupación que lo motivaba ("un taller no es propietario por registrar una atención") **no aplica**: D-102 decidió explícitamente que concessionaria ≠ taller.
+- **Vehículo sin titular hasta la venta.** Inviable: contradice D-101 y `VehicleOwnership` exige XOR (`userId` XOR `dealershipId`, ambos NOT NULL en la rama correspondiente).
+
+## D-129 — QR de venta presencial, en el momento de la entrega
+
+**Decisión:** el QR de venta se escanea en la entrega. `purpose = 'sale'`, `source = 'presencial'`, TTL 1h. **No hay claim diferido.**
+
+**Razón:** cierra la pregunta abierta sobre extender la ventana del QR. El comprador está presente; extender el TTL solo agranda la ventana de exposición de un bearer token sin ganancia.
+
+**Impacto:** **no se toca `QrStatus`, `TransferStatus` ni la maquinaria de QR.** Es el diseño ya implementado (D-085 / D-086 / D-104).
+
+**Alternativa descartada:** claim diferido (QR `pending` con TTL largo y activación días después). Se descartó por costo —requería estado nuevo en `QrStatus`— sin benefit para el journey real.
+
+## D-130 — Registro obligatorio en destino, opcional en el mostrador
+
+**Decisión:** el comprador debe tener `Identity` para recibir la titularidad (el QR es bearer: `token @unique`, one-shot). Pero **el registro no es una puerta en el mostrador**.
+
+| Si el comprador… | Resultado |
+|---|---|
+| Se registra en la entrega | Transferencia inmediata. |
+| Dice "después" | **La titularidad queda en la dealership.** Se crea un registro de venta pendiente de activación. **El dealer NO se bloquea.** |
+
+**Razón:** si el registro fuera un bloqueo duro y el comprador no se registra, el dealer tiene un auto vendido en papel cuyo sistema dice que sigue siendo suyo → se traba una operación comercial ya cerrada.
+
+**Restricción estructural verificada:** la alternativa "transferir al entregar y vincular la cuenta después" está **bloqueada por la arquitectura aprobada**. `VehicleOwnership` exige XOR y ninguno de los dos lados puede ser nulo, así que **no existe ownership sin titular identificado**. La única vía coherente con D-DB-1 es transferencia contra aceptación.
+
+**Alternativas descartadas:**
+
+- **Transferencia automática al momento de la entrega** (sin aceptación del receptor). Descartada: rompe el consentimiento de `ownership`. Cualquiera podría "venderle" un auto a un tercero.
+- **Registro directo en el mostrador con verificación por SMS.** Descartada explícitamente: el ida-y-vuelta al email **no es fricción, es el mecanismo de verificación**. Reemplazarlo por SMS conserva la fricción y abre una vía de toma de control sobre la propiedad por número de teléfono reciclable — un agujero en el activo central del producto.
+
+## D-131 — Estado "venta pendiente de activación" visible en el panel
+
+**Decisión:** el panel de la dealership muestra el vehículo como *vendido, pendiente de activación* mientras la titularidad no se haya transferido.
+
+**Razón:** honestidad del panel. El dealer ve que vendió aunque la titularidad siga siendo suya. Sin este estado el panel sería optimista y el dealer asumiría entrega.
+
+**Impacto:** estado nuevo en `VehicleTransfer` (no en `QrStatus`). Decisión técnica de modelado en manos del Tech Lead.
+
+## D-132 — VIN: normalización permanente + exclusión de I/O/Q
+
+**Decisión:** el VIN se **normaliza siempre** (uppercase, sin espacios, sin guiones) en alta y en edición. Se rechazan las letras `I`, `O` y `Q`.
+
+**Razón:** el `@unique` de Postgres compara strings crudos. Sin normalización, `JH12AB1234567890`, `jh12ab1234567890` y `JH12 AB1234567890` son **tres vehículos distintos con tres historias distintas** en la base. Para un producto cuya tesis es "historial confiable", la identidad del vehículo no puede depender de cómo alguien tipeó un código.
+
+`I`/`O`/`Q` están excluidas por el estándar ISO 3779 porque se confunden con `1`/`0`/`9`. No es purismo: es la detección del error de tipeo más común, gratis.
+
+**Naturaleza:** es una **transformación**, no una validación. El valor almacenado es siempre el canónico.
+
+**Estado previo verificado:** `@unique` ya existe (`schema.prisma:1189`) y el `P2002` ya se mapea a 409 (D-041). **Lo que faltaba era la normalización** — la restricción estaba ~70% cumplida.
+
+**Pendiente de definición técnica:** longitud exacta (17 estándar; algunos mercados difieren).
+
+## D-133 — La dealership edita el vehículo solo mientras es titular activo
+
+**Decisión:** la dealership puede modificar los datos del vehículo, incluido el VIN, **únicamente mientras es titular activo**. Al transferirse la titularidad, pierde toda escritura.
+
+**Razón:** sin este límite, una concesionaria puede seguir editando el auto que le vendió a un cliente hace un año. La escritura muere con la transferencia, en línea con la regla de que el timeline del vehículo es inmutable una vez que arranca la historia del dueño.
+
+**Alternativa descartada:** editar sin límite (el dealer "ya no tiene nada que perder"). Descartada.
+
+## D-134 — El VIN solo se ve en el detalle del vehículo, vista de owner
+
+**Decisión:** el VIN se expone únicamente en la vista de owner. **Nunca** en la ficha pública del QR de transferencia, **nunca** en la URL del QR.
+
+**Razón:** el comprador tiene el vehículo físico enfrente — leer 17 caracteres no aporta nada. Y un identificador enumerable en una URL pública es vectos de fuga.
+
+**Consistencia verificada:** `DealershipVehicleResponseDto` expone `vin`, pero el panel lista solo vehículos donde la dealership **es titular activa**, así que el VIN se ve *porque es owner*. No es una excepción al principio: es su aplicación. **Nunca decir "el VIN no se muestra al dealer"** — durante exhibición sí se muestra, y debe.
+
+## D-135 — Google OAuth aprobado, con rollout acotado
+
+**Decisión:** se incorpora login con Google. **Rollout:** usuarios **nuevos** que llegan por QR de dealership. El login por contraseña **se mantiene** para cuentas existentes. **Desvincular cuentas queda fuera de MVP.**
+
+**Linking por email:** auto-link silencioso + notificación al email vinculado. Sin confirmación explícita.
+
+**Razón:** la fricción real del mostrador no son los campos del formulario, es la **cadena de pasos**: el usuario recién registrado nace con `status = 'pending'` y `LoginHandler` rechaza `status !== 'active'` → ida y vuelta al email obligatorio → segundo login. Sumado al deep link perdido, son ~9 pasos para ver un auto que tiene enfrente.
+
+OAuth **elimina la cadena entera**, no solo la cantidad de campos.
+
+**Por qué es la única opción que resuelve fricción y seguridad a la vez:** `email_verified: true` viene de Google por construcción. Se conserva la verificación de email — que es la que impide que cualquiera que conozca el email de Juan acepte la titularidad del auto de Juan.
+
+**Estado previo verificado (corrige un supuesto erróneo):** el modelo `OauthAccount` **ya existe y está migrado** (`schema.prisma:365-384`, `enum OauthProvider` incluye `google`), con `@@unique([provider, providerUserId])`. Fue creado y nunca cableado.
+
+**Alternativas descartadas:**
+
+- **OTP / magic link por email como solución primaria.** Reemplaza un ida-y-vuelta al email por otro. Peor en mostrador.
+- **Optimizar solo el formulario.** `autoComplete` ya está en los campos. Es prácticamente un no-op.
+- **Confirmación explícita de linking.** Agrega fricción exactamente en el mostrador, que es lo que se busca eliminar.
+- **Desvincular cuentas.** Endpoint nuevo con implicaciones de seguridad reales. No se necesita para lanzar.
+
+## D-136 — El `redirect_uri` de Google vive en el dominio del frontend
+
+**Decisión:** `redirect_uri` = `https://autentia-ui.vercel.app/api/auth/google/callback`. **No** en el dominio de Render.
+
+**Razón:** el frontend y la API están en **dominios distintos** (`vercel.app` / `onrender.com`). El frontend llama a la API vía rewrite same-site de Vercel (`vercel.json`), de modo que las cookies del backend quedan **host-only de `vercel.app`**. Si el callback de Google se sirviera desde `onrender.com`, la cookie quedaría host-only de ese dominio y **el frontend nunca la enviaría** → sesión muerta justo después de aceptar una transferencia de propiedad.
+
+**Impacto:** es la única opción que **no requiere cambiar el modelo de sesión actual**. La alternativa (tokens en body) obligaría a rehacer el modelo de auth en medio de una feature de concesionarias.
+
+**Estado verificado de producción:** `NEXT_PUBLIC_API_URL` en Vercel es `https://autentia-ui.vercel.app/api` (**relativa al rewrite, no al backend**). La sesión actual es **correcta y está sana**. No debe tocarse.
+
+## D-137 — `LOWER(email)` es prerrequisito de seguridad, no una mejora
+
+**Decisión:** se agrega índice único funcional `LOWER(email)` y se normalizan los lookups por email.
+
+**Razón:** el índice unique de email actual es **case-sensitive**. `Juan@Gmail.com` (de Google) y `juan@gmail.com` (existente) **pueden coexistir como dos cuentas distintas** → dos titulares sobre el mismo vehículo. Para login es un bug; para este producto es **integridad de la historia**.
+
+**Alcance verificado — no es una migración, es cambio cross-cutting:** hay **7 call sites case-sensitive** que deben corregirse. El más crítico:
+
+```
+vehicles/commands/transfer-vehicle:41   where: { email: value }   ← resuelve el comprador del QR
+```
+
+Si ese lookup no normaliza, **el flujo QR de venta falla en silencio**. Está en el camino crítico de D-079..D-083.
+
+**Precedente:** existe el patrón correcto ya en el repo (`mode: 'insensitive'`, e índice funcional en `migrations/20260916000000_add_user_alias:21`). No se aplicó de forma uniforme.
+
+## D-138 — El preflight de duplicados es gate bloqueante; nunca auto-mergear
+
+**Decisión:** antes de aplicar la normalización de email, un preflight busca duplicados por `LOWER(email)`. Si encuentra casos, **la migración no corre** y los casos se resuelven **a mano**.
+
+**Razón:** mergear dos cuentas que difieren solo en casing puede **fusionar dos cadenas de ownership distintas** → dos vehículos con la misma historia. Eso no lo arregla un script; lo arregla una persona mirando los casos. El preflight es un gate, no un reporte informativo.
+
+## D-139 — La transferencia de titularidad nunca se bloquea por datos de perfil
+
+**Decisión:** si el proveedor OAuth no devuelve nombre, la transferencia de titularidad **no se bloquea**. Perfil incompleto con placeholder neutro + prompt posterior en UI.
+
+**Razón:** que un auto no se pueda transferir porque el comprador no tiene nombre cargado es absurdo. `User.firstName`/`lastName` son NOT NULL; **cómo** resolverlo (relajar NOT NULL vs valor derivado) es decisión técnica del Tech Lead, pero la **restricción de producto es firme: el perfil no bloquea la titularidad**.
+
+## D-140 — Secuencia: el alta de 0km antes que OAuth. OAuth no bloquea el 0km
+
+**Decisión:** se implementa primero el alta de vehículo por dealership y después OAuth.
+
+**Razón:** OAuth **no es requisito del 0km**. El flujo completo funciona con email+password, que es lo que hay hoy. OAuth es optimización de fricción, no habilitador. El 0km no puede quedar bloqueado detrás de un trabajo de auth de 16 días.
+
+**Encuadre correcto:** OAuth no es "16 días por el 0km". Es una **mejora de auth de todo el producto** que esta feature dispara.
+
+## D-141 — La dealership puede registrar kilometraje posterior al ingreso
+
+**Decisión:** `POST /vehicles/:id/mileage` se extiende a la dealership titular.
+
+**Razón:** la pre-entrega genera kilómetros, las pruebas generan kilómetros. Un vehículo **clavado en 0 km para siempre** es un producto roto — y contradice la distinción de confianza que el producto necesita sostener.
+
+**Impacto:** habilita pasar de **"0 km"** a **"0 km + primera lectura real"**. `mileage: 0` es un valor válido y presente: `GET /vehicles/:id` ya devuelve los últimos 5 → `[]` = sin registro, `[{ mileage: 0 }]` = 0 km. **No requiere cambiar el contrato.**
+
+## D-142 — Alcance de cierre de la feature de 0km
+
+Confirmado como **Gap 1** (~3 días, **cero migraciones**):
+
+1. Alta de vehículo en contexto DEALERSHIP → `Vehicle` + `VehicleOwnership(type=company)` + kilometraje inicial, en transacción.
+2. Permiso de alta/edición para dealership + matriz de roles (dueño/vendedor/admin).
+3. Normalización de VIN (D-132) en alta y edición, una sola definición.
+4. Regla de escritura acotada a titular activo (D-133).
+5. Extender registro de kilometraje a dealership (D-141).
+6. **Fix del deep link del QR** en el registro — el link a `/register` no propaga `next`, hoy el comprador que entra por QR **pierde el token al registrarse**. P0, e impacta directo el journey de D-129/D-130.
+
+## Hallazgo técnico de infraestructura (no decisión de producto, pero condiciona OAuth)
+
+**El comportamiento de `SameSite: Strict` tras un redirect cross-site es divergente por navegador:**
+
+| Navegador | Cookie `Strict` en el callback OAuth |
+|---|---|
+| Chrome / Edge (macOS) | Se envía (usa el iniciador, ignora la cadena de redirects) |
+| Firefox | **No se envía** ([Bug 1465402](https://bugzilla.mozilla.org/show_bug.cgi?id=1465402)) |
+| Safari iOS | **No se envía** |
+| WebKit | Alineándose a no enviarla ([PR #27522](https://github.com/WebKit/WebKit/pull/27522)) |
+
+Dos consecuencias:
+
+1. La cookie anti-CSRF de `state` **debe** ser `Lax`. Hay precedente en el repo (`impersonationTokenCookieOptions`).
+2. El callback **no** debe responder `302`: debe responder `200` + `meta-refresh`, para que la navegación nueva la inicie un documento ya servido desde `vercel.app`.
+
+**El fallo no se reproduce en desarrollo** (en dev el access token es `lax`). Pasa QA en Chromium y rompe en producción para Firefox e iOS → **E2E en build con `NODE_ENV=production` y en Firefox/Safari es obligatorio.**
+
+## Bug latente detectado (destapado por OAuth)
+
+`auth/commands/reset-password/reset-password.handler.ts:35` usa `userCredential.update(...)` en lugar de `upsert`. Un usuario creado con Google no tiene fila `credential` → `P2025` → **HTTP 500**. "Olvidé mi contraseña" quedaría roto para usuarios Google-only. `ChangePasswordHandler` sí lo maneja correctamente.
+
+## Bug latente detectado (preexistente, en el camino crítico del QR)
+
+`register/page.tsx` enlaza a `/register` **sin propagar `next`**, mientras `login/page.tsx` sí lo maneja. Quien entre por el QR de transferencia y se registre **aterriza en el home sin ver su vehículo**. Está en el punto de D-142 #6.
+
+## Estado
+
+- **ACEPTADAS (2026-10-02):** D-128..D-142.
+- **Diseño técnico:** cerrado por el Tech Lead Backend (A-0..A-7). Incluye `assertDealershipVehicleWrite` en `VehicleAccessService`, autorización por rama de handler (no `@Permissions` en ruta, porque `POST /vehicles` hoy no tiene `PermissionsGuard` y agregarlo rompería el alta personal), y `VIN_PATTERN` como una sola definición heredada por `UpdateVehicleDto` vía `PartialType`.
+- **Sin implementar.** Nada de esto tiene código todavía.
+- **Estimaciones:** Gap 1 ~3 días / 0 migraciones. Gap 2 (OAuth) ~16 días / 5 migraciones. La estimación inicial de OAuth (~6 días) fue incorrecta: no incluía los 7 call sites de `LOWER(email)` (~2.5 días) ni el E2E multi-navegador (~1.5 días).
+
+## Pendientes
+
+- **Producto:** nombre de fallback cuando OAuth no devuelve nombre (restricción ya fijada en D-139; la forma es técnica).
+- **Producto/Comunicación:** el código llama al producto **"Autentia"** (aparece en D-100) y la documentación interna **HCDV**. Hay que alinear antes de escribir microcopy definitivo.
+- **Arquitectura:** confirmación de que `google-auth-library` es la dependencia única aceptada.
+- **Infra:** E2E de OAuth contra el redirect real de Google (los query params a través del rewrite de Vercel no están documentados — no asumir, probar).
+- **Contexto multi-repo:** se creó `AGENTS.md` en `web-follow-app`, que estaba vacío de producto (solo el bloque autogenerado de Next.js). Documenta el contrato entre repos y declara el `DECISION-REGISTER` del backend como fuente de verdad de producto.
+
+# 39. Revisión post-Security y post-Frontend (2026-10-02): D-143..D-157
+
+Esta sección **corrige dos decisiones de la sección 38** antes de implementar. Las revisiones de Security y Frontend detectaron que **D-133 y D-141 eran incorrectas**, y que **D-130 estaba bloqueada sin que nadie lo hubiera detectado**.
+
+## Verificación previa (lo que sobrevive y lo que no)
+
+Todo lo decidido abajo se verificó contra el código, no contra reportes.
+
+| Afirmación | Resultado |
+|---|---|
+| `VehicleResponseDto` no expone `mileages` | **CONFIRMADO** — y es peor de lo reportado |
+| `recordedByMemberId` nunca se escribe | **CONFIRMADO en runtime** — el handler no lo escribe; el seed sí |
+| `source` lo elige el cliente | **CONFIRMADO** — `record-mileage.dto.ts:9` `@IsEnum(MileageSource)` |
+| El preview del QR exige JWT | **CONFIRMADO** — `vehicles.controller.ts:102` |
+| `MileageSource` ya incluye `dealership` | **CONFIRMADO** — `schema.prisma:85`. Sin cambio de enum |
+| "El VIN es editable por la dealership titular" | **ERROR PROPIO — revertido en D-143** |
+
+### Corrección 1 — el bug de `mileages` es peor de lo reportado
+
+`get-vehicle.handler.ts:55` **sí consulta** `mileages: { orderBy: { recordedAt: 'desc' }, take: 5 }`. Pero `VehicleResponseDto.from()` **no lo copia al response** (`vehicle-response.dto.ts:51-73`).
+
+**La API hace una query que después tira el resultado a la basura.** No es "no se expone": es "se paga el costo y se descarta".
+
+Esto **invalida el impacto declarado en D-141** ("`GET /vehicles/:id` ya devuelve los últimos 5... **No requiere cambiar el contrato**"). Era falso. Corregido en D-157.
+
+### Corrección 2 — un bug de monotonía que nadie había detectado
+
+`record-mileage.handler.ts:28-32` compara contra:
+
+```ts
+orderBy: { recordedAt: 'desc' }, take: 1   // el ÚLTIMO por fecha
+```
+
+**No contra `max(mileage)`.** Con la secuencia `100 → 200 → 150`, el último por fecha es `150`, así que `175` se acepta — aunque el máximo histórico sea `200`.
+
+**El odómetro puede retroceder respecto del máximo histórico.** La monotonía existe (Security Review #14, P1, línea 25) pero está mal formulada. Corregido en D-150.
+
+Además: no hay `$transaction` entre el `findFirst` (línea 28) y el `create` (línea 43). Dos requests concurrentes leen el mismo valor y ambos pasan.
+
+### Corrección 3 — el preview público era la intención original, nunca implementada
+
+El propio controller lo dice, en el comentario de `vehicles.controller.ts:209-210`:
+
+> *"GET: preview del QR (vehicle + emisor) — no requiere ser owner (el receptor debe poder consultarlo antes de aceptar)."*
+
+**La intención está documentada en el código y el guard nunca se abrió.** No es una funcionalidad nueva: es terminar algo que ya se decidió. Pero hoy el comentario miente. Corregido en D-151.
+
+## D-143 — El VIN es inmutable desde el alta *(corrige D-133)*
+
+**Decisión:** el VIN **no es editable**, ni siquiera por el titular activo. La escritura del VIN ocurre **una sola vez**, en el alta.
+
+**Razón:** D-133 decía que la dealership podía editar "los datos del vehículo **incluido el VIN**". El vector es directo:
+
+1. Se crea el 0km con VIN `X`
+2. Se le cargan 200.000 km de historial falso
+3. Se edita `X` → `Y`
+4. El historial falso queda atribuido a `Y`
+5. `X` queda **libre** → otro vehículo lo reclama
+
+El propio razonamiento de D-133 lo condemnaba: *"el timeline es inmutable una vez que arranca la historia del dueño"* — eso es cierto, pero D-133 limitaba **cuándo** se edita, no **qué**. **Editar un VIN no es editar un atributo: es reescribir la identidad del sujeto del registro.** Un VIN no es un dato; es el sujeto.
+
+**Efecto sobre D-133:** la regla "escritura acotada a titular activo" **se mantiene intacta**. Lo único que cambia es que el VIN sale del conjunto editable.
+
+**Alternativa descartada:** edición libre del VIN mientras se sea titular. Descartada por el vector de contaminación cruzada arriba.
+
+## D-144 — La corrección de VIN es un flujo auditado en el producto, no un ticket de soporte
+
+**Decisión:** si el VIN es incorrecto, se corrige **dentro del producto** mediante un flujo dedicado. No hay ticket de soporte.
+
+Requisitos del flujo:
+- Solo **owner y admin**. El vendedor no cambia identidad.
+- **Motivo obligatorio.**
+- Se registran **valor anterior y nuevo**.
+- Se emite evento y queda visible en el timeline del vehículo.
+- El VIN nuevo debe pasar la validación de D-145.
+
+**Razón:** el argumento decisivo no es la fricción — es la **trazabilidad**. Si el cambio de identidad de un vehículo vive en un ticket de soporte, queda **fuera de la historia del vehículo**, y la historia del vehículo *es* el producto. Un ticket es un canal paralelo donde nadie va a buscar.
+
+Secondary: el ticket escala mal y degrada la operación; además genera un cuello de botella que el flujo auditado no tiene.
+
+**Alternativa descartada:** ticket de soporte (propuesta inicial del PM). Descartada por dejar la identidad del vehículo fuera de su propia historia.
+
+## D-145 — ~~Validación de dígito verificador VIN~~ → REDUCIDA A FORMATO (2026-10-02)
+
+> **SUPERADA el 2026-10-02 antes de implementar.** Ver abajo el texto original y la decisión vigente.
+
+### Texto original (supersedado)
+
+**Decisión original:** se implementa validación del dígito verificador VIN (posición 9), con alcance condicionado: **dura** cuando el prefijo WMI (primeros 3 caracteres) corresponde a un fabricante norteamericano conocido; **suave** en el resto.
+
+**Por qué se cayó:** dos razones, y la segunda es la importante.
+
+1. **El flujo dominante no lo necesita.** En una concesionaria moderna el VIN llega por integración de fábrica, escaneo de código de barras o **copy-paste desde el DMS**. El PM Borne el caso de que el copy-paste hace que el error de tipeo sea raro.
+
+2. **El dígito verificador detecta corrupción, no vehicles equivocados — y el error más probable no es corrupción.** Si el dealer copia la fila equivocada del DMS, pega un VIN **perfectamente válido**: el de otro auto, de otro cliente, del lote anterior. El dígito verificador **pasa**, porque el número está bien; lo que está mal es a qué auto corresponde.
+
+El control que detectaría eso —verificar contra fabricante o NHTSA— es otra cosa y está muy fuera de Gap 1. **El dígito verificador no protege el error más probable; solo detecta `JH12AB` donde iba `JH1ZAB`, y eso ya lo cubre la exclusión de `I/O/Q` de D-132, gratis.**
+
+### Decisión vigente (2026-10-02)
+
+**D-145 se reduce a validación de formato, ya cubierta por D-132.** En Gap 1:
+
+- 17 caracteres, alfanumérico, sin `I`, `O`, `Q` → **ya decidido en D-132**, sin trabajo nuevo
+- **Sin allowlist de WMI.** No hace falta el catálogo.
+- **Sin dígito verificador.**
+- **Sin validación de norma.** Ningún VIN es rechazado por una regla de dígito verificador.
+
+**Efecto sobre la UI:** D-147 pierde el escalón *"Verificado por dígito verificador"*. La tabla de presentación queda con un nivel menos.
+
+**D-147 no se cae.** Sigue diciendo *"Declarado por Concesionaria X"*, que es honesto y era el punto. La señal de confianza que el producto necesita es la **atribución** (D-146), y esa funciona sin validar el VIN.
+
+**Efecto sobre el diseño técnico:** la decisión D-04 del diseño —"validador en backend + espejo con tests idénticos"— existía por la complejidad del algoritmo del dígito verificador (tabla de transliteración, pesos, módulo). **Sin ese algoritmo, D-04 colapsa a una expresión regular**, que es trivial de duplicar. No se necesita paquete compartido ni tercer repo.
+
+**Qué se elimina del alcance de Gap 1:** la allowlist de WMI, el algoritmo de dígito verificador, los tests de vectores publicados, la duplicación backend/frontend con suite compartida, y el riesgo de rechazar un vehículo real.
+
+**Datos, no justificación:** el OCR existe y tiene tasa de error, pero es un flujo de despliegue lento, no del mostrador. No se usa para resucitar el control. Si aparece en métricas, se revisa con datos.
+
+**Alternativa que se mantiene viva:** verificación del VIN contra fabricante o catálogo oficial (NHTSA vPIC). Es la que detectaría el error real. **Fuera de Gap 1** — es una capability de verificación, no una validación de formato, y pertenece a la discusión de `D-060 Trust`, hoy diferido.
+
+## D-146 — `source` derivado por servidor y `recordedByMemberId` obligatorio *(completa D-141)*
+
+**Decisión:**
+1. `source` **se deriva del contexto activo en el servidor**. El cliente no lo elige.
+2. `recordedByMemberId` **se escribe siempre** que la escritura venga de un contexto organizacional (dealership o workshop).
+
+**Razón:** D-141 se justificó diciendo que extender el odómetro a la dealership *"contradice la distinción de confianza que el producto necesita sostener"* — pero **esa distinción estaba diferida por el propio PM** (`D-060 Trust / nivel de confianza: DIFERIDO`).
+
+El resultado era una **contradicción producto↔producto**: se le daba a una contraparte con interés comercial en el precio el poder de escribir el campo de integridad crítico, sin ninguna capa de confianza.
+
+Consecuencias concretas del estado actual, verificadas:
+- `RecordMileageDto.source` es `@IsEnum(MileageSource)` → el cliente puede declarar `inspection` o `system` sin serlo.
+- `recordedByMemberId` existe en el schema desde el diseño de consignación organizacional (`schema.prisma:1241`) y **el handler nunca lo escribe** (`record-mileage.handler.ts:46-51`).
+- `vehicle-detail-flow.md:179` ya lo reconocía: *"`recordedByMemberId` preparado pero sin ruta con contexto de taller"*. La infraestructura preveía la atribución desde el diseño y nunca se conectó.
+
+**`MileageSource` NO requiere cambios:** ya incluye `dealership` (`schema.prisma:85`).
+
+## D-147 — La UI nunca renderiza la ausencia de registro como `0 km`
+
+**Decisión:** la ausencia de registro y el cero son estados distintos y se muestran distintos:
+
+| Estado | Presentación |
+|---|---|
+| Sin `VehicleMileage` | **"Sin kilometraje registrado"** — *"Nadie registró el odómetro de este vehículo todavía."* |
+| `{ mileage: 0 }` de dealership | **"0 km"** + *"Declarado por Concesionaria X."* |
+| `{ mileage: 85000 }` de tercero | **"85.000 km"** + *"Registrado por Taller Y."* |
+
+**Tabla reducida el 2026-10-02** junto con D-145: el escalón *"Verificado por dígito verificador"* se elimina. **La atribución queda como única señal, y es suficiente** — era el punto de esta decisión desde el principio.
+
+**Razón:** el producto **no sabe** que un auto tiene 0 km hasta que alguien lo registra. Afirmar 0 sin registro es **inventar un dato**, y esa es exactamente la clase de mentira que destruye la confianza que el producto promete.
+
+**Encuadre de producto:** no existe "un odómetro confiable" — existe **una serie de lecturas con atribución**. Un número aislado no es confiable ni no confiable; el consumidor juzga mirando la serie y ve el patrón. El producto no necesita decidir: necesita darle los datos para decidir. Eso es coherente con "el vehículo es el centro" y es más fuerte que cualquier verificador.
+
+## D-148 — El kilometraje inicial es obligatorio en el alta
+
+**Decisión:** en el alta de vehículo por dealership, el kilometraje es **campo obligatorio**.
+
+**Razón:** el odómetro es el primer dato de la historia, y la historia arranca en 0 km. Sin lectura inicial, el vehículo entra con su tramo más importante —el de fábrica y traslado— sin registrar. La obligatoriedad no es burocracia: es que **D-147 no es verificable sin un primer registro.**
+
+**Consecuencia:** se elimina la necesidad de heurísticas de plausibilidad contra año de fabricación. Con lectura obligatoria en el ingreso y atribución por lectura (D-146), la plausibilidad no es necesaria en Gap 1. Si aparece más adelante, será **advertencia, no bloqueo** — bloquear rompe usados de bajo kilometraje e importados legítimos.
+
+## D-149 — Matriz de roles: owner, admin y seller equivalentes en Gap 1
+
+**Decisión:** los tres roles del sistema reciben los mismos permisos de Gap 1:
+
+| Permiso | owner | admin | seller |
+|---|---|---|---|
+| `dealership.vehicle.create` | ✅ | ✅ | ✅ |
+| `dealership.vehicle.edit` | ✅ | ✅ | ✅ |
+| `dealership.mileage.record` | ✅ | ✅ | ✅ |
+
+**Razón:** revisión del PM sobre la matriz original, que excluía a `seller`. El argumento operativo es decisivo: **el vendedor es quien está con el dueño nuevo en el mostrador.** Si aparece una corrección ahí, un 403 en ese momento rompe el journey de transferencia.
+
+Además, con el VIN inmutable (D-143) laxes la definición de "editar": quedan patente, color, año, notas y kilometraje.
+
+**Encuadre honesto:** si los tres roles tienen todo, la matriz **no discrimina**. Y está bien para Gap 1. El control real **no es el rol**: es la regla técnica de D-133 — la escritura muere con la transferencia. Un vendedor puede editar hoy un auto que mañana ya no le pertenece. **El rol no protege eso; la titularidad sí.** La diferenciación real para concesionarias grandes viene con roles custom, ya diferidos por `D-103` a post-MVP.
+
+**Requisito que no se va solo:** los permisos nuevos deben entrar también en la lista de lectura de `assertDealershipVehicleRead` (`vehicle-access.service.ts:229-233`, hoy hardcodeada). Si no, un vendedor crea un vehículo y **no puede verlo**.
+
+## D-150 — La monotonía del odómetro se mide contra el máximo histórico
+
+**Decisión:** la validación de no-regresión compara contra **`max(mileage)`**, no contra el último registro por fecha. Verificación y escritura ocurren **en la misma transacción**.
+
+**Razón:** el check actual (`record-mileage.handler.ts:28-32`) usa `orderBy: { recordedAt: 'desc' }, take: 1`. Con la secuencia `100 → 200 → 150`, el último por fecha es `150` y `175` se acepta, aunque el máximo histórico sea `200`. **El odómetro puede retroceder respecto del máximo.** La regla existe pero está mal formulada.
+
+Sin `$transaction`, dos escrituras concurrentes leen el mismo valor y ambas pasan.
+
+**Costo:** un `aggregate({ _max })` o un índice parcial en lugar de un `findFirst` ordenado. Trivial.
+
+## D-151 — El preview del QR de venta es público *(habilita D-130)*
+
+**Decisión:** `GET /vehicles/transfer/qr/:token` se expone como **público**, sin `JwtAuthGuard`, manteniendo el rate limit existente (`10 req/min`, `vehicles.controller.ts:214`).
+
+**Razón:** sin esto, **D-130 no existe**. Verificado: `vehicles.controller.ts:102` aplica `@UseGuards(JwtAuthGuard, ContextGuard)` a **nivel de clase**, y no hay ningún `@Public()` en el controller. El comprador anónimo que escanea el QR en el mostrador recibe un 401 y la UI redirige a `/login` antes de consultar.
+
+El propio código documenta que esto **no era la intención**: el comentario de `vehicles.controller.ts:209-210` dice *"no requiere ser owner (el receptor debe poder consultarlo antes de aceptar)"*. **La intención estaba escrita; el guard nunca se abrió.**
+
+**Alcance de la exposición:** sin VIN, sin datos personales, sin `ownerships`. El token es un hex de 32 caracteres y ya está rate-limited.
+
+**Alcance del cambio:** además del guard, hay que corregir el **comentario del controller**, que hoy describe un comportamiento que el código no tiene.
+
+## D-152 — `next` se valida por allowlist, no por blacklist
+
+**Decisión:** la validación del parámetro `next` — en login y en el deep link del registro — pasa a **allowlist de rutas internas**. Se descarta todo lo que no sea una ruta relativa conocida.
+
+**Razón:** Security y Frontend detectaron independientemente que la blacklist actual es insuficiente. Los dos convergen en la misma conclusión y en el mismo riesgo: `next` **transporta el token del QR**, así que una redirección a un host externo filtra un token bearer hacia un atacante.
+
+**Riesgo real y calibrado:** no es robo de sesión — las cookies son host-only HttpOnly en `vercel.app` y no viajan cross-site. Es **phishing post-autenticación**: el usuario se autentica legítimamente y es redirigido a una copia hostil del login.
+
+**Alcance:** es una corrección de seguridad pequeña que no pertenece a la feature de 0km, pero está **en el camino crítico del QR** y no puede quedar para después.
+
+## D-153 — D-131 se deriva del estado existente; no se persiste *(revisa D-131)*
+
+**Decisión:** "venta pendiente de activación" **no es una entidad persistente**. Se deriva del estado que ya existe.
+
+**Razón:** Frontend señaló que un estado persistente requiere tabla nueva, migración yDatabase. Pero el estado real ya está implícito: **si el QR expira sin consumirse, no hay transferencia y la titularidad sigue en la dealership.** Eso *es* el estado. La dealership lo ve y regenera el QR.
+
+**Encuadre honesto:** lo que el sistema **no** sabe es si el comprador se registró y no terminó, o nunca se registró. Esa distinción no cambia quién es el dueño y no vale una migración en Gap 1.
+
+Si en el futuro UX quiere tracking más rico, es follow-up.
+
+## D-154 — 409 específico de VIN, con rate limit en el alta
+
+**Decisión:** el `409` que distingue "ya existe un vehículo con esa patente" de "ya existe con ese VIN" **se mantiene**, por actionabilidad para el dealer legítimo. Se agrega rate limiting en `POST /vehicles`.
+
+**Razón:** con el `409` específico, cualquier cuenta recién creada puede iterar VINs contra el alta y leer `409` vs `201` — un **oráculo de inventario**. El rate limit vuelve la enumeración impracticable sin degradar el mensaje.
+
+**Parámetro propuesto:** `10 por hora` por identidad. Un dealer registra 5–20 vehículos por día; 10/hora no lo afecta.
+
+**Pendiente para Tech Lead:** el límite exacto debe expresarse con el mecanismo de throttling ya presente en el proyecto (`@Throttle`), no con un contador propio.
+
+## D-155 — Índice único parcial sobre el ownership primario activo
+
+**Decisión:** un índice único parcial:
+
+```sql
+CREATE UNIQUE INDEX vehicle_ownerships_one_active_primary
+  ON vehicle_ownerships (vehicle_id)
+  WHERE ends_at IS NULL AND type <> 'co_owner';
+```
+
+más ordenamiento determinista en toda lectura de ownership activo.
+
+> **CORREGIDO (2026-10-02).** El texto original decía `ended_at` — **columna que no existe**. La columna real es `ends_at`. Error del PM, detectado por Database. El diseño técnico siempre dijo bien. Si alguien hubiera implementado desde este texto, la migración fallaba.
+
+> **CORREGIDO (2026-10-02).** El primer borrador de esta versión decía `AND type = 'owner'`. **Dejaba el hueco exacto sin cubrir:** el ownership de la concesionaria es `type = 'company'` (D-128), y el duplicado que Gap 1 va a crear es justamente de company. Error del PM.
+
+**Razón:** la unicidad "un vehículo, un titular primario activo" hoy **no es una invariante de base de datos**. El índice actual (`vehicle_ownerships_dealership_id_ends_at_idx`) no es único, y `generate-consignment-qr.handler.ts:254` lee el ownership activo con `take: 1` **sin `orderBy`** → la fila elegida es arbitraria. La autorización existente ya es no determinista.
+
+**Impacto:** esto **rompe la afirmación de "cero migraciones"** de D-142. Se acepta: la invariante es necesaria y ya existe un precedente de CHECK en la migración `20260918000002_add_organizational_owner`.
+
+## D-155-bis — `co_owner` queda habilitado, no excluido
+
+**Decisión:** el índice excluye `co_owner` del predicado. **No se cierra la co-titularidad.**
+
+**Razón:** fue decisión del PM (2026-10-02) sobre la recomendación de Database. Dos personas con un auto a nombre de ambos es un caso real y no exótico. Cerrar `co_owner` —drop de índice con datos encima, más decidir qué pasa con un enum declarado— es una decisión mucho más grande que su apariencia.
+
+**La alternativa:** un índice sobre `WHERE ends_at IS NULL AND type = 'owner'` era la opción que Database puso en la mesa. **Se descarta:** no cubre `company`, que es el tipo que Gap 1 va a crear.
+
+**Estado de `co_owner`:** declarado en el enum, **0 usos en `src/`, 0 filas.** El índice no lo activa ni lo bloquea — simplemente lo deja vivo para cuando se implemente. Si nunca se implementa, su existencia es indiferente para este índice.
+
+**Pendiente Database:** decidir si `co_owner` queda o se declara fuera de alcance en algún momento. **No bloquea la migración** — el índice no lo toca.
+
+**Reporte de integridad (2026-10-02):**
+
+| Veredicto | Resultado |
+|---|---|
+| Duplicados que bloquean la migración | **0** — GO |
+| CHECK XOR y `company` | **`convalidated = true`** — garantía real de PostgreSQL |
+| Huérfanos / intervalos solapados / `ends_at <= starts_at` | **0** |
+| Filas que el índice rechazaría | **0** |
+
+**Salvedad metodológica, es la que más importa:** 36 de las 39 filas son del seed, que **construye la invariante a propósito** (`prisma/seed.ts:2620` — *"24 activas (1 por vehículo, endsAt null = INVARIANTE)"*). **El reporte mide que el seed es consistente, no que el sistema lo sea.** Solo 3 filas las escribió el flujo real, en 2 transferencias completadas, y ambas cierran antes de abrir.
+
+**Secuencia corregida:** el fix de `orderBy` **va ANTES de la migración**, no después. Si la migración corre primero, hay una ventana donde la DB ya rechaza el duplicado pero la lectura sigue arbitraria.
+
+**Alcance real del fix de determinismo: 6 sitios en 4 archivos, no los 2 que dice el diseño técnico:**
+
+| Archivo | Líneas |
+|---|---|
+| `generate-consignment-qr.handler.ts` | 172, 254 |
+| `generate-transfer-qr.handler.ts` | 29 |
+| `transfer-vehicle.handler.ts` | 56 |
+| `revoke-transfer-qr.handler.ts` | 31, 103 |
+
+**D-154 (rate limit) no aplica al reporte de duplicados, pero sí afecta a esto:** los 4 comandos son los que **escriben** ownerships. Es el mismo conjunto que tiene que respetar el orden close-then-open.
+
+## D-155-ter — No existe "producción"; ambas bases son de prueba
+
+**Decisión:** no hay base de producción real. La instancia de Render es un despliegue de **pruebas**. Se aplican los mismos reporte y migración a **ambas**: la de Render y la local de Docker.
+
+**Razón:** confirmado por el PM (2026-10-02). El "go" del reporte de Database cubría **solo la local** (`postgres-followapp`, `followapp`, PostgreSQL 18.4). El alcance era acotado porque solo había `DATABASE_URL` de desarrollo.
+
+**Consecuencia:** la advertencia sobre "prod no verificada" queda **sin efecto** — no hay prod por verificar. Pero **el reporte de Render sigue sin correr**: es una instancia distinta con posiblemente más filas escritas por la aplicación, no por el seed.
+
+**Condición para migrar:** el reporte de duplicados debe dar **cero en ambas instancias**. Se migran juntas o con el mismo criterio.
+
+**Nota sobre `CONCURRENTLY`:** el diseño técnico lo justifica citando documentación del `db migrate` de **Prisma 8**. Este proyecto corre **Prisma 6.19.3** con el pipeline clásico `prisma/migrations/*/migration.sql`. Ninguna de las 21 migraciones existentes usa `CONCURRENTLY` ni lleva `BEGIN`/`COMMIT` explícito — **no hay precedente.** Database recomienda `CREATE UNIQUE INDEX` pelado: 39 filas, 96 KB, microsegundos, sin el debate de transacciones. **Verificar contra la versión instalada antes de escribir la línea** — citar documentación de otra versión es exactamente lo que prohíbe `AGENTS.md`.
+
+## D-156 — Auditoría mínima en cambios de identidad y de odómetro
+
+**Decisión:** Gap 1 incluye un registro de auditoría para dos eventos: **corrección de VIN** (D-144) y **escritura de odómetro** (D-146).
+
+**Razón:** **hoy no existe audit log en el sistema.** Sin él, D-143 y D-144 no son verificables a posteriori: no se puede responder *"¿quién cambió el VIN de X a Y y por qué?"*. Una regla de inmutabilidad sin evidencia de cumplimiento es una regla que no existe.
+
+**Alcance acotado:** solo estos dos eventos. Un audit log general es follow-up.
+
+**Pendiente para Tech Lead:** la forma concreta (tabla, o columnas de provenance en la entidad) es decisión técnica.
+
+## D-157 — `GET /vehicles/:id` expone `mileages` en el response
+
+**Decisión:** `VehicleResponseDto` incluye `mileages` (últimas 5, ordenadas por `recordedAt desc`, tal como ya las consulta el handler).
+
+**Razón:** el handler **ya trae los datos** (`get-vehicle.handler.ts:55`) y el DTO **los descarta** (`vehicle-response.dto.ts:51-73`). Es una query pagada que se tira a la basura.
+
+Esto **corrige el impacto declarado en D-141**, que afirmaba que el contrato ya exponía las lecturas y "no requería cambiar el contrato". **Era falso.**
+
+Sin esto, **D-147 no es implementable**: la UI no puede distinguir "sin registro" de "0 km" si nunca recibe las lecturas.
+
+## D-142 revisado — Alcance de cierre tras la revisión
+
+Gap 1 **ya no es "cero migraciones" ni "~3 días"**.
+
+**Bloqueantes de producto resueltos (antes de implementar):**
+
+| # | Ítem | Origen |
+|---|---|---|
+| 1 | Alta en contexto DEALERSHIP + `OwnershipType.company` + km inicial obligatorio | Original + D-148 |
+| 2 | Matriz de roles + seed + permisos nuevos en la lista de lectura | D-149 |
+| 3 | `default: 403` en el switch de contexto — nunca caer en la rama PERSONAL | Security (fail-open) |
+| 4 | Kilometraje en DTO **dealer-only**, no en el compartido | Security |
+| 5 | **VIN inmutable** + flujo de corrección auditado | D-143, D-144 |
+| 6 | Validación de dígito verificador condicional por WMI | D-145 |
+| 7 | `source` derivado + `recordedByMemberId` | D-146 |
+| 8 | Monotonía contra `max()` en transacción | D-150 |
+| 9 | Índice único parcial de ownership activo (**requiere migración**) | D-155 |
+| 10 | Rate limit en `POST /vehicles` | D-154 |
+| 11 | **`GET :id` expone `mileages`** | D-157 |
+| 12 | **Preview del QR público** | D-151 |
+| 13 | `next` por allowlist | D-152 |
+| 14 | Auditoría mínima VIN + odómetro | D-156 |
+
+**Correcciones honestas al registro:**
+- D-142 decía "cero migraciones" → **incorrecto**, D-155 requiere una.
+- D-141 decía "no requiere cambiar el contrato" → **incorrecto**, D-157 dice lo contrario.
+- D-133 autorizaba editar el VIN → **incorrecto**, revertido por D-143.
+
+**Estimación:** Gap 1 pasa de ~3 a **~6–7 días**. Los tres ítems que más la mueven son la migración con posible limpieza de datos (D-155), la auditoría mínima (D-156) y el preview público (D-151).
+
+## Veredicto de Security, aceptado
+
+Security conditioned its approval on a PM ruling: *"If the PM decides the odometer is self-declared without any trust distinction and the VIN is editable, the feature can ship — but then the README should say the mileage is seller-declared, because today the UI communicates the opposite."*
+
+**Ese escenario no es aceptable.** D-143, D-146, D-147 y D-157 existen para que la UI comunique exactamente lo que el producto es.
+
+## Estado
+
+- **ACEPTADAS (2026-10-02):** D-143..D-157, más la revisión de D-131, D-133, D-141 y D-142.
+- **Correcciones registradas:** D-133 (VIN), D-131 (derivado, no persistido), D-141 (capa de confianza), D-142 (alcance y migraciones).
+- **Sin implementar.** Nada de esta sección tiene código.
+- **Verificado contra código,** no contra reportes de subagentes.
+
+## Pendientes que esta revisión abre
+
+- **Producto:** el nombre de la señal de atribución en la UI. "Declarado por" es provisional.
+- **Producto/Comunicación:** el marketing actual llama al producto **"confiable"** como si la verificación estuviera resuelta. Con D-147 la UI será honesta; el mensaje de marca tiene que alinearse.
+- **Arquitectura:** forma del registro de auditoría de D-156.
+- **Database:** confirmar si datos actuales violarían el índice parcial de D-155.
+- **Security:** revalidar D-151 (preview público) y D-152 (`next`) — ambos exponen superficie y se agregaron después de la revisión.
+- **Frontend:** la distinción "sin registro" vs "0 km" de D-147 tiene que llegar hasta el panel de exhibición, no solo al detalle.
+- **Fuera de Gap 1:** soft-delete de vehículos. `delete-vehicle.handler.ts:12` menciona ownerships en el comentario, pero **no está verificado** si realmente los chequea; con la FK `RESTRICT` un 0km con ownership podría devolver 500. Contradicción entre comentario y reporte — a verificar antes de tocar.
+
+# 40. Diseño técnico de Gap 1 (2026-10-02): cerrado, sin implementar
+
+> Documento: `docs/gap-1-0km-dealer-registration-design.md` (754 líneas). **Ningún archivo de `src/` cambió, ni `schema.prisma`, ni migraciones.**
+
+## Corrección: D-146 es imposible con el schema actual
+
+En la sección 39 afirmé que `recordedByMemberId → WorkshopMember` confirmaba que *"el camino de atribución ya existe: falta cablearlo"*. **Era falso, y el error es del PM.**
+
+`WorkshopMember` (`schema.prisma:532`) y `DealershipMember` (`schema.prisma:752`) son **dos modelos distintos** en dos tablas distintas. El contexto DEALERSHIP entrega un `DealershipMember.id`, que **no puede escribirse** en un campo que referencia `WorkshopMember`. D-146 no es "cablear un campo huérfano": **requiere cambiar el schema.**
+
+**Peor: el schema induce al error.** El comentario de `DealershipMember` (líneas 779-780) dice:
+
+> *"QRs de consignación consumidos por este miembro en representación de la concesionaria (patrón `recordedByMemberId` de VehicleMileage)"*
+
+El schema **señala seguir un patrón que está cableado al modelo equivocado**. Quien implemente siguiendo el comentario que él mismo indica va a producir una FK inválida.
+
+**D-146 queda upgraded:** pasa de "escribir un campo que existe" a **cambio de schema con migración**.
+
+## El precedente correcto ya existe
+
+`VehicleTransferQr` resuelve exactamente el mismo problema y **sí está bien cableado**: `createdByUserId` (persona) + `createdByDealershipId` (contexto) + `consumedByMemberId` → **`DealershipMember`**.
+
+**Decisión D-01:** replicar ese patrón en `VehicleMileage` en lugar de inventar una FK polimórfica sin integridad referencial. El modelo a seguir ya está verificado en producción por la maquinaria de QR.
+
+## El frontend ya está escrito para D-147 — y roto en silencio
+
+El detalle de vehículo **ya lee `vehicle.mileages`** y **ya distingue "sin registros" de "0 km"**. Pero el backend nunca manda el campo (D-157). Netamente, la tarjeta muestra **siempre** *"Todavía no hay registros de kilometraje."*
+
+**Consecuencia:** D-157 no es una funcionalidad nueva — es **habilitar código que ya existe y nunca funcionó.** Eso de-risca D-147 backend y confirma que el razonamiento de la sección 39 era correcto.
+
+## Decisiones técnicas cerradas (12)
+
+| | Decisión | Alternativa descartada |
+|---|---|---|
+| D-01 | Réplica del patrón `VehicleTransferQr` para atribución | FK polimórfica sin integridad referencial |
+| D-02 | Auditoría append-only **en la misma transacción** | Listener `@OnEvent` — EventEmitter2 es in-process y no durable |
+| D-03 | `vin` sale de `PATCH`; corrección por comando dedicado | Permiso condicional dentro de `PATCH` |
+| D-04 | Validador VIN en backend + espejo con **tests idénticos** | Paquete npm compartido — exige un tercer repo y su pipeline |
+| D-05 | `source` derivado del contexto | Ignorar el `source` del cliente |
+| D-06 | Lock de fila `SELECT ... FOR UPDATE` sobre `vehicles` | Serializable + retry P-2034 |
+| D-07 | **Sin campo "0km": es derivable** | `isZeroKm` — inventaría un concepto |
+| D-08 | Índice parcial único + remediación **previa** | Corregir duplicados dentro de la migración |
+| D-09 | Controller público separado | Metadata `@Public()` global |
+| D-10 | Throttler set nombrado con `getTracker` | Contador propio en BD |
+| D-11 | `mileages` + `mileageCount` + `recordedBy` normalizado | Exponer FKs crudas |
+| D-12 | `capabilities` en `GET /:id` | Derivar permisos en la UI |
+
+**D-07 es una decisión de producto disfrazada de técnica y me parece la correcta:** un vehículo es 0 km si su máximo de kilometraje registrado es 0. Un campo `isZeroKm` almacenado puede desincronizarse del odómetro y volver a mentir por la puerta de atrás. Se deriva, no se guarda.
+
+**D-02 confirma una restricción que la sección 39 ya establecía:** EventEmitter2 no es durable. Si la auditoría fuera un listener, un reinicio perdería el registro. Va en la misma transacción.
+
+## Tres breaking changes — requieren release coordinado
+
+| # | Cambio | Impacto |
+|---|---|---|
+| 1 | `vin` sale de `PATCH /vehicles/:id` | El frontend que hoy lo mande **rompe** |
+| 2 | `source` sale de `POST /:id/mileage` | El frontend que hoy lo mande **rompe** |
+| 3 | `initialMileage` obligatorio en el alta de dealership | El frontend que no lo mande **rompe** |
+
+**Consecuencia de producto:** backend y frontend **no pueden desplegarse independientemente** en esta feature. Es un release coordinado. Los tres cambios son deliberados —salen de D-143, D-146 y D-148— pero el costo de coordinación es real y hay que asumirlo.
+
+## Décisión de producto abierta: ~~¿allowlist de WMI?~~ → CERRADA (2026-10-02)
+
+> **RESUELTA: D-145 se reduce a formato.** El PM descartó la validación de dígito verificador. Ver D-145.
+
+El diseño proponía por defecto **validar estructura + dígito verificador sin allowlist de WMI**, para no bloquear la implementación.
+
+**Ese default era incorrecto y por dos razones**, ambas discutidas con el PM:
+
+1. Sin la allowlist no hay forma de saber qué norma aplica, y aplicarla a la equivocada **rechaza un vehículo real**.
+2. Más profundo: **el dígito verificador no detecta el error más probable.** Un VIN equivocado pero perfectamente válido — la fila equivocada del DMS — **pasa la validación.**
+
+**Impacto en el diseño técnico:** la decisión **D-04** del documento —"validador en backend + espejo con tests idénticos"— existía por la complejidad del algoritmo (tabla de transliteración, pesos, módulo). **Sin ese algoritmo, D-04 colapsa a una expresión regular.** Se elimina la necesidad de paquete compartido y de suite de tests replicada.
+
+**Lo que Gap 1 valida del VIN:** únicamente lo que D-132 ya decidió — normalización a uppercase sin espacios ni guiones, rechazo de `I`/`O`/`Q`, y unicidad ya existente en el schema.
+
+**Lo que Gap 1 no hace:** ninguna regla de dígito verificador, ninguna allowlist de WMI, ningún rechazo de VIN por norma. **Ningún vehículo es bloqueado por una regla de verificación.**
+
+**Revisitarla cuando:** aparezca un flujo de carga masiva, o el DMS demonstrablemente no sea fuente confiable, o `D-060 Trust` sereative. Con datos, no por anticipación.
+
+## Riesgos que requieren atención
+
+- **R-01 (Alta):** el índice único de ownership **falla si hay duplicados existentes**. La migración queda **bloqueada** hasta que un reporte dé cero. **No se corrigen automáticamente** — es el mismo criterio que D-138 fijó para los duplicados de email.
+- **R-04 (Media):** si `ThrottlerGuard` corre antes de `JwtAuthGuard`, el límite por identidad **cae silenciosamente a IP**. El diseño exige orden explícito + test. Si se invierte, el rate limit protege contra bots, no contra cuentas.
+- **R-10:** el soft-delete de un 0 km con ownership y kilometraje queda como **no verificado**. Solo consta la lectura del código, sin afirmar resultado.
+
+## Revisiones requeridas antes de implementar
+
+- **Database** — migración A (índice parcial) y R-01.
+- **Security** — D-01, D-09, D-10, D-12. Y revalidar D-151 y D-152, que se agregaron **después** de la revisión original.
+- **QA** — R-01, R-10.
+- **Frontend** — los tres breaking changes y la undistinción "sin registro" vs "0 km" ya implementada.
+
+## Conflicto detectado
+
+**D-043** tiene un test que limpia `vin` con `null`. Ese test debe reorientarse bajo D-143. Señalado, no tocado.
+
+## Estado
+
+- Diseño técnico: **cerrado**, con una revisión de D-04 requerida (ver abajo).
+- Decisión de producto abierta: **ninguna**. La única —la allowlist de WMI— se cerró reduciendo D-145.
+- Código: **cero**. Ninguna migración aplicada.
+- Estimación revisada: Gap 1 **~6–7 días**, con D-146 upgraded a migración y release coordinado.
+
+## Revisión pendiente al documento de diseño
+
+`docs/gap-1-0km-dealer-registration-design.md` fue escrito contra D-145 original. **Un punto queda desactualizado:**
+
+- **D-04** (validador VIN en backend + espejo con tests idénticos): sin el algoritmo de dígito verificador, esto **colapsa a una expresión regular.** No se necesita paquete compartido ni suite replicada. Revisar si el documento propone un paquete o una estructura de archivos que ya no hacen falta.
+
+El resto del documento no depende de D-145 y sigue vigente.
+
+---
+
+# 41. Registro (2026-10-09): Decisión de arquitectura pendiente — filtrado de soft-delete (D-TL-21)
+
+## D-TL-21 — Política de filtrado de soft-delete (`deletedAt`)
+
+**Estado:** `PENDING`
+**Tipo:** Architecture / Security / Data
+**Prioridad:** P1
+
+> **DECISIÓN DE ARQUITECTURA PENDIENTE.** Los agentes **NO** deben implementarla silenciosamente (§2 y §8.2; AGENTS.md §4). Requiere aprobación del Tech Lead y definición del PM en los puntos funcionales marcados abajo.
+
+### Problema
+
+El esquema usa soft-delete (`deletedAt DateTime?`) en entidades clave (`Vehicle`, `schema.prisma:700`; `Dealership`, `schema.prisma:370`; también `User` `:25` y `Workshop` `:205`), pero no existe una política de filtrado consistente: cada query decide de forma ad-hoc si excluye o no los registros retirados. Resultado: comportamiento divergente entre endpoints para la misma entidad y riesgo de exponer u operar datos que el producto considera retirados.
+
+### Contexto
+
+#### Qué sabemos (evidencia verificada)
+
+- No hay middleware ni extensión global de Prisma: `src/common/database/prisma.service.ts` extiende `PrismaClient` sin `$use` ni `$extends`.
+- **SÍ filtran `deletedAt: null`:** `src/modules/dashboard/queries/super-admin-stats.handler.ts:23-31`; los `wizard-validation.handler.ts` de `users`, `workshops` y `dealerships`.
+- **NO filtran `deletedAt`:** `src/modules/vehicles/queries/list-vehicles/list-vehicles.handler.ts:52-79` y `src/modules/dealerships/queries/get-dealership-vehicles/get-dealership-vehicles.handler.ts:24-46`.
+- ADR-005 T3 (`docs/ADR/ADR-005--Vehicle Care Lifecycle.md:842-897`) fijó el principio —retiro con `deletedAt` y FKs `RESTRICT` para historia— pero **no** la regla de lectura.
+
+#### Qué no sabemos
+
+- Qué endpoints DEBEN mostrar retirados (auditoría/histórico/timeline, reintento de alta, validación de unicidad).
+- Si el retiro de `Vehicle` es reversible y cuál es la semántica de respuesta (`404` vs `410` vs listar con marca).
+- Si aplica a `Dealership` / `Workshop` / `User` con la misma regla o **por entidad**.
+- Si se requiere un escape hatch explícito (`includeDeleted`) auditable.
+
+### Opciones
+
+#### Opción 1 — Filtros explícitos consistentes por query/repository
+
+- **Ventajas:** cero infraestructura, simple, control por caso, testeable.
+- **Desventajas:** fácil de olvidar, repetitivo.
+- **Riesgos:** IDOR/exposición si se omite; inconsistencia list/detail/history/patch.
+
+#### Opción 2 — Extensión global de Prisma Client / middleware soft-delete
+
+Inyectar `deletedAt: null` vía `$extends`, con opt-out.
+
+- **Ventajas:** enforcement central.
+- **Desventajas:** nuevo patrón (AGENTS.md §6 exige decisión explícita); complica `findUnique`/`update`/`include`; rompe queries que necesitan ver borrados (p.ej. `wizard-validation`); cambio transversal silencioso.
+
+#### Opción 3 — Reglas en DB (vistas / índices parciales / RLS)
+
+- **Ventajas:** invariante fuerte en el motor (precedente D-079).
+- **Desventajas:** Prisma no modela vistas fácilmente; RLS requiere sesión por request; migración compleja; bypass explícito para historia.
+
+#### Opción 4 — Híbrido
+
+Helper/repositorio de lectura con filtro por defecto + `includeDeleted` explícito y auditoría de call sites.
+
+### Recomendación preliminar (sujeta a aprobación)
+
+- Adoptar la **Opción 1** como regla obligatoria para listado/detalle de `Vehicle` (y luego evaluar `Dealership` / `Workshop` / `User` **por entidad**).
+- **NO** introducir extensión global en el MVP (AGENTS.md §6).
+- Reservar la **Opción 3** para performance/enforcement si aparece una necesidad real.
+- Excepciones explícitas y documentadas: auditoría/histórico/timeline y `wizard-validation`.
+
+### Impacto
+
+Handlers de lectura de `Vehicle` (`list-vehicles`, `get-dealership-vehicles`, `get-vehicle`, búsqueda, history); contratos API (un retirado podría desaparecer del listado); tests de regresión; definición de producto.
+
+### Información necesaria para decidir
+
+- **Producto** (**DECISIÓN DE PRODUCTO PENDIENTE**): visibilidad de retirados, reactivación, `404`/`410`.
+- **Alcance:** solo `Vehicle` o más entidades.
+- **Lista cerrada** de "casos que ven borrados".
+- Suficiencia de índices sobre `deletedAt`.
+- Aprobación del Tech Lead sobre **no** introducir extensión global.
+
+### Referencias cruzadas (sin duplicar)
+
+- Deuda `findById` no filtra `deletedAt`: §18, ítem 2 (línea 2135).
+- Follow-up sistémico de soft-delete filtering: §19, ítem 1 (línea 2184) y §20, ítem 2 (línea 2248), ambos apuntando a §18 ítem 2.
+- `DELETE /vehicles/:id` → 500 con history: §35 §2, ítem 1 (línea 3832), que remite a ADR-005.
+- R-10, soft-delete de 0 km: §39 (línea 4720) y §40 (línea 4806).
+- Principio de lifecycle por entidad, sin soft-delete universal: ADR-005 T3 (`docs/ADR/ADR-005--Vehicle Care Lifecycle.md:842-897`).
