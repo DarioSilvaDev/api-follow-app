@@ -14,7 +14,10 @@ async function bootstrap() {
       logLevels: ['error', 'log'],
     }),
     cors: {
-      origin: envs.CORS_ORIGIN.split(',').map((o) => o.trim()),
+      origin:
+        envs.NODE_ENV === 'production'
+          ? envs.CORS_ORIGIN.split(',').map((o) => o.trim())
+          : true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       credentials: true,
     },

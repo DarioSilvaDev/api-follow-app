@@ -60,18 +60,31 @@ export class StorageR2Service implements StorageService {
           .webp({ quality: 80 })
           .toBuffer();
       } catch (err) {
-        this.logger.warn(`Sharp processing failed, using raw file: ${err}`);
+        this.logger.warn(
+          `Sharp processing failed, using raw file: ${String(err)}`,
+        );
       }
     }
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: buffer,
-        ContentType: this.isImage(file.mimetype) ? 'image/webp' : file.mimetype,
-      }),
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: this.isImage(file.mimetype)
+            ? 'image/webp'
+            : file.mimetype,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to upload object ${file.originalname} to storage: ${String(error)}`,
+      );
+      throw new BadRequestException(
+        'Failed to upload object' + file.originalname + ' to storage',
+      );
+    }
 
     return { key, url: key };
   }
@@ -80,13 +93,19 @@ export class StorageR2Service implements StorageService {
     if (!this.client) {
       throw new BadRequestException('Storage not configured');
     }
-
-    await this.client.send(
-      new DeleteObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-      }),
-    );
+    try {
+      await this.client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to delete object ${key} from storage: ${String(error)}`,
+      );
+      throw new BadRequestException('Failed to delete object from storage');
+    }
   }
 
   async getSignedUrl(

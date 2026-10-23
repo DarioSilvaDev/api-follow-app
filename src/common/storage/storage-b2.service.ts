@@ -3,7 +3,9 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuid } from 'uuid';
 import sharp from 'sharp';
 import { envs } from '../../config/envs';
@@ -87,5 +89,26 @@ export class StorageB2Service implements StorageService {
         Key: key,
       }),
     );
+  }
+
+  /**
+   * getSignedUrl — paridad con StorageR2Service (misma expiración por
+   * defecto: SIGNED_URL_EXPIRES_SECONDS). Sin try/catch: los errores del
+   * SDK se propagan crudos (conservan err.code para el log del caller),
+   * a diferencia del wrapping en BadRequestException de R2.
+   */
+  async getSignedUrl(
+    key: string,
+    expiresIn = envs.SIGNED_URL_EXPIRES_SECONDS,
+  ): Promise<string> {
+    if (!this.client) {
+      throw new BadRequestException('B2 Storage not configured');
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+    });
+    return getSignedUrl(this.client, command, { expiresIn });
   }
 }

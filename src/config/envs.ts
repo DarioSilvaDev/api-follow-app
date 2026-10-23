@@ -38,12 +38,12 @@ interface Ienvs {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET?: string;
   R2_PUBLIC_URL?: string;
-  B2_REGION: string;
-  B2_ENDPOINT?: string;
-  B2_KEY_ID?: string;
-  B2_APP_KEY?: string;
-  B2_BUCKET?: string;
-  B2_PUBLIC_URL?: string;
+  // B2_REGION: string;
+  // B2_ENDPOINT?: string;
+  // B2_KEY_ID?: string;
+  // B2_APP_KEY?: string;
+  // B2_BUCKET?: string;
+  // B2_PUBLIC_URL?: string;
   SIGNED_URL_EXPIRES_SECONDS: number;
   FRONTEND_URL: string;
 }
@@ -78,12 +78,12 @@ const schema = Joi.object({
   R2_SECRET_ACCESS_KEY: Joi.string().required(),
   R2_BUCKET: Joi.string().required(),
   R2_PUBLIC_URL: Joi.string().required(),
-  B2_REGION: Joi.string().required(),
-  B2_ENDPOINT: Joi.string().required(),
-  B2_KEY_ID: Joi.string().required(),
-  B2_APP_KEY: Joi.string().required(),
-  B2_BUCKET: Joi.string().required(),
-  B2_PUBLIC_URL: Joi.string().required(),
+  // B2_REGION: Joi.string().required(),
+  // B2_ENDPOINT: Joi.string().required(),
+  // B2_KEY_ID: Joi.string().required(),
+  // B2_APP_KEY: Joi.string().required(),
+  // B2_BUCKET: Joi.string().required(),
+  // B2_PUBLIC_URL: Joi.string().required(),
   SIGNED_URL_EXPIRES_SECONDS: Joi.number().default(3600),
   FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
 }).unknown(true);
