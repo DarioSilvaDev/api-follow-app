@@ -1,0 +1,30 @@
+-- D-155 — Invariante: un vehículo tiene como máximo UN ownership "primario" activo.
+--
+-- Primario = `type IN ('owner','company')` con `ends_at IS NULL`. Los `co_owner`
+-- quedan FUERA de la invariante a propósito (decisión explícita D-155): un
+-- vehículo puede tener varios co-owners activos simultáneamente.
+--
+-- Predicado: `ends_at IS NULL AND type <> 'co_owner'`
+--   - `ends_at IS NULL` → ownership vigente (no cerrado).
+--   - `type <> 'co_owner'` → excluye copropietarios; cubre 'owner' y 'company'.
+--   - No se usa `type = 'owner'` porque excluiría a las concesionarias ('company'),
+--     que también son titulares primarios.
+--
+-- Esta es la contraparte DB del fix de no-determinismo de lecturas
+-- (`orderBy: { startsAt: 'desc' }` en los handlers que leen/cierran ownerships)
+-- ya aplicado en el código: el código coordina close-then-open en transferencias,
+-- pero esa coordinación por sí sola no garantizaba la invariante ante corridas;
+-- el índice único parcial la enforcea como última línea de integridad.
+--
+-- Migración ADITIVA: no modifica datos, columnas ni constraints existentes.
+-- El índice normal `vehicle_ownerships_vehicle_id_idx` (no único) se conserva;
+-- convive con este índice único parcial.
+--
+-- Precedente D-079: índice único parcial con predicado simple (ver
+-- `20260916000001_add_vehicle_transfer_qr`). Prisma 6 no soporta índices
+-- parciales en schema.prisma, por lo que se define solo acá (no se modela
+-- en el schema; Prisma lo ignora en el diff). Sin CONCURRENTLY: `migrate deploy`
+-- corre la migración en transacción y Prisma 6 no lo soporta en el flujo estándar.
+
+-- CreateIndex
+CREATE UNIQUE INDEX "vehicle_ownerships_one_active_primary" ON "vehicle_ownerships"("vehicle_id") WHERE "ends_at" IS NULL AND "type" <> 'co_owner';

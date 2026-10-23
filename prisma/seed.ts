@@ -122,6 +122,34 @@ const permissions = [
     code: 'workshop.hours.set',
     description: 'Set business hours',
   },
+  {
+    module: 'workshop',
+    resource: 'specialties',
+    action: 'manage',
+    code: 'workshop.specialties.manage',
+    description: 'Manage workshop specialties',
+  },
+  {
+    module: 'workshop',
+    resource: 'roles',
+    action: 'create',
+    code: 'workshop.roles.create',
+    description: 'Create custom workshop roles',
+  },
+  {
+    module: 'workshop',
+    resource: 'roles',
+    action: 'update',
+    code: 'workshop.roles.update',
+    description: 'Update workshop role permissions',
+  },
+  {
+    module: 'workshop',
+    resource: 'roles',
+    action: 'delete',
+    code: 'workshop.roles.delete',
+    description: 'Delete custom workshop roles',
+  },
 
   {
     module: 'dealership',
@@ -178,6 +206,27 @@ const permissions = [
     action: 'return',
     code: 'dealership.vehicle.return',
     description: 'Return a consigned vehicle',
+  },
+  {
+    module: 'dealership',
+    resource: 'vehicle',
+    action: 'create',
+    code: 'dealership.vehicle.create',
+    description: 'Register a vehicle owned by the dealership',
+  },
+  {
+    module: 'dealership',
+    resource: 'vehicle',
+    action: 'edit',
+    code: 'dealership.vehicle.edit',
+    description: 'Edit a vehicle owned by the dealership',
+  },
+  {
+    module: 'dealership',
+    resource: 'mileage',
+    action: 'record',
+    code: 'dealership.mileage.record',
+    description: 'Record mileage on a dealership-owned vehicle',
   },
 
   {
@@ -408,6 +457,20 @@ const permissions = [
   {
     module: 'admin',
     resource: 'workshops',
+    action: 'roles',
+    code: 'admin.workshops.roles',
+    description: 'View and manage workshop roles',
+  },
+  {
+    module: 'admin',
+    resource: 'workshops',
+    action: 'branches',
+    code: 'admin.workshops.branches',
+    description: 'Manage workshop branches and business hours',
+  },
+  {
+    module: 'admin',
+    resource: 'workshops',
     action: 'create',
     code: 'admin.workshops.create',
     description: 'Create workshops (admin onboarding)',
@@ -460,6 +523,34 @@ const permissions = [
     action: 'update',
     code: 'admin.dealerships.update',
     description: 'Edit dealership identity and contact fields',
+  },
+  {
+    module: 'admin',
+    resource: 'specialties',
+    action: 'list',
+    code: 'admin.specialties.list',
+    description: 'List all specialties',
+  },
+  {
+    module: 'admin',
+    resource: 'specialties',
+    action: 'create',
+    code: 'admin.specialties.create',
+    description: 'Create specialties',
+  },
+  {
+    module: 'admin',
+    resource: 'specialties',
+    action: 'update',
+    code: 'admin.specialties.update',
+    description: 'Update specialties',
+  },
+  {
+    module: 'admin',
+    resource: 'specialties',
+    action: 'delete',
+    code: 'admin.specialties.delete',
+    description: 'Delete specialties',
   },
   {
     module: 'admin',
@@ -646,6 +737,12 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
     'admin.workshops.read',
     'admin.workshops.manage',
     'admin.workshops.members',
+    'admin.workshops.roles',
+    'admin.workshops.branches',
+    'admin.specialties.list',
+    'admin.specialties.create',
+    'admin.specialties.update',
+    'admin.specialties.delete',
     'admin.dealerships.create',
     'admin.dealerships.list',
     'admin.dealerships.read',
@@ -687,6 +784,10 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'workshop.update',
     'workshop.branch.create',
     'workshop.hours.set',
+    'workshop.specialties.manage',
+    'workshop.roles.create',
+    'workshop.roles.update',
+    'workshop.roles.delete',
     // appointments
     'appointment.create',
     'appointment.update',
@@ -729,7 +830,12 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'care-episode.list',
     'history.view',
   ],
-  employee: ['appointment.create', 'history.view'],
+  employee: [
+    'appointment.create',
+    'history.view',
+    'appointment.update',
+    'appointment.cancel',
+  ],
 };
 
 /**
@@ -756,6 +862,10 @@ const systemDealershipRolePermissions: Record<string, string[]> = {
     'dealership.vehicle.take',
     'dealership.vehicle.sell',
     'dealership.vehicle.return',
+    // Gap 1 (D-128 / §4.1): alta de stock propio y kilometraje inicial
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     // care episodes / vehicle history
     'care-episode.create',
     'history.view',
@@ -764,6 +874,10 @@ const systemDealershipRolePermissions: Record<string, string[]> = {
     'dealership.update',
     'dealership.members.invite',
     'dealership.vehicle.take',
+    // Gap 1 (D-128 / §4.1)
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     'care-episode.create',
     'history.view',
   ],
@@ -772,6 +886,10 @@ const systemDealershipRolePermissions: Record<string, string[]> = {
     'dealership.vehicle.take',
     'dealership.vehicle.sell',
     'dealership.vehicle.return',
+    // Gap 1 (D-128 / §4.1)
+    'dealership.vehicle.create',
+    'dealership.vehicle.edit',
+    'dealership.mileage.record',
     'care-episode.create',
     'history.view',
   ],
@@ -1872,8 +1990,10 @@ const workshopTaxIds: Record<string, string> = {
 
 async function seedWorkshops() {
   // 20 talleres independientes (w01..w20) + 3 services oficiales de las
-  // concesionarias (nombre nominal; NO hay FK Workshop→Dealership —
-  // DECISIÓN DE ARQUITECTURA PENDIENTE). Cada taller usa emails de miembros
+  // concesionarias. El vínculo taller→concesionaria está RESUELTO: FK nullable
+  // unique en `workshops.dealership_id` (D-TL-1) — los services se vinculan en
+  // `seedDealerships` (bloque serviceLinks), los independientes quedan en NULL.
+  // Cada taller usa emails de miembros
   // EXACTOS (definidos en seedUsers), sin pool reutilizable entre talleres.
   // Talleres independientes (8×4 members, 6×3 members, 6×2 members)
   const workshopsData = [
@@ -2284,6 +2404,32 @@ async function seedDealerships() {
     created++;
   }
 
+  // Vínculo 1:1 Concesionaria ↔ Service Center (D-TL-1 / D-TL-7). Corre SIEMPRE
+  // (fuera del loop de creación, que hace `skip` de dealerships existentes):
+  // cubre dealerships pre-existentes y es idempotente. Si un workshop ya
+  // estuviera vinculado a OTRA dealership, el `unique` de dealership_id lanza
+  // P2002 → el seed falla con ruido (dato corrupto; comportamiento deseado).
+  const serviceLinks = [
+    { dealershipTaxId: '30-71709321-3', workshopTaxId: '30-72010031-5' }, // Giorgi ↔ giorgi-svc
+    { dealershipTaxId: '30-70125584-1', workshopTaxId: '30-72010032-2' }, // Fortecar ↔ fortecarsvc
+    { dealershipTaxId: '30-70042389-5', workshopTaxId: '30-72010033-9' }, // Pesado Castro ↔ castro-svc
+  ];
+
+  for (const link of serviceLinks) {
+    const dealership = await prisma.dealership.findUnique({
+      where: { taxId: link.dealershipTaxId },
+    });
+    const workshop = await prisma.workshop.findUnique({
+      where: { taxId: link.workshopTaxId },
+    });
+    if (dealership && workshop && workshop.dealershipId !== dealership.id) {
+      await prisma.workshop.update({
+        where: { id: workshop.id },
+        data: { dealershipId: dealership.id },
+      });
+    }
+  }
+
   const count = await prisma.dealership.count();
   console.log(`  ✓ ${created} dealerships created (${skipped} skipped) — total ${count}`);
 }
@@ -2401,6 +2547,16 @@ async function findWorkshopMember(workshopTaxId: string, userEmail: string) {
   if (!user) return null;
   return prisma.workshopMember.findUnique({
     where: { workshopId_userId: { workshopId: workshop.id, userId: user.id } },
+  });
+}
+
+// Localiza la membresía de concesionaria de un usuario (D-01). En el dataset
+// cada vendedor pertenece a una sola concesionaria; se ordena por `joinedAt`
+// por determinismo ante un futuro multi-membresía.
+async function findDealershipMember(userId: string) {
+  return prisma.dealershipMember.findFirst({
+    where: { userId },
+    orderBy: { joinedAt: 'asc' },
   });
 }
 
@@ -2769,7 +2925,7 @@ async function seedMileages() {
       const recordedByUser = source === 'owner' || source === 'dealership'
         ? await findUserByEmail(byEmail as string)
         : null;
-      const recordedByMember =
+      const recordedByWorkshopMember =
         source === 'workshop'
           ? await (async () => {
               // El miembro del taller que registra el kilometraje se resuelve
@@ -2779,6 +2935,12 @@ async function seedMileages() {
               const taxId = workshopTaxIds[code];
               return taxId ? findWorkshopMember(taxId, email) : null;
             })()
+          : null;
+      // Contexto concesionaria (D-01): el actor es un DealershipMember; se
+      // deriva desde el usuario y se registra también su concesionaria.
+      const recordedByDealershipMember =
+        source === 'dealership' && recordedByUser
+          ? await findDealershipMember(recordedByUser.id)
           : null;
 
       await prisma.vehicleMileage.upsert({
@@ -2790,7 +2952,9 @@ async function seedMileages() {
           mileage,
           source: source as MileageSource,
           recordedByUserId: recordedByUser?.id ?? null,
-          recordedByMemberId: recordedByMember?.id ?? null,
+          recordedByWorkshopMemberId: recordedByWorkshopMember?.id ?? null,
+          recordedByDealershipId: recordedByDealershipMember?.dealershipId ?? null,
+          recordedByDealershipMemberId: recordedByDealershipMember?.id ?? null,
           recordedAt: new Date(recordedAt),
           createdAt: new Date(recordedAt),
         },
