@@ -10,11 +10,13 @@ import { LookupVehicleHandler } from './queries/lookup-vehicle/lookup-vehicle.ha
 import { ListCareEpisodesHandler } from './queries/list-care-episodes/list-care-episodes.handler';
 import { ListVerificationsHandler } from './queries/list-verifications/list-verifications.handler';
 import { GetCareEpisodeHandler } from './queries/get-care-episode/get-care-episode.handler';
+import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 
 @Module({
   imports: [AuthorizationModule],
   controllers: [CareEpisodesController],
   providers: [
+    createModuleLoggerProvider('Auth'),
     CreateCareEpisodeHandler,
     CreateOwnerCareEpisodeHandler,
     VerifyCareEpisodeHandler,

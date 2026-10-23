@@ -2,7 +2,12 @@
 // — patrón consistente con vehicles.controller.spec.ts / register.handler.spec.ts.
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { AttachCareEpisodeAttachmentsHandler } from './attach-care-episode-attachments.handler';
@@ -15,6 +20,9 @@ import { CareEpisodeAttachmentAddedEvent } from '../../events/care-episode-attac
  * Cubre: 404 sin revelar existencia, 403 source=owner, 409 delivered/
  * cancelled/verified, techo de 15 activos, compensación de blobs si la
  * transacción falla, uploadedByMemberId desde contexto y evento POST-commit.
+ *
+ * Además: fallo del storage externo → 503 (nunca 400 ni 409), log con
+ * clasificación CONFIG/DEPENDENCY, sin compensación y sin escritura en DB.
  */
 describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
   let handler: AttachCareEpisodeAttachmentsHandler;
@@ -24,6 +32,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
   };
   let storageMock: { upload: jest.Mock; delete: jest.Mock };
   let eventEmitterMock: { emit: jest.Mock };
+  let pinoLoggerMock: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
 
   const careEpisodeId = 'ce-1';
   const workshopId = 'w-1';
@@ -46,7 +55,9 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
     };
   }
 
-  function makeCommand(overrides: Partial<AttachCareEpisodeAttachmentsCommand> = {}) {
+  function makeCommand(
+    overrides: Partial<AttachCareEpisodeAttachmentsCommand> = {},
+  ) {
     return new AttachCareEpisodeAttachmentsCommand(
       overrides.careEpisodeId ?? careEpisodeId,
       overrides.workshopId ?? workshopId,
@@ -86,7 +97,9 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
     };
     storageMock = { upload: jest.fn(), delete: jest.fn() };
     eventEmitterMock = { emit: jest.fn() };
+    pinoLoggerMock = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
     handler = new AttachCareEpisodeAttachmentsHandler(
+      pinoLoggerMock as any,
       prismaMock as any,
       storageMock as any,
       eventEmitterMock as unknown as EventEmitter2,
@@ -96,8 +109,8 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
   function mockHappyPath(txMock: ReturnType<typeof makeTxMock>) {
     prismaMock.careEpisode.findFirst.mockResolvedValue(episodeState());
     storageMock.upload.mockResolvedValue({ key: fileKey, url: fileKey });
-    prismaMock.$transaction.mockImplementation(
-      (cb: (tx: unknown) => unknown) => cb(txMock),
+    prismaMock.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+      cb(txMock),
     );
     txMock.$queryRaw.mockResolvedValue([
       {
@@ -153,9 +166,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
     ['cancelled', { status: 'cancelled' }],
     ['verified', { verification: 'verified' }],
   ])('409 cuando el episodio está %s', async (_name, overrides) => {
-    prismaMock.careEpisode.findFirst.mockResolvedValue(
-      episodeState(overrides),
-    );
+    prismaMock.careEpisode.findFirst.mockResolvedValue(episodeState(overrides));
 
     await expect(handler.execute(makeCommand())).rejects.toThrow(
       ConflictException,
@@ -264,9 +275,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
       new Error('db exploded'),
     );
 
-    await expect(handler.execute(makeCommand())).rejects.toThrow(
-      'db exploded',
-    );
+    await expect(handler.execute(makeCommand())).rejects.toThrow('db exploded');
     expect(storageMock.delete).toHaveBeenCalledWith(fileKey);
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });
@@ -279,9 +288,121 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
     );
     storageMock.delete.mockRejectedValue(new Error('storage down'));
 
-    await expect(handler.execute(makeCommand())).rejects.toThrow(
-      'db exploded',
-    );
+    await expect(handler.execute(makeCommand())).rejects.toThrow('db exploded');
     expect(storageMock.delete).toHaveBeenCalledWith(fileKey);
+  });
+
+  // ──────────────────────────────────────────────────────
+  // Fallo del storage externo → 503 (nunca 400 ni 409)
+  // ──────────────────────────────────────────────────────
+
+  /** Espía el Logger privado del handler sin ensuciar el tipo con `any`. */
+  function spyLoggerError() {
+    const logger = (
+      handler as unknown as { logger: { error: (...args: unknown[]) => void } }
+    ).logger;
+    return jest.spyOn(logger, 'error').mockImplementation(() => undefined);
+  }
+
+  it('storage.upload rechaza (fallo transitorio) → 503, log DEPENDENCY, sin delete/fila/evento', async () => {
+    const txMock = makeTxMock();
+    mockHappyPath(txMock); // todo cableado: si el handler llegara a la DB, create correría
+    storageMock.upload.mockRejectedValue(
+      Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:443'), {
+        code: 'ECONNREFUSED',
+      }),
+    );
+    const logSpy = spyLoggerError();
+
+    const err = await handler.execute(makeCommand()).catch((e: unknown) => e);
+
+    // 503 (dependencia externa), NUNCA 409 (no es estado del episodio)
+    // ni 400 (no es un archivo inválido).
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect((err as ServiceUnavailableException).getStatus()).toBe(503);
+    expect(err).not.toBeInstanceOf(ConflictException);
+    expect(err).not.toBeInstanceOf(BadRequestException);
+    // Mensaje genérico: el detalle del storage no se expone al cliente.
+    expect((err as ServiceUnavailableException).message).toBe(
+      'No se pudo subir el archivo; intentá nuevamente',
+    );
+
+    // Log: una sola línea (sin stack adjunto), clasificada y enriquecida.
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy.mock.calls[0]).toHaveLength(1);
+    const logged = logSpy.mock.calls[0][0] as string;
+    expect(logged).toContain('kind=DEPENDENCY');
+    expect(logged).toContain(`careEpisodeId=${careEpisodeId}`);
+    expect(logged).toContain('mime=image/jpeg');
+    expect(logged).toContain('sizeBytes=2048');
+    expect(logged).toContain('errName=Error');
+    expect(logged).toContain('errCode=ECONNREFUSED');
+
+    // Sin blob que compensar, sin transacción → NO se crea fila, NO se emite.
+    expect(storageMock.delete).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(txMock.careEpisodeAttachment.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('fallo de S3 envuelto por el servicio de storage en BadRequestException → sigue siendo 503 (no 400)', async () => {
+    // StorageR2Service.upload() envuelve CUALQUIER fallo de S3/red en un
+    // BadRequestException (StorageR2Service propaga el error crudo, pero el
+    // handler no asume ninguna de las dos formas): sin esta barrera, un
+    // error de red se respondería 400 y el frontend diría "el archivo no
+    // es una imagen válida".
+    const txMock = makeTxMock();
+    mockHappyPath(txMock);
+    storageMock.upload.mockRejectedValue(
+      new BadRequestException(
+        'Failed to upload object evidencia.jpg to storage',
+      ),
+    );
+    const logSpy = spyLoggerError();
+
+    const err = await handler.execute(makeCommand()).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect((err as ServiceUnavailableException).getStatus()).toBe(503);
+    expect((err as ServiceUnavailableException).message).not.toContain(
+      'evidencia.jpg',
+    );
+    // Sin clasificar el error crudo queda DEPENDENCY (transitorio).
+    const logged = logSpy.mock.calls[0][0] as string;
+    expect(logged).toContain('kind=DEPENDENCY');
+    expect(storageMock.delete).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('storage sin configurar (CONFIG) → 503 con mensaje genérico + log kind=CONFIG', async () => {
+    const txMock = makeTxMock();
+    mockHappyPath(txMock); // todo cableado: si el handler llegara a la DB, create correría
+    storageMock.upload.mockRejectedValue(
+      new BadRequestException('Storage not configured'),
+    );
+    const logSpy = spyLoggerError();
+
+    const err = await handler.execute(makeCommand()).catch((e: unknown) => e);
+
+    // El mismo 503 al cliente (la respuesta NO distingue config de red):
+    // revelar "not configured" fugaría internals del server (AGENTS.md §23).
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect((err as ServiceUnavailableException).getStatus()).toBe(503);
+    expect((err as ServiceUnavailableException).message).toBe(
+      'No se pudo subir el archivo; intentá nuevamente',
+    );
+
+    // La distinción vive sólo en el log.
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const logged = logSpy.mock.calls[0][0] as string;
+    expect(logged).toContain('kind=CONFIG');
+    expect(logged).toContain('errName=BadRequestException');
+    expect(logged).not.toContain('kind=DEPENDENCY');
+
+    expect(storageMock.delete).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(txMock.careEpisodeAttachment.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });
 });

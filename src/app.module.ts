@@ -41,6 +41,16 @@ import { envs } from './config/envs';
         ttl: envs.THROTTLE_TTL * 1000,
         limit: envs.THROTTLE_LIMIT,
       },
+      // Gap 1 — D-10: bucket por identidad para el alta de vehículo/QR de venta
+      // (10/hora). `getTracker` requiere que JwtAuthGuard (clase) corra antes
+      // que ThrottlerGuard (método) para que `req.user` exista; si faltara,
+      // cae a IP en silencio.
+      {
+        name: 'dealershipVehicleCreate',
+        ttl: 3_600_000,
+        limit: 10,
+        getTracker: (req: Record<string, any>) => req.user?.id ?? req.ip,
+      },
     ]),
     PrismaModule,
     MailModule,

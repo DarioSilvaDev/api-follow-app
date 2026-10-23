@@ -37,7 +37,7 @@ export class CreateCareEpisodeHandler {
     // ── Branch must belong to the context workshop (RF-1) ──
     const branch = await this.prisma.workshopBranch.findFirst({
       where: { id: branchId, workshopId: command.workshopId },
-      select: { id: true },
+      select: { id: true, workshop: { select: { name: true } } },
     });
     if (!branch) {
       throw new ForbiddenException(
@@ -74,6 +74,7 @@ export class CreateCareEpisodeHandler {
         customerNotes: command.dto.customerNotes,
         internalNotes: command.dto.internalNotes,
         checkedInAt: new Date(),
+        workshopName: branch.workshop?.name ?? null,
       },
     });
 

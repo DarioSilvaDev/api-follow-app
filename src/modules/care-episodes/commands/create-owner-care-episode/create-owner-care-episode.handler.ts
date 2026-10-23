@@ -10,12 +10,12 @@ import type { CareEpisode, CareEpisodeAttachment } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleAccessService } from '../../../../common/authorization/vehicle-access.service';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
-import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 import type { CurrentContext } from '../../../../common/context/interfaces/current-context.interface';
 import { CareEpisodeAttachmentItem } from '../../dto/care-episode-detail-response.dto';
 import { MAX_OWNER_CREATION_FILES } from '../../dto/create-owner-care-episode.dto';
 import { CareEpisodeCreatedEvent } from '../../events/care-episode-created.event';
 import { CreateOwnerCareEpisodeCommand } from './create-owner-care-episode.command';
+import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 
 interface UploadedEvidence {
   key: string;
@@ -234,14 +234,14 @@ export class CreateOwnerCareEpisodeHandler {
     //    ADITIVO para que el frontend pueda confirmar la evidencia creada. ──
     return {
       ...careEpisode,
-      attachments: careEpisode.attachments.map((a) =>
-        this.toAttachmentItem(a),
-      ),
+      attachments: careEpisode.attachments.map((a) => this.toAttachmentItem(a)),
       attachmentCount: careEpisode.attachments.length,
     };
   }
 
-  private toAttachmentItem(a: CareEpisodeAttachment): CareEpisodeAttachmentItem {
+  private toAttachmentItem(
+    a: CareEpisodeAttachment,
+  ): CareEpisodeAttachmentItem {
     return {
       id: a.id,
       key: a.key,
