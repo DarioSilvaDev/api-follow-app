@@ -10,6 +10,7 @@ describe('GetVehicleHandler — FIX-PII (§34) email exposure in vehicle detail'
     systemRole: { findUnique: jest.Mock };
     systemRoleAssignment: { findFirst: jest.Mock };
   };
+  let vehicleAccessMock: { getCapabilities: jest.Mock };
 
   const ownerUser: AuthenticatedUser = {
     id: 'owner-1',
@@ -81,7 +82,14 @@ describe('GetVehicleHandler — FIX-PII (§34) email exposure in vehicle detail'
       systemRole: { findUnique: jest.fn() },
       systemRoleAssignment: { findFirst: jest.fn() },
     };
-    handler = new GetVehicleHandler(prismaMock as any);
+    vehicleAccessMock = {
+      getCapabilities: jest.fn().mockResolvedValue({
+        canEdit: false,
+        canRecordMileage: false,
+        canCorrectVin: false,
+      }),
+    };
+    handler = new GetVehicleHandler(prismaMock as any, vehicleAccessMock as any);
   });
 
   const ownershipUserSelect = () =>
@@ -201,5 +209,47 @@ describe('GetVehicleHandler — FIX-PII (§34) email exposure in vehicle detail'
     }
 
     expect(thrown).toBeInstanceOf(NotFoundException);
+  });
+
+  it('Gap 1 D-11/D-12: expone _count.mileages y capabilities del contexto', async () => {
+    mockOwner();
+    prismaMock.vehicle.findUnique.mockResolvedValue({
+      ...vehicleRow,
+      _count: { mileages: 7 },
+    });
+    vehicleAccessMock.getCapabilities.mockResolvedValue({
+      canEdit: true,
+      canRecordMileage: false,
+      canCorrectVin: true,
+    });
+
+    const context = { type: 'PERSONAL' as const, userId: 'owner-1' };
+    const result = (await handler.execute('v1', ownerUser, context)) as any;
+
+    expect(result._count).toEqual({ mileages: 7 });
+    expect(result.capabilities).toEqual({
+      canEdit: true,
+      canRecordMileage: false,
+      canCorrectVin: true,
+    });
+    expect(vehicleAccessMock.getCapabilities).toHaveBeenCalledWith({
+      vehicleId: 'v1',
+      userId: 'owner-1',
+      context,
+    });
+  });
+
+  it('sin usuario autenticado → capabilities en false y no consulta autorización', async () => {
+    mockOwner();
+    runDetail();
+
+    const result = (await handler.execute('v1')) as any;
+
+    expect(result.capabilities).toEqual({
+      canEdit: false,
+      canRecordMileage: false,
+      canCorrectVin: false,
+    });
+    expect(vehicleAccessMock.getCapabilities).not.toHaveBeenCalled();
   });
 });

@@ -63,8 +63,6 @@ import { GenerateTransferQrDto } from '../dto/generate-transfer-qr.dto';
 import { GenerateTakeQrDto } from '../dto/generate-take-qr.dto';
 import { GenerateConsignmentQrCommand } from '../commands/generate-consignment-qr/generate-consignment-qr.command';
 import { GenerateConsignmentQrHandler } from '../commands/generate-consignment-qr/generate-consignment-qr.handler';
-import { PreviewTransferQrCommand } from '../commands/preview-transfer-qr/preview-transfer-qr.command';
-import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrCommand } from '../commands/accept-transfer-qr/accept-transfer-qr.command';
 import { AcceptTransferQrHandler } from '../commands/accept-transfer-qr/accept-transfer-qr.handler';
 import { AcceptTransferQrDto } from '../dto/accept-transfer-qr.dto';
@@ -86,6 +84,9 @@ import { DeleteDocumentCommand } from '../commands/delete-document/delete-docume
 import { DeleteDocumentHandler } from '../commands/delete-document/delete-document.handler';
 import { ListDocumentsHandler } from '../queries/list-documents/list-documents.handler';
 import { GetDocumentHandler } from '../queries/get-document/get-document.handler';
+import { CorrectVinCommand } from '../commands/correct-vin/correct-vin.command';
+import { CorrectVinHandler } from '../commands/correct-vin/correct-vin.handler';
+import { CorrectVinDto } from '../dto/correct-vin.dto';
 import { StorageR2Service } from '../../../common/storage/storage-r2.service';
 import { envs } from '../../../config/envs';
 import {
@@ -93,6 +94,7 @@ import {
   ALLOWED_DOCUMENT_MIMES,
   fileTypeFilter,
 } from './file-upload.utils';
+import { VEHICLE_DOCUMENT_TYPE_CATALOG } from '../constants/vehicle-document-types';
 
 /**
  * Allowed MIME types and filter — see ./file-upload.utils.ts
@@ -119,7 +121,6 @@ export class VehiclesController {
     private readonly cancelTransferHandler: CancelTransferHandler,
     private readonly generateTransferQrHandler: GenerateTransferQrHandler,
     private readonly generateConsignmentQrHandler: GenerateConsignmentQrHandler,
-    private readonly previewTransferQrHandler: PreviewTransferQrHandler,
     private readonly acceptTransferQrHandler: AcceptTransferQrHandler,
     private readonly revokeTransferQrHandler: RevokeTransferQrHandler,
     private readonly uploadPhotoHandler: UploadPhotoHandler,
@@ -132,6 +133,7 @@ export class VehiclesController {
     private readonly deleteDocumentHandler: DeleteDocumentHandler,
     private readonly listDocumentsHandler: ListDocumentsHandler,
     private readonly getDocumentHandler: GetDocumentHandler,
+    private readonly correctVinHandler: CorrectVinHandler,
     private readonly storage: StorageR2Service,
   ) {}
 
@@ -162,6 +164,31 @@ export class VehiclesController {
     user: AuthenticatedUser,
   ): Promise<void> {
     return this.vehicleAccessService.assertOwnership({ vehicleId, user });
+  }
+
+  /**
+   * D-133/D-149 (extensión a media — fotos/documentos): la concesionaria
+   * TITULAR ACTIVA administra las fotos y documentos del vehículo en
+   * exhibición con el MISMO permiso `dealership.vehicle.edit` que gobierna
+   * el PATCH /:id (owner/admin/seller por igual). La escritura muere con la
+   * transferencia (sin titularidad activa → fallback a assertVehicleOwned:
+   * owner personal / super_admin; si tampoco autoriza, 403).
+   */
+  private async assertVehicleOwnedOrDealershipTitular(
+    vehicleId: string,
+    user: AuthenticatedUser,
+    context?: CurrentContext,
+  ): Promise<void> {
+    if (context?.type === 'DEALERSHIP') {
+      const allowed =
+        await this.vehicleAccessService.assertDealershipVehicleWrite(
+          vehicleId,
+          user.id,
+          context,
+        );
+      if (allowed) return;
+    }
+    await this.assertVehicleOwned(vehicleId, user);
   }
 
   @Get('transfers/incoming')
@@ -205,24 +232,6 @@ export class VehiclesController {
   }
 
   /**
-   * QR de transferencia presencial (Fase 3, D-079..D-083).
-   * GET: preview del QR (vehicle + emisor) — no requiere ser owner (el
-   * receptor debe poder consultarlo antes de aceptar).
-   */
-  @Get('transfer/qr/:token')
-  // Wave P3: brute-force protection on the 32-hex QR token.
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @UseGuards(ThrottlerGuard)
-  async previewTransferQr(
-    @Param('token') token: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    return this.previewTransferQrHandler.execute(
-      new PreviewTransferQrCommand(token),
-    );
-  }
-
-  /**
    * En la misma transacción: QR consumed, ownership cerrada/creada,
    * VehicleTransfer completed + eventos (D-081).
    */
@@ -246,8 +255,12 @@ export class VehiclesController {
    * Fase 2b (B2): en contexto DEALERSHIP la concesionaria TITULAR genera el
    * QR de VENTA (`purpose: sale`; permiso `dealership.vehicle.sell`); en
    * contexto PERSONAL el owner genera el QR clásico (comportamiento D-079).
+   *
+   * D-10 (H-26): throttle por identidad para cubrir el alta de QR de venta.
    */
   @Post(':id/qr')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ dealershipVehicleCreate: { limit: 10, ttl: 3_600_000 } })
   async generateTransferQr(
     @Param('id') id: string,
     @Body() dto: GenerateTransferQrDto,
@@ -338,10 +351,12 @@ export class VehiclesController {
   async uploadPhoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048 (F-013): writes are owner-only in MVP; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     const photo = await this.uploadPhotoHandler.execute(
       new UploadPhotoCommand(id, file, user.id),
     );
@@ -352,9 +367,12 @@ export class VehiclesController {
   async listPhotos(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
     @Query('signed') signed?: string,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // FIX-B1 + Gap: el contexto se reenvía para que la rama DEALERSHIP (RB-04)
+    // habilite la lectura de la concesionaria titular (antes 403 en exhibición).
+    await this.assertVehicleAccess(id, user, ctx);
     const photos = await this.listPhotosHandler.execute(id);
     if (signed === 'true') {
       return Promise.all(
@@ -375,9 +393,11 @@ export class VehiclesController {
     @Param('id') vehicleId: string,
     @Param('photoId') photoId: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
     @Query('signed') signed?: string,
   ) {
-    await this.assertVehicleAccess(vehicleId, user);
+    // FIX-B1 + Gap: lectura con contexto (misma regla que listPhotos).
+    await this.assertVehicleAccess(vehicleId, user, ctx);
     const photo = await this.getPhotoHandler.execute(vehicleId, photoId);
     if (signed === 'true') {
       const url = await this.storage.getSignedUrl(photo.key);
@@ -395,10 +415,12 @@ export class VehiclesController {
   async setPrimaryPhoto(
     @Param('id') id: string,
     @Param('photoId') photoId: string,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     return this.setPrimaryPhotoHandler.execute(
       new SetPrimaryPhotoCommand(id, photoId),
     );
@@ -408,11 +430,25 @@ export class VehiclesController {
   async deletePhoto(
     @Param('id') id: string,
     @Param('photoId') photoId: string,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     await this.deletePhotoHandler.execute(new DeletePhotoCommand(id, photoId));
+  }
+
+  /**
+   * Catálogo estático de tipos de documento vehicular (solo VTV por ahora).
+   * Sirve al dropdown del frontend y define el vocabulario de
+   * `documentType`. Cualquier sesión autenticada puede consultarlo
+   * (JwtAuthGuard de clase); no requiere contexto activo específico ni
+   * acceso al vehículo. Ver constants/vehicle-document-types.ts.
+   */
+  @Get('documents/types')
+  getDocumentTypes() {
+    return VEHICLE_DOCUMENT_TYPE_CATALOG;
   }
 
   @Post(':id/documents')
@@ -426,10 +462,12 @@ export class VehiclesController {
     @Param('id') id: string,
     @Body() dto: UploadDocumentDto,
     @UploadedFile() file: Express.Multer.File,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     const doc = await this.uploadDocumentHandler.execute(
       new UploadDocumentCommand(id, dto, file, user.id),
     );
@@ -440,9 +478,11 @@ export class VehiclesController {
   async listDocuments(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
     @Query('signed') signed?: string,
   ) {
-    await this.assertVehicleAccess(id, user);
+    // FIX-B1 + Gap: lectura con contexto (misma regla que listPhotos).
+    await this.assertVehicleAccess(id, user, ctx);
     const docs = await this.listDocumentsHandler.execute(id);
     if (signed === 'true') {
       return Promise.all(
@@ -463,9 +503,11 @@ export class VehiclesController {
     @Param('id') vehicleId: string,
     @Param('docId') docId: string,
     @CurrentUser() user: AuthenticatedUser,
+    @ActiveContext() ctx: CurrentContext,
     @Query('signed') signed?: string,
   ) {
-    await this.assertVehicleAccess(vehicleId, user);
+    // FIX-B1 + Gap: lectura con contexto (misma regla que listPhotos).
+    await this.assertVehicleAccess(vehicleId, user, ctx);
     const doc = await this.getDocumentHandler.execute(vehicleId, docId);
     if (signed === 'true') {
       const url = await this.storage.getSignedUrl(doc.key);
@@ -484,10 +526,12 @@ export class VehiclesController {
     @Param('id') id: string,
     @Param('docId') docId: string,
     @Body() dto: UpdateDocumentDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     return this.updateDocumentHandler.execute(
       new UpdateDocumentCommand(id, docId, dto),
     );
@@ -497,23 +541,28 @@ export class VehiclesController {
   async deleteDocument(
     @Param('id') id: string,
     @Param('docId') docId: string,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // D-133/D-149: la concesionaria titular administra la media (ver helper).
+    await this.assertVehicleOwnedOrDealershipTitular(id, user, ctx);
     await this.deleteDocumentHandler.execute(
       new DeleteDocumentCommand(id, docId),
     );
   }
 
   @Post()
+  // D-10: alta de vehículo limitada a 10/hora por identidad (bucket propio).
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ dealershipVehicleCreate: { limit: 10, ttl: 3_600_000 } })
   async create(
     @Body() dto: RegisterVehicleDto,
     @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     const vehicle = await this.registerVehicleHandler.execute(
-      new RegisterVehicleCommand(dto, user.id),
+      new RegisterVehicleCommand(dto, user.id, ctx),
     );
     return VehicleResponseDto.from(vehicle);
   }
@@ -548,7 +597,32 @@ export class VehiclesController {
     await this.assertVehicleAccess(id, user, ctx);
     // FIX-PII (§34): el caller se pasa al handler para aplicar la misma regla
     // de exposición de emails que el history (owner persona + super_admin).
-    const vehicle = await this.getVehicleHandler.execute(id, user);
+    // Gap 1 — D-12: el contexto se pasa para calcular `capabilities`.
+    const vehicle = await this.getVehicleHandler.execute(id, user, ctx);
+    return VehicleResponseDto.from(vehicle);
+  }
+
+
+  /**
+   * D-154 (Security M4): el 409 de "VIN ya existe" es un oráculo distinguible;
+   * se limita el endpoint con el mismo bucket por identidad que el alta
+   * (D-10 / D-154). ThrottlerGuard se declara a nivel de método, por lo que
+   * corre DESPUÉS de JwtAuthGuard (clase) y `req.user` ya existe (R-04).
+   */
+  @Post(':id/vin-correction')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ dealershipVehicleCreate: { limit: 10, ttl: 3_600_000 } })
+  async correctVin(
+    @Param('id') id: string,
+    @Body() dto: CorrectVinDto,
+    @ActiveContext() ctx: CurrentContext,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const vehicle = await this.correctVinHandler.execute(
+      new CorrectVinCommand(id, dto, user.id, ctx),
+    );
+    // D-11: no exponer el modelo Prisma crudo (FKs internas de ownerships);
+    // mismo mapeo que GET /vehicles/:id.
     return VehicleResponseDto.from(vehicle);
   }
 
@@ -556,11 +630,36 @@ export class VehiclesController {
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateVehicleDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    // D-039: solo el owner puede editar en MVP (el acceso compartido es solo
-    // lectura). Mismo criterio que delete/grant-access (assertVehicleOwned).
-    await this.assertVehicleOwned(id, user);
+    if (ctx.type === 'DEALERSHIP') {
+      // D-133/D-149: la concesionaria TITULAR ACTIVA edita los campos editables
+      // del PATCH (owner/admin/seller por igual, permiso
+      // `dealership.vehicle.edit`). La escritura muere con la transferencia.
+      // Si no hay titularidad de concesionaria, se evalúa el ownership personal
+      // / super_admin vía assertVehicleOwned como fallback; si tampoco autoriza,
+      // ese check lanza 403. El `vin` sigue rechazándose por DTO (`@IsEmpty()`);
+      // su corrección es un flujo auditado aparte (D-143/D-144).
+      const allowed =
+        await this.vehicleAccessService.assertDealershipVehicleWrite(
+          id,
+          user.id,
+          ctx,
+        );
+      if (!allowed) {
+        // Regresión corregida: un super_admin (o un owner personal) actuando en
+        // contexto DEALERSHIP debe seguir autorizado aunque no sea titular de la
+        // concesionaria. assertVehicleOwned permite owner personal y super_admin;
+        // si tampoco autoriza, lanza 403 (fallo cerrado).
+        await this.assertVehicleOwned(id, user);
+      }
+    } else {
+      // D-039: PERSONAL (y demás contextos) solo el owner puede editar (el
+      // acceso compartido es solo lectura). Mismo criterio que
+      // delete/grant-access (assertVehicleOwned).
+      await this.assertVehicleOwned(id, user);
+    }
     const vehicle = await this.updateVehicleHandler.execute(
       new UpdateVehicleCommand(id, dto),
     );
@@ -592,15 +691,22 @@ export class VehiclesController {
   }
 
   @Post(':id/mileage')
+  // D-154 (Security M4): el 409 de monotonía de km es un oráculo distinguible;
+  // mismo bucket por identidad que el alta (D-10). Guard de método: corre
+  // después de JwtAuthGuard (clase) para que `req.user` exista (R-04).
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ dealershipVehicleCreate: { limit: 10, ttl: 3_600_000 } })
   async recordMileage(
     @Param('id') id: string,
     @Body() dto: RecordMileageDto,
+    @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    // D-048: writes are owner-only; shared access is read-only.
-    await this.assertVehicleOwned(id, user);
+    // Gap 1 (§4.3 / D-05): la autorización vive en el handler (fallo cerrado
+    // por contexto y por tipo de vehículo). Ya NO es solo-owner: en DEALERSHIP
+    // la concesionaria titular puede registrar km con el permiso correspondiente.
     return this.recordMileageHandler.execute(
-      new RecordMileageCommand(id, dto, user.id),
+      new RecordMileageCommand(id, dto, user.id, ctx),
     );
   }
 
@@ -629,3 +735,6 @@ export class VehiclesController {
     return this.getVehicleHistoryHandler.execute(id, user);
   }
 }
+
+
+

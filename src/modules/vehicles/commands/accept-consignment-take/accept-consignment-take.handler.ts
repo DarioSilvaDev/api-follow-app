@@ -66,6 +66,7 @@ export class AcceptConsignmentTakeQrHandler {
 
       const currentOwnership = await tx.vehicleOwnership.findFirst({
         where: { vehicleId: qr.vehicleId, endsAt: null },
+        orderBy: { startsAt: 'desc' },
       });
 
       // D-TL-16 / RB-03: la dealership ya es titular → auto-transfer → 409.

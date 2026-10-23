@@ -1,9 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { RegisterVehicleDto } from '../dto/register-vehicle.dto';
 import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
-import { RegisterVehicleData, VehicleRepository } from './vehicle.repository';
+import {
+  RegisterVehicleData,
+  RegisterDealershipVehicleData,
+  VehicleRepository,
+} from './vehicle.repository';
 
 @Injectable()
 export class PrismaVehicleRepository implements VehicleRepository {
@@ -35,6 +38,87 @@ export class PrismaVehicleRepository implements VehicleRepository {
       // D-036: los campos únicos (license_plate/vin/engine_number) pueden
       // colisionar a pesar del pre-check del handler (carrera / path directo).
       // El constraint actúa como red de seguridad → 409 con mensaje específico.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw this.mapUniqueViolation(error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Gap 1 (D-128 / §6.1): alta de stock propio por concesionaria. Crea en UNA
+   * transacción: Vehicle + VehicleOwnership (type=company, userId=null,
+   * endsAt=null) + VehicleMileage inicial (source=dealership, atribuida a la
+   * concesionaria y a su miembro) + VehicleAuditLog (mileage_recorded). Si
+   * cualquiera falla, PostgreSQL revierte todo el bloque.
+   */
+  async createDealershipRegistration(data: RegisterDealershipVehicleData) {
+    const {
+      dealershipId,
+      dealershipMemberId,
+      recordedByUserId,
+      initialMileage,
+      ...vehicleData
+    } = data;
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+
+        const vehicle = await tx.vehicle.create({
+          data: {
+            ...vehicleData,
+            ownerships: {
+              create: {
+                // D-DB-1 / panel de concesionaria: ownership activo por
+                // dealershipId (userId null, endsAt null).
+                dealershipId,
+                userId: null,
+                type: 'company',
+                startsAt: now,
+                endsAt: null,
+              },
+            },
+          },
+          include: {
+            // Mismo shape hidratado que create()/list/get (F-010 §10).
+            version: { include: { model: { include: { brand: true } } } },
+          },
+        });
+
+        await tx.vehicleMileage.create({
+          data: {
+            vehicleId: vehicle.id,
+            mileage: initialMileage,
+            source: 'dealership',
+            recordedAt: now,
+            recordedByUserId,
+            recordedByDealershipId: dealershipId,
+            recordedByDealershipMemberId: dealershipMemberId,
+          },
+        });
+
+        await tx.vehicleAuditLog.create({
+          data: {
+            vehicleId: vehicle.id,
+            action: 'mileage_recorded',
+            field: 'mileage',
+            previousValue: null,
+            newValue: String(initialMileage),
+            actorUserId: recordedByUserId,
+            dealershipId,
+            dealershipMemberId,
+            contextType: 'dealership',
+          },
+        });
+
+        return vehicle;
+      });
+    } catch (error) {
+      // D-036: mismos únicos (license_plate/vin/engine_number) → 409.
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'

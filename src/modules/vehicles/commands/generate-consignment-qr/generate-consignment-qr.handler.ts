@@ -169,7 +169,7 @@ export class GenerateConsignmentQrHandler {
       }
       const vehicle = await this.prisma.vehicle.findUnique({
         where: { id: command.vehicleId },
-        include: { ownerships: { where: { endsAt: null }, take: 1 } },
+        include: { ownerships: { where: { endsAt: null }, take: 1, orderBy: { startsAt: 'desc' } } },
       });
       if (!vehicle) {
         throw new NotFoundException('Vehicle', command.vehicleId);
@@ -251,7 +251,7 @@ export class GenerateConsignmentQrHandler {
 
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: vehicleId },
-      include: { ownerships: { where: { endsAt: null }, take: 1 } },
+      include: { ownerships: { where: { endsAt: null }, take: 1, orderBy: { startsAt: 'desc' } } },
     });
     if (!vehicle) {
       throw new NotFoundException('Vehicle', vehicleId);

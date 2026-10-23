@@ -9,6 +9,15 @@ import { CodedHttpException } from '../exceptions/coded.exception';
 import { ERROR_CODES } from '../exceptions/error-codes';
 
 /**
+ * Capacidades de escritura expuestas por `GET /vehicles/:id` (D-12).
+ */
+export interface VehicleCapabilities {
+  canEdit: boolean;
+  canRecordMileage: boolean;
+  canCorrectVin: boolean;
+}
+
+/**
  * VehicleAccessService — Centralized vehicle access validation.
  *
  * Two modes:
@@ -187,12 +196,220 @@ export class VehicleAccessService {
   }
 
   /**
+   * Gap 1 — D-12: capacidades de escritura que `GET /vehicles/:id` expone al
+   * frontend, calculadas con **la misma lógica de autorización** que aplican
+   * las escrituras reales (evita que la UI ofrezca botones que el backend
+   * rechazará).
+   *
+   * - `canEdit`: owner persona activo, super_admin, o miembro ACTIVO y TITULAR
+   *   de la concesionaria en contexto DEALERSHIP con permiso
+   *   `dealership.vehicle.edit` (owner/admin/seller por igual, D-133/D-149).
+   *   Tras la transferencia pierde la titularidad y la capacidad pasa a `false`.
+   * - `canRecordMileage`: PERSONAL → ownership activo; DEALERSHIP → membresía
+   *   activa + `dealership.mileage.record` + titularidad; WORKSHOP/PLATFORM → false.
+   * - `canCorrectVin`: D-144 — owner persona activo, super_admin, o miembro
+   *   ACTIVO y TITULAR de la concesionaria con rol `owner`/`admin`
+   *   (el vendedor NO cambia identidad). Espejo de lo que aplica el comando
+   *   `POST /vehicles/:id/vin-correction`.
+   */
+  async getCapabilities(params: {
+    vehicleId: string;
+    userId: string;
+    context?: CurrentContext;
+  }): Promise<VehicleCapabilities> {
+    const { vehicleId, userId, context } = params;
+
+    if (await this.assertSuperAdmin(userId)) {
+      return { canEdit: true, canRecordMileage: true, canCorrectVin: true };
+    }
+
+    const hasOwnership = await this.prisma.vehicleOwnership.findFirst({
+      where: { vehicleId, userId, endsAt: null },
+      select: { id: true },
+    });
+
+    const contextType = context?.type ?? 'PERSONAL';
+
+    let canEdit = !!hasOwnership;
+    let canRecordMileage = false;
+    let canCorrectVin = !!hasOwnership;
+    if (contextType === 'PERSONAL') {
+      canRecordMileage = !!hasOwnership;
+    } else if (contextType === 'DEALERSHIP') {
+      const dealershipCtx = context as DealershipContext;
+      // D-133/D-149: la concesionaria TITULAR ACTIVA edita mientras es titular
+      // (owner/admin/seller por igual, permiso `dealership.vehicle.edit`).
+      canEdit =
+        canEdit ||
+        (await this.assertDealershipVehicleWrite(
+          vehicleId,
+          userId,
+          dealershipCtx,
+        ));
+      canRecordMileage = await this.dealershipCanRecordMileage(
+        vehicleId,
+        userId,
+        dealershipCtx,
+      );
+      canCorrectVin =
+        canCorrectVin ||
+        (await this.isDealershipTitularAdminOrOwner(
+          vehicleId,
+          userId,
+          dealershipCtx,
+        ));
+    }
+
+    return {
+      canEdit,
+      canRecordMileage,
+      canCorrectVin,
+    };
+  }
+
+  /**
+   * Capacidad de registro de kilometraje en contexto DEALERSHIP: membresía
+   * activa + permiso `dealership.mileage.record` + la concesionaria es titular
+   * actual del vehículo (ownership activo `type: 'company'`). Tras la
+   * transferencia el ownership se cierra y la capacidad pasa a `false`.
+   */
+  private async dealershipCanRecordMileage(
+    vehicleId: string,
+    userId: string,
+    ctx: DealershipContext,
+  ): Promise<boolean> {
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: { dealershipId: ctx.dealershipId, userId },
+      },
+      select: {
+        status: true,
+        role: {
+          select: {
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!member || member.status !== 'active') return false;
+
+    const hasPermission = member.role.permissions.some(
+      (rp) => rp.permission.code === 'dealership.mileage.record',
+    );
+    if (!hasPermission) return false;
+
+    const titularOwnership = await this.prisma.vehicleOwnership.findFirst({
+      where: {
+        vehicleId,
+        dealershipId: ctx.dealershipId,
+        endsAt: null,
+        type: 'company',
+      },
+      select: { id: true },
+    });
+
+    return !!titularOwnership;
+  }
+
+  /**
+   * Helper: true si miembro titular activo es admin o owner de concesionaria
+   * (para `canCorrectVin` en contexto DEALERSHIP: D-144 — owner/admin titular;
+   * el vendedor no cambia identidad)
+   */
+  private async isDealershipTitularAdminOrOwner(
+    vehicleId: string,
+    userId: string,
+    ctx: DealershipContext,
+  ): Promise<boolean> {
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: { dealershipId: ctx.dealershipId, userId },
+      },
+      select: {
+        status: true,
+        role: { select: { code: true } },
+      },
+    });
+    if (!member || member.status !== 'active') return false;
+
+    // D-149: los roles son de sistema y se identifican por `code`
+    // (`owner`/`admin`/`seller`), no por el `name` de presentación.
+    const roleCode = (member.role?.code ?? '').toLowerCase();
+    const isAdminOrOwner = roleCode === 'admin' || roleCode === 'owner';
+
+    if (!isAdminOrOwner) return false;
+
+    const titularOwnership = await this.prisma.vehicleOwnership.findFirst({
+      where: {
+        vehicleId,
+        dealershipId: ctx.dealershipId,
+        endsAt: null,
+        type: 'company',
+      },
+      select: { id: true },
+    });
+
+    return !!titularOwnership;
+  }
+
+  /**
+   * Escrita de concesionaria (D-133/D-149): permite escritura a miembro TITULAR
+   * ACTIVO de la concesionaria con permiso dealership.vehicle.edit.
+   * - owner, admin y seller por igual según D-149.
+   * - La escritura muere con la transferencia (sin titularidad activa -> denegado).
+   * - PERSONAL (owner) no usa este método; se mantiene intacto.
+   */
+  async assertDealershipVehicleWrite(
+    vehicleId: string,
+    userId: string,
+    ctx: DealershipContext,
+  ): Promise<boolean> {
+    const member = await this.prisma.dealershipMember.findUnique({
+      where: {
+        dealershipId_userId: { dealershipId: ctx.dealershipId, userId },
+      },
+      select: {
+        status: true,
+        role: {
+          select: {
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!member || member.status !== 'active') return false;
+
+    const hasPermission = member.role.permissions.some(
+      (rp) => rp.permission.code === 'dealership.vehicle.edit',
+    );
+    if (!hasPermission) return false;
+
+    const titularOwnership = await this.prisma.vehicleOwnership.findFirst({
+      where: {
+        vehicleId,
+        dealershipId: ctx.dealershipId,
+        endsAt: null,
+        type: 'company',
+      },
+      select: { id: true },
+    });
+
+    return !!titularOwnership;
+  }
+
+  /**
    * FIX-B1 (RB-04): acceso de lectura de la concesionaria titular.
    *
    * Acepta cuando se cumplen AMBAS condiciones:
    * - el caller es miembro ACTIVO de la dealership actuando en contexto
    *   DEALERSHIP (membresía + al menos un permiso de lectura del rol:
-   *   `dealership.vehicle.sell` | `dealership.vehicle.return` | `history.view`);
+   *   `dealership.vehicle.sell` | `dealership.vehicle.return` |
+   *   `dealership.vehicle.create` | `dealership.vehicle.edit` |
+   *   `dealership.mileage.record` | `history.view`);
    * - la dealership es el titular ACTUAL del vehículo (ownership activo,
    *   endsAt null, type 'company' — D-TL-9 / D-DB-1).
    *
@@ -224,11 +441,16 @@ export class VehicleAccessService {
     });
     if (!member || member.status !== 'active') return false;
 
-    // READ_PERMISSIONS: códigos reales del seed (RB-10). owner/admin/seller
-    // incluyen al menos uno de ellos.
+    // READ_PERMISSIONS: códigos reales del seed (RB-10 + Gap 1 §4.1).
+    // owner/admin/seller incluyen al menos uno de ellos.
     const READ_PERMISSIONS: readonly string[] = [
       'dealership.vehicle.sell',
       'dealership.vehicle.return',
+      // Gap 1 (H-24): los 3 permisos nuevos también habilitan lectura para no
+      // degradar el acceso de los holders de dealership que solo los tengan.
+      'dealership.vehicle.create',
+      'dealership.vehicle.edit',
+      'dealership.mileage.record',
       'history.view',
     ];
     const hasReadPermission = member.role.permissions.some((rp) =>
@@ -311,3 +533,7 @@ export class VehicleAccessService {
     return !!hasRole;
   }
 }
+
+
+
+

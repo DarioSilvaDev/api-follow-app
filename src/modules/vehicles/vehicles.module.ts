@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { VehiclesController } from './controllers/vehicles.controller';
+import { VehicleTransferQrPublicController } from './controllers/vehicle-transfer-qr-public.controller';
 import { PrismaVehicleRepository } from './repositories/prisma-vehicle.repository';
 import { VEHICLE_REPOSITORY } from './tokens';
 import { AuthorizationModule } from '../../common/authorization.module';
@@ -37,10 +38,11 @@ import { DeleteDocumentHandler } from './commands/delete-document/delete-documen
 import { ListDocumentsHandler } from './queries/list-documents/list-documents.handler';
 import { GetPhotoHandler } from './queries/get-photo/get-photo.handler';
 import { GetDocumentHandler } from './queries/get-document/get-document.handler';
+import { CorrectVinHandler } from './commands/correct-vin/correct-vin.handler';
 
 @Module({
   imports: [AuthorizationModule],
-  controllers: [VehiclesController],
+  controllers: [VehiclesController, VehicleTransferQrPublicController],
   providers: [
     RegisterVehicleHandler,
     UpdateVehicleHandler,
@@ -76,6 +78,7 @@ import { GetDocumentHandler } from './queries/get-document/get-document.handler'
     AcceptTransferQrHandler,
     RevokeTransferQrHandler,
     QrExpirySweeperService,
+    CorrectVinHandler,
     { provide: VEHICLE_REPOSITORY, useClass: PrismaVehicleRepository },
   ],
   exports: [VEHICLE_REPOSITORY],

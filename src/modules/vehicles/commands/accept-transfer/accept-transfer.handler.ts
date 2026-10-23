@@ -61,6 +61,7 @@ export class AcceptTransferHandler {
 
       const currentOwnership = await tx.vehicleOwnership.findFirst({
         where: { vehicleId: transfer.vehicleId, endsAt: null },
+        orderBy: { startsAt: 'desc' },
       });
 
       if (currentOwnership) {

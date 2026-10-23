@@ -2,10 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { AuthenticatedUser } from '../../../../common/types/auth.types';
+import type { CurrentContext } from '../../../../common/context/interfaces/current-context.interface';
+import {
+  VehicleAccessService,
+  VehicleCapabilities,
+} from '../../../../common/authorization/vehicle-access.service';
 
 @Injectable()
 export class GetVehicleHandler {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vehicleAccess: VehicleAccessService,
+  ) {}
 
   /**
    * Detalle de vehículo (F-010 / F-013).
@@ -20,8 +28,12 @@ export class GetVehicleHandler {
    *   (D-078) y el titular organizacional vía `ownership.dealership` (B1,
    *   sin PII de empleados).
    * - Shared-access: email oculto (mismo criterio que el history).
+   *
+   * Gap 1 — D-11/D-12: expone hasta 5 lecturas de kilometraje con su
+   * atribución normalizada, el total (`mileageCount`) y las `capabilities`
+   * de escritura del caller en el contexto activo.
    */
-  async execute(id: string, user?: AuthenticatedUser) {
+  async execute(id: string, user?: AuthenticatedUser, context?: CurrentContext) {
     const exposeEmails = await this.shouldExposeEmails(id, user);
 
     // D-078: contrato de usuario `{ id, firstName, lastName, alias }`.
@@ -52,7 +64,25 @@ export class GetVehicleHandler {
         },
         photos: true,
         documents: true,
-        mileages: { orderBy: { recordedAt: 'desc' }, take: 5 },
+        mileages: {
+          orderBy: { recordedAt: 'desc' },
+          take: 5,
+          // D-11: atribución normalizada — sin exponer las FK internas (D-01).
+          include: {
+            recordedByUser: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+            recordedByDealership: { select: { id: true, name: true } },
+            recordedByWorkshopMember: {
+              select: {
+                id: true,
+                user: { select: { id: true, firstName: true, lastName: true } },
+                workshop: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        _count: { select: { mileages: true } },
       },
     });
 
@@ -60,7 +90,15 @@ export class GetVehicleHandler {
       throw new NotFoundException('Vehicle', id);
     }
 
-    return vehicle;
+    const capabilities = user
+      ? await this.vehicleAccess.getCapabilities({
+          vehicleId: id,
+          userId: user.id,
+          context,
+        })
+      : { canEdit: false, canRecordMileage: false, canCorrectVin: false };
+
+    return { ...vehicle, capabilities };
   }
 
   /**

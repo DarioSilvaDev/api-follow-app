@@ -28,7 +28,7 @@ export class RevokeTransferQrHandler {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: command.vehicleId },
       include: {
-        ownerships: { where: { endsAt: null }, take: 1 },
+        ownerships: { where: { endsAt: null }, take: 1, orderBy: { startsAt: 'desc' } },
       },
     });
 
@@ -100,7 +100,7 @@ export class RevokeTransferQrHandler {
 
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: vehicleId },
-      include: { ownerships: { where: { endsAt: null }, take: 1 } },
+      include: { ownerships: { where: { endsAt: null }, take: 1, orderBy: { startsAt: 'desc' } } },
     });
     if (!vehicle) {
       throw new NotFoundException('Vehicle', vehicleId);

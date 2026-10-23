@@ -1,5 +1,4 @@
 import { ForbiddenException } from '@nestjs/common';
-import { MileageSource } from '@prisma/client';
 
 // Mock uuid (ESM module) before importing anything that transitively loads StorageR2Service
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
@@ -24,6 +23,9 @@ import { GetDocumentHandler } from '../queries/get-document/get-document.handler
 import { GetVehicleHandler } from '../queries/get-vehicle/get-vehicle.handler';
 import { GetVehicleHistoryHandler } from '../queries/get-vehicle-history/get-vehicle-history.handler';
 import { ListVehiclesHandler } from '../queries/list-vehicles/list-vehicles.handler';
+import { CorrectVinHandler } from '../commands/correct-vin/correct-vin.handler';
+import { CorrectVinDto } from '../dto/correct-vin.dto';
+import { VehicleResponseDto } from '../dto/vehicle-response.dto';
 import { GetIncomingTransfersHandler } from '../queries/get-incoming-transfers/get-incoming-transfers.handler';
 import { GetOutgoingTransfersHandler } from '../queries/get-outgoing-transfers/get-outgoing-transfers.handler';
 import { RegisterVehicleHandler } from '../commands/register-vehicle/register-vehicle.handler';
@@ -36,7 +38,6 @@ import { RejectTransferHandler } from '../commands/reject-transfer/reject-transf
 import { CancelTransferHandler } from '../commands/cancel-transfer/cancel-transfer.handler';
 import { GenerateTransferQrHandler } from '../commands/generate-transfer-qr/generate-transfer-qr.handler';
 import { GenerateConsignmentQrHandler } from '../commands/generate-consignment-qr/generate-consignment-qr.handler';
-import { PreviewTransferQrHandler } from '../commands/preview-transfer-qr/preview-transfer-qr.handler';
 import { AcceptTransferQrHandler } from '../commands/accept-transfer-qr/accept-transfer-qr.handler';
 import { RevokeTransferQrHandler } from '../commands/revoke-transfer-qr/revoke-transfer-qr.handler';
 import { StorageR2Service } from '../../../common/storage/storage-r2.service';
@@ -74,6 +75,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
   const vehicleAccessService = {
     assertOwnershipOrSharedAccess: jest.fn(),
     assertOwnership: jest.fn(),
+    assertDealershipVehicleWrite: jest.fn(),
   };
 
   const uploadPhotoHandler = { execute: jest.fn() };
@@ -87,6 +89,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
   const listDocumentsHandler = { execute: jest.fn() };
   const getPhotoHandler = { execute: jest.fn() };
   const getDocumentHandler = { execute: jest.fn() };
+  const correctVinHandler = { execute: jest.fn() };
   const storage = { getSignedUrl: jest.fn() };
 
   // Stubs for unused handler deps (not involved in D-048 or signed URLs)
@@ -131,6 +134,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       undefined,
     );
     vehicleAccessService.assertOwnership.mockResolvedValue(undefined);
+    vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(true);
     storage.getSignedUrl.mockResolvedValue('https://r2.example.com/signed');
     controller = new VehiclesController(
       vehicleAccessService as unknown as VehicleAccessService,
@@ -150,7 +154,6 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       stubHandler as unknown as CancelTransferHandler,
       stubHandler as unknown as GenerateTransferQrHandler,
       stubHandler as unknown as GenerateConsignmentQrHandler,
-      stubHandler as unknown as PreviewTransferQrHandler,
       stubHandler as unknown as AcceptTransferQrHandler,
       stubHandler as unknown as RevokeTransferQrHandler,
       uploadPhotoHandler as unknown as UploadPhotoHandler,
@@ -163,6 +166,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       deleteDocumentHandler as unknown as DeleteDocumentHandler,
       listDocumentsHandler as unknown as ListDocumentsHandler,
       getDocumentHandler as unknown as GetDocumentHandler,
+      correctVinHandler as unknown as CorrectVinHandler,
       storage as unknown as StorageR2Service,
     );
   });
@@ -200,18 +204,20 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
     return [
       {
         label: 'POST :id/photos (uploadPhoto)',
-        invoke: () => controller.uploadPhoto(vehicleId, makeFile(), sharedUser),
+        invoke: () =>
+          controller.uploadPhoto(vehicleId, makeFile(), personalCtx, sharedUser),
         handlerMock: uploadPhotoHandler,
       },
       {
         label: 'PATCH :id/photos/:photoId/primary (setPrimaryPhoto)',
         invoke: () =>
-          controller.setPrimaryPhoto(vehicleId, photoId, sharedUser),
+          controller.setPrimaryPhoto(vehicleId, photoId, personalCtx, sharedUser),
         handlerMock: setPrimaryPhotoHandler,
       },
       {
         label: 'DELETE :id/photos/:photoId (deletePhoto)',
-        invoke: () => controller.deletePhoto(vehicleId, photoId, sharedUser),
+        invoke: () =>
+          controller.deletePhoto(vehicleId, photoId, personalCtx, sharedUser),
         handlerMock: deletePhotoHandler,
       },
       {
@@ -221,6 +227,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
             vehicleId,
             { name: 'doc', documentType: 'insurance' },
             makeFile(),
+            personalCtx,
             sharedUser,
           ),
         handlerMock: uploadDocumentHandler,
@@ -228,23 +235,20 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       {
         label: 'PATCH :id/documents/:docId (updateDocument)',
         invoke: () =>
-          controller.updateDocument(vehicleId, docId, {}, sharedUser),
+          controller.updateDocument(
+            vehicleId,
+            docId,
+            {},
+            personalCtx,
+            sharedUser,
+          ),
         handlerMock: updateDocumentHandler,
       },
       {
         label: 'DELETE :id/documents/:docId (deleteDocument)',
-        invoke: () => controller.deleteDocument(vehicleId, docId, sharedUser),
-        handlerMock: deleteDocumentHandler,
-      },
-      {
-        label: 'POST :id/mileage (recordMileage)',
         invoke: () =>
-          controller.recordMileage(
-            vehicleId,
-            { mileage: 10000, source: MileageSource.owner },
-            sharedUser,
-          ),
-        handlerMock: recordMileageHandler,
+          controller.deleteDocument(vehicleId, docId, personalCtx, sharedUser),
+        handlerMock: deleteDocumentHandler,
       },
     ];
   }
@@ -297,6 +301,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = await controller.uploadPhoto(
         vehicleId,
         makeFile(),
+        personalCtx,
         superAdminUser,
       );
 
@@ -306,6 +311,351 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       });
       expect(uploadPhotoHandler.execute).toHaveBeenCalled();
       expect(result).toMatchObject({ id: 'p-new', vehicleId });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Gap 1: recordMileage ya NO autoriza en el controller (lo hace el handler,
+  // que soporta PERSONAL y DEALERSHIP). El controller solo reenvía el contexto.
+  // ═══════════════════════════════════════════════════════════
+
+  describe('POST :id/mileage (Gap 1 — autorización delegada al handler)', () => {
+    it('reenvía vehículo, dto, usuario y contexto sin llamar a assertOwnership', async () => {
+      recordMileageHandler.execute.mockResolvedValue({ id: 'mi-1' });
+
+      const result = await controller.recordMileage(
+        vehicleId,
+        { mileage: 10000 },
+        personalCtx,
+        sharedUser,
+      );
+
+      expect(vehicleAccessService.assertOwnership).not.toHaveBeenCalled();
+      expect(recordMileageHandler.execute).toHaveBeenCalledTimes(1);
+      const command = recordMileageHandler.execute.mock.calls[0][0];
+      expect(command).toMatchObject({
+        vehicleId,
+        dto: { mileage: 10000 },
+        recordedByUserId: sharedUser.id,
+        context: personalCtx,
+      });
+      expect(result).toEqual({ id: 'mi-1' });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Gap 1 — D-03/D-144: POST :id/vin-correction delega la autorización al
+  // handler (canCorrectVin) y solo reenvía vehículo, dto, usuario y contexto.
+  // ═══════════════════════════════════════════════════════════
+
+  describe('POST :id/vin-correction (Gap 1 — D-03/D-144 / Security B6)', () => {
+    const correctVinDto: CorrectVinDto = {
+      vin: '1HGCM82633A004352',
+      reason: 'VIN mal tipeado en el alta',
+    };
+
+    // Shape que devuelve correct-vin.handler: vehículo Prisma con versión
+    // hidratada y ownerships crudos. La respuesta HTTP NO debe ser ese objeto
+    // crudo sino VehicleResponseDto (D-11).
+    const hydratedVehicle = {
+      id: vehicleId,
+      licensePlate: 'ABC123',
+      vin: '1HGCM82633A004352',
+      engineNumber: null,
+      versionId: 'ver-1',
+      manufactureYear: null,
+      modelYear: null,
+      color: null,
+      notes: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      version: {
+        id: 'ver-1',
+        name: '1.6 LX',
+        model: {
+          id: 'model-1',
+          name: 'Civic',
+          brand: { id: 'brand-1', name: 'Honda' },
+        },
+      },
+      ownerships: [{ id: 'own-1', vehicleId, userId: 'u-1' }],
+    };
+
+    it('reenvía vehículo, dto, usuario y contexto PERSONAL sin autorizar en el controller', async () => {
+      correctVinHandler.execute.mockResolvedValue(hydratedVehicle);
+
+      const result = (await controller.correctVin(
+        vehicleId,
+        correctVinDto,
+        personalCtx,
+        sharedUser,
+      )) as VehicleResponseDto;
+
+      expect(vehicleAccessService.assertOwnership).not.toHaveBeenCalled();
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).not.toHaveBeenCalled();
+      expect(correctVinHandler.execute).toHaveBeenCalledTimes(1);
+      const command = correctVinHandler.execute.mock.calls[0][0];
+      expect(command).toMatchObject({
+        vehicleId,
+        dto: correctVinDto,
+        actorUserId: sharedUser.id,
+        context: personalCtx,
+      });
+      // Security B6 / D-11: mapeado con VehicleResponseDto, no el modelo crudo.
+      expect(result.id).toBe(vehicleId);
+      expect(result.brand).toBe('Honda');
+      expect(result.model).toBe('Civic');
+      expect(result.version).toBe('1.6 LX');
+      expect(result.brandId).toBe('brand-1');
+      expect(result.versionId).toBe('ver-1');
+    });
+
+    it('reenvía el contexto DEALERSHIP tal cual (D-144: owner/admin titular)', async () => {
+      correctVinHandler.execute.mockResolvedValue(hydratedVehicle);
+
+      await controller.correctVin(
+        vehicleId,
+        correctVinDto,
+        dealershipCtx,
+        sharedUser,
+      );
+
+      const command = correctVinHandler.execute.mock.calls[0][0];
+      expect(command).toMatchObject({ context: dealershipCtx });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // D-133/D-149: PATCH :id — la concesionaria TITULAR ACTIVA edita.
+  // DEALERSHIP → assertDealershipVehicleWrite; PERSONAL → assertVehicleOwned.
+  // El resto de rutas (delete, grant-access, uploadPhoto, QR, ...) no cambian.
+  // ═══════════════════════════════════════════════════════════
+
+  describe('PATCH :id (update) — D-133/D-149 concesionaria titular', () => {
+    it('DEALERSHIP → autoriza con assertDealershipVehicleWrite y delega al handler', async () => {
+      vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(true);
+      stubHandler.execute.mockResolvedValue({ id: vehicleId });
+
+      await controller.update(
+        vehicleId,
+        { color: 'Rojo' },
+        dealershipCtx,
+        sharedUser,
+      );
+
+      expect(
+        vehicleAccessService.assertDealershipVehicleWrite,
+      ).toHaveBeenCalledWith(vehicleId, sharedUser.id, dealershipCtx);
+      expect(vehicleAccessService.assertOwnership).not.toHaveBeenCalled();
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).not.toHaveBeenCalled();
+      expect(stubHandler.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('DEALERSHIP sin titularidad ni ownership → 403 y handler NO llamado', async () => {
+      // Sin titularidad de concesionaria Y sin ownership personal/super_admin:
+      // el fallback assertVehicleOwned rechaza y el 403 se propaga.
+      vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(
+        false,
+      );
+      vehicleAccessService.assertOwnership.mockRejectedValue(forbiddenError);
+
+      await expect(
+        controller.update(vehicleId, { color: 'Rojo' }, dealershipCtx, sharedUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(stubHandler.execute).not.toHaveBeenCalled();
+      expect(vehicleAccessService.assertOwnership).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+      });
+    });
+
+    it('DEALERSHIP sin titularidad pero super_admin → autorizado por assertVehicleOwned, handler invocado', async () => {
+      // Regresión: super_admin en contexto DEALERSHIP. No autoriza la rama de
+      // concesionaria, pero el fallback assertVehicleOwned (owner personal /
+      // super_admin) resuelve → no 403 y el handler se ejecuta.
+      vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(
+        false,
+      );
+      vehicleAccessService.assertOwnership.mockResolvedValue(undefined);
+      stubHandler.execute.mockResolvedValue({ id: vehicleId });
+
+      await controller.update(
+        vehicleId,
+        { color: 'Rojo' },
+        dealershipCtx,
+        superAdminUser,
+      );
+
+      expect(
+        vehicleAccessService.assertDealershipVehicleWrite,
+      ).toHaveBeenCalledWith(vehicleId, superAdminUser.id, dealershipCtx);
+      expect(vehicleAccessService.assertOwnership).toHaveBeenCalledWith({
+        vehicleId,
+        user: superAdminUser,
+      });
+      expect(stubHandler.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('PERSONAL → mantiene assertVehicleOwned (assertOwnership), sin rama de concesionaria', async () => {
+      vehicleAccessService.assertOwnership.mockResolvedValue(undefined);
+      stubHandler.execute.mockResolvedValue({ id: vehicleId });
+
+      await controller.update(
+        vehicleId,
+        { color: 'Rojo' },
+        personalCtx,
+        ownerUser,
+      );
+
+      expect(vehicleAccessService.assertOwnership).toHaveBeenCalledWith({
+        vehicleId,
+        user: ownerUser,
+      });
+      expect(
+        vehicleAccessService.assertDealershipVehicleWrite,
+      ).not.toHaveBeenCalled();
+      expect(stubHandler.execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // D-133/D-149 (extensión a media): fotos/documentos — la concesionaria
+  // TITULAR ACTIVA administra la media con dealership.vehicle.edit.
+  // Mismo patrón que PATCH /:id. Antes: assertVehicleOwned puro → 403 en
+  // exhibición (el frontend ofrecía la UI vía capabilities.canEdit=true).
+  // ═══════════════════════════════════════════════════════════
+
+  describe('Media writes — D-133/D-149 concesionaria titular administra fotos/documentos', () => {
+    // Cada caso llama al controller con dealershipCtx (antes personalCtx).
+    const dealershipWriteCases: WriteCase[] = [
+      {
+        label: 'POST :id/photos (uploadPhoto)',
+        invoke: () =>
+          controller.uploadPhoto(
+            vehicleId,
+            makeFile(),
+            dealershipCtx,
+            sharedUser,
+          ),
+        handlerMock: uploadPhotoHandler,
+      },
+      {
+        label: 'PATCH :id/photos/:photoId/primary (setPrimaryPhoto)',
+        invoke: () =>
+          controller.setPrimaryPhoto(
+            vehicleId,
+            photoId,
+            dealershipCtx,
+            sharedUser,
+          ),
+        handlerMock: setPrimaryPhotoHandler,
+      },
+      {
+        label: 'DELETE :id/photos/:photoId (deletePhoto)',
+        invoke: () =>
+          controller.deletePhoto(vehicleId, photoId, dealershipCtx, sharedUser),
+        handlerMock: deletePhotoHandler,
+      },
+      {
+        label: 'POST :id/documents (uploadDocument)',
+        invoke: () =>
+          controller.uploadDocument(
+            vehicleId,
+            { name: 'doc', documentType: 'insurance' },
+            makeFile(),
+            dealershipCtx,
+            sharedUser,
+          ),
+        handlerMock: uploadDocumentHandler,
+      },
+      {
+        label: 'PATCH :id/documents/:docId (updateDocument)',
+        invoke: () =>
+          controller.updateDocument(
+            vehicleId,
+            docId,
+            {},
+            dealershipCtx,
+            sharedUser,
+          ),
+        handlerMock: updateDocumentHandler,
+      },
+      {
+        label: 'DELETE :id/documents/:docId (deleteDocument)',
+        invoke: () =>
+          controller.deleteDocument(vehicleId, docId, dealershipCtx, sharedUser),
+        handlerMock: deleteDocumentHandler,
+      },
+    ];
+
+    it.each(dealershipWriteCases)(
+      '$label → DEALERSHIP titular → autoriza con assertDealershipVehicleWrite, sin assertOwnership',
+      async ({ invoke, handlerMock }) => {
+        vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(
+          true,
+        );
+        handlerMock.execute.mockResolvedValue({ id: 'result' });
+
+        await expect(invoke()).resolves.not.toThrow();
+        expect(
+          vehicleAccessService.assertDealershipVehicleWrite,
+        ).toHaveBeenCalledWith(vehicleId, sharedUser.id, dealershipCtx);
+        expect(vehicleAccessService.assertOwnership).not.toHaveBeenCalled();
+        expect(handlerMock.execute).toHaveBeenCalled();
+      },
+    );
+
+    it.each(dealershipWriteCases)(
+      '$label → DEALERSHIP sin titularidad ni ownership → 403 (fallback assertVehicleOwned), handler NO llamado',
+      async ({ invoke, handlerMock }) => {
+        vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(
+          false,
+        );
+        vehicleAccessService.assertOwnership.mockRejectedValue(forbiddenError);
+
+        await expect(invoke()).rejects.toThrow(ForbiddenException);
+        expect(vehicleAccessService.assertOwnership).toHaveBeenCalledWith({
+          vehicleId,
+          user: sharedUser,
+        });
+        expect(handlerMock.execute).not.toHaveBeenCalled();
+      },
+    );
+
+    it('uploadPhoto → DEALERSHIP sin titularidad pero super_admin → autorizado por fallback', async () => {
+      vehicleAccessService.assertDealershipVehicleWrite.mockResolvedValue(
+        false,
+      );
+      vehicleAccessService.assertOwnership.mockResolvedValue(undefined);
+      uploadPhotoHandler.execute.mockResolvedValue({
+        id: 'p-new',
+        vehicleId,
+        key: 'k1',
+        caption: null,
+        isPrimary: true,
+        createdAt: new Date(),
+      });
+
+      await controller.uploadPhoto(
+        vehicleId,
+        makeFile(),
+        dealershipCtx,
+        superAdminUser,
+      );
+
+      expect(
+        vehicleAccessService.assertDealershipVehicleWrite,
+      ).toHaveBeenCalledWith(vehicleId, superAdminUser.id, dealershipCtx);
+      expect(vehicleAccessService.assertOwnership).toHaveBeenCalledWith({
+        vehicleId,
+        user: superAdminUser,
+      });
+      expect(uploadPhotoHandler.execute).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -346,26 +696,28 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       });
     });
 
-    it('GET :id/photos (listPhotos) uses assertOwnershipOrSharedAccess', async () => {
+    it('GET :id/photos (listPhotos) uses assertOwnershipOrSharedAccess with the active context', async () => {
       listPhotosHandler.execute.mockResolvedValue([photoRecord]);
-      const result = await controller.listPhotos(vehicleId, sharedUser);
+      const result = await controller.listPhotos(vehicleId, sharedUser, personalCtx);
       expect(
         vehicleAccessService.assertOwnershipOrSharedAccess,
       ).toHaveBeenCalledWith({
         vehicleId,
         user: sharedUser,
+        context: personalCtx,
       });
       expect(result).toEqual([expect.objectContaining({ id: photoId })]);
     });
 
-    it('GET :id/documents (listDocuments) uses assertOwnershipOrSharedAccess', async () => {
+    it('GET :id/documents (listDocuments) uses assertOwnershipOrSharedAccess with the active context', async () => {
       listDocumentsHandler.execute.mockResolvedValue([docRecord]);
-      const result = await controller.listDocuments(vehicleId, sharedUser);
+      const result = await controller.listDocuments(vehicleId, sharedUser, personalCtx);
       expect(
         vehicleAccessService.assertOwnershipOrSharedAccess,
       ).toHaveBeenCalledWith({
         vehicleId,
         user: sharedUser,
+        context: personalCtx,
       });
       expect(result).toEqual([expect.objectContaining({ id: docId })]);
     });
@@ -409,6 +761,58 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
         context: dealershipCtx,
       });
     });
+
+    // Gap fix: las lecturas de media (photos/documents) antes NO reenviaban el
+    // contexto → la rama DEALERSHIP (FIX-B1) nunca se evaluaba → 403 en
+    // exhibición. Ahora reenvían ctx igual que findOne/getHistory.
+
+    it('GET :id/photos (listPhotos) forwards DEALERSHIP context', async () => {
+      listPhotosHandler.execute.mockResolvedValue([photoRecord]);
+      await controller.listPhotos(vehicleId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
+      });
+    });
+
+    it('GET :id/photos/:photoId (getPhoto) forwards DEALERSHIP context', async () => {
+      getPhotoHandler.execute.mockResolvedValue(photoRecord);
+      await controller.getPhoto(vehicleId, photoId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
+      });
+    });
+
+    it('GET :id/documents (listDocuments) forwards DEALERSHIP context', async () => {
+      listDocumentsHandler.execute.mockResolvedValue([docRecord]);
+      await controller.listDocuments(vehicleId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
+      });
+    });
+
+    it('GET :id/documents/:docId (getDocument) forwards DEALERSHIP context', async () => {
+      getDocumentHandler.execute.mockResolvedValue(docRecord);
+      await controller.getDocument(vehicleId, docId, sharedUser, dealershipCtx);
+      expect(
+        vehicleAccessService.assertOwnershipOrSharedAccess,
+      ).toHaveBeenCalledWith({
+        vehicleId,
+        user: sharedUser,
+        context: dealershipCtx,
+      });
+    });
   });
 
   // ═══════════════════════════════════════════════════════════
@@ -427,7 +831,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
 
     it('without ?signed=true → contract without url (backward compatible)', async () => {
       listPhotosHandler.execute.mockResolvedValue([photoRecord]);
-      const result = await controller.listPhotos(vehicleId, ownerUser);
+      const result = await controller.listPhotos(vehicleId, ownerUser, personalCtx);
 
       expect(result).toEqual([
         {
@@ -447,6 +851,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = (await controller.listPhotos(
         vehicleId,
         ownerUser,
+        personalCtx,
         'true',
       )) as Array<PhotoResponseDto & { url: string; expiresAt: Date }>;
 
@@ -476,7 +881,12 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
 
     it('with ?signed=false → contract without url (treated as unsigned)', async () => {
       listPhotosHandler.execute.mockResolvedValue([photoRecord]);
-      const result = await controller.listPhotos(vehicleId, ownerUser, 'false');
+      const result = await controller.listPhotos(
+        vehicleId,
+        ownerUser,
+        personalCtx,
+        'false',
+      );
 
       expect(storage.getSignedUrl).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
@@ -495,6 +905,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = (await controller.listPhotos(
         vehicleId,
         ownerUser,
+        personalCtx,
         'true',
       )) as Array<PhotoResponseDto & { url: string }>;
 
@@ -525,7 +936,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
 
     it('without ?signed=true → contract without url or urlExpiresAt (backward compatible)', async () => {
       listDocumentsHandler.execute.mockResolvedValue([docRecord]);
-      const result = await controller.listDocuments(vehicleId, ownerUser);
+      const result = await controller.listDocuments(vehicleId, ownerUser, personalCtx);
 
       expect(result).toEqual([
         {
@@ -547,6 +958,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = (await controller.listDocuments(
         vehicleId,
         ownerUser,
+        personalCtx,
         'true',
       )) as Array<DocumentResponseDto & { url: string; urlExpiresAt: Date }>;
 
@@ -583,6 +995,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = await controller.listDocuments(
         vehicleId,
         ownerUser,
+        personalCtx,
         'false',
       );
 
@@ -609,6 +1022,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
       const result = (await controller.listDocuments(
         vehicleId,
         ownerUser,
+        personalCtx,
         'true',
       )) as Array<DocumentResponseDto & { urlExpiresAt: Date }>;
 
@@ -632,7 +1046,12 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
         createdAt: new Date(),
       });
 
-      const result = await controller.getPhoto(vehicleId, photoId, ownerUser);
+      const result = await controller.getPhoto(
+        vehicleId,
+        photoId,
+        ownerUser,
+        personalCtx,
+      );
       expect(result).toEqual(
         expect.objectContaining({ id: photoId, vehicleId }),
       );
@@ -653,6 +1072,7 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
         vehicleId,
         photoId,
         ownerUser,
+        personalCtx,
         'true',
       );
       expect(result).toEqual(
@@ -661,6 +1081,26 @@ describe('VehiclesController — D-048 (F-013) authorization + signed URLs', () 
         }),
       );
       expect((result as { expiresAt: Date }).expiresAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // Catálogo estático de tipos de documento (Tarea 1)
+  // ═══════════════════════════════════════════════════════════
+
+  describe('GET documents/types — catálogo estático de tipos de documento', () => {
+    it('returns the static catalog (only VTV for now) with { value, label } shape', () => {
+      const result = controller.getDocumentTypes();
+
+      expect(result).toEqual([
+        { value: 'VTV', label: 'VTV — Verificación Técnica Vehicular' },
+      ]);
+      // El catálogo es la fuente única para el dropdown; cada entry expone
+      // el valor que va en documentType y el label para UI.
+      for (const entry of result) {
+        expect(entry).toHaveProperty('value');
+        expect(entry).toHaveProperty('label');
+      }
     });
   });
 });

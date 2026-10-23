@@ -67,6 +67,26 @@ describe('AllExceptionsFilter — D-025 / SC-2 redacción de tokens en logs', ()
     expect(msg).not.toContain('token-user-456');
   });
 
+  it('redacta el token del QR de transferencia en el path (A1/SC-2)', () => {
+    const { host } = createHost(
+      '/api/vehicles/transfer/qr/abcdef0123456789abcdef0123456789',
+    );
+    filter.catch(new HttpException('nope', HttpStatus.NOT_FOUND), host);
+
+    const msg = lastLoggedMessage();
+    expect(msg).toContain('/vehicles/transfer/qr/{token}');
+    expect(msg).not.toContain('abcdef0123456789abcdef0123456789');
+  });
+
+  it('redacta el token del QR de transferencia y conserva el sufijo /accept (A1/SC-2)', () => {
+    const { host } = createHost('/api/vehicles/transfer/qr/tok-secret-123/accept');
+    filter.catch(new HttpException('nope', HttpStatus.BAD_REQUEST), host);
+
+    const msg = lastLoggedMessage();
+    expect(msg).toContain('/vehicles/transfer/qr/{token}/accept');
+    expect(msg).not.toContain('tok-secret-123');
+  });
+
   it('redacta el token aunque haya query adicional después', () => {
     const { host } = createHost(
       '/api/auth/reset-password?token=reset-abc&lang=es',

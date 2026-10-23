@@ -167,6 +167,7 @@ export class AcceptTransferQrHandler {
     if (qr.purpose === 'sale' || qr.purpose === 'return') {
       const currentOwnership = await this.prisma.vehicleOwnership.findFirst({
         where: { vehicleId: qr.vehicleId, endsAt: null },
+        orderBy: { startsAt: 'desc' },
       });
 
       if (
@@ -212,6 +213,7 @@ export class AcceptTransferQrHandler {
 
       const currentOwnership = await tx.vehicleOwnership.findFirst({
         where: { vehicleId: qr.vehicleId, endsAt: null },
+        orderBy: { startsAt: 'desc' },
       });
 
       if (currentOwnership) {

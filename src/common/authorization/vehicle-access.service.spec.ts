@@ -498,4 +498,381 @@ describe('VehicleAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
   });
+
+  describe('getCapabilities (Gap 1 — D-12)', () => {
+    const dealershipCtx: CurrentContext = {
+      type: 'DEALERSHIP',
+      userId: 'user-1',
+      dealershipId: 'd1',
+      memberId: 'dm1',
+      roleId: 'dr1',
+    };
+
+    const notSuperAdmin = () => {
+      prismaMock.systemRole.findUnique.mockResolvedValue(null);
+    };
+
+    const dealershipMember = (codes: string[], status = 'active') => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status,
+        role: {
+          permissions: codes.map((code) => ({ permission: { code } })),
+        },
+      });
+    };
+
+    it('super_admin → todas las capacidades en true', async () => {
+      prismaMock.systemRole.findUnique.mockResolvedValue({ id: 'sa' });
+      prismaMock.systemRoleAssignment.findFirst.mockResolvedValue({ id: 'a1' });
+
+      await expect(
+        service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: personalCtx,
+        }),
+      ).resolves.toEqual({
+        canEdit: true,
+        canRecordMileage: true,
+        canCorrectVin: true,
+      });
+    });
+
+    it('PERSONAL con ownership activo → editar, km y VIN', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'own-1' });
+
+      await expect(
+        service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: personalCtx,
+        }),
+      ).resolves.toEqual({
+        canEdit: true,
+        canRecordMileage: true,
+        canCorrectVin: true,
+      });
+    });
+
+    it('PERSONAL sin ownership → todas false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: personalCtx,
+        }),
+      ).resolves.toEqual({
+        canEdit: false,
+        canRecordMileage: false,
+        canCorrectVin: false,
+      });
+    });
+
+    it('DEALERSHIP titular con permiso → solo canRecordMileage (edición y VIN quedan false)', async () => {
+      notSuperAdmin();
+      // 1ª consulta: ownership personal (null). 2ª: titularidad de la concesionaria.
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'titular-1' });
+      dealershipMember(['dealership.mileage.record']);
+
+      await expect(
+        service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: dealershipCtx,
+        }),
+      ).resolves.toEqual({
+        canEdit: false,
+        canRecordMileage: true,
+        canCorrectVin: false,
+      });
+    });
+
+    it('DEALERSHIP sin permiso de km → canRecordMileage false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMember(['dealership.vehicle.sell']);
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canRecordMileage).toBe(false);
+    });
+
+    it('DEALERSHIP no titular → canRecordMileage false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      dealershipMember(['dealership.mileage.record']);
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canRecordMileage).toBe(false);
+    });
+
+    it('DEALERSHIP con membresía no activa → canRecordMileage false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMember(['dealership.mileage.record'], 'inactive');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canRecordMileage).toBe(false);
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // D-144: la corrección de VIN la pueden hacer owner/admin (titular);
+    // el vendedor no cambia identidad. La matriz se resuelve por `role.code`.
+    // ─────────────────────────────────────────────────────────────
+
+    const dealershipMemberWithRole = (code: string, status = 'active') => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status,
+        role: { code, permissions: [] },
+      });
+    };
+
+    // D-133/D-149: miembro con permiso `dealership.vehicle.edit` (owner/admin/
+    // seller por igual). El código de rol se incluye para poder combinar la
+    // matriz de edición con la de corrección de VIN.
+    const dealershipMemberEdit = (code: string, status = 'active') => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status,
+        role: {
+          code,
+          permissions: [{ permission: { code: 'dealership.vehicle.edit' } }],
+        },
+      });
+    };
+
+    it.each(['owner', 'admin'])(
+      'DEALERSHIP %s titular → canCorrectVin true (D-144)',
+      async (code) => {
+        notSuperAdmin();
+        // 1ª: ownership personal (null). 2ª: titularidad de la concesionaria.
+        prismaMock.vehicleOwnership.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: 'titular-1' });
+        dealershipMemberWithRole(code);
+
+        const caps = await service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: dealershipCtx,
+        });
+
+        expect(caps.canCorrectVin).toBe(true);
+      },
+    );
+
+    it('DEALERSHIP seller titular → canCorrectVin false (D-144: el vendedor no cambia identidad)', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMemberWithRole('seller');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canCorrectVin).toBe(false);
+    });
+
+    it('DEALERSHIP admin NO titular → canCorrectVin false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMemberWithRole('admin');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canCorrectVin).toBe(false);
+    });
+
+    it('DEALERSHIP admin titular con membresía no activa → canCorrectVin false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMemberWithRole('admin', 'inactive');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canCorrectVin).toBe(false);
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // D-133/D-149: canEdit — la concesionaria TITULAR ACTIVA edita mientras es
+    // titular (owner/admin/seller por igual, `dealership.vehicle.edit`). La
+    // escritura muere con la transferencia. PERSONAL queda intacto.
+    // ─────────────────────────────────────────────────────────────
+
+    it.each(['owner', 'admin', 'seller'])(
+      'DEALERSHIP %s titular con permiso edit → canEdit true (D-149)',
+      async (code) => {
+        notSuperAdmin();
+        // 1ª: ownership personal (null). 2ª: titularidad de la concesionaria.
+        prismaMock.vehicleOwnership.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ id: 'titular-1' });
+        dealershipMemberEdit(code);
+
+        const caps = await service.getCapabilities({
+          vehicleId: 'v1',
+          userId: 'user-1',
+          context: dealershipCtx,
+        });
+
+        expect(caps.canEdit).toBe(true);
+      },
+    );
+
+    it('DEALERSHIP titular con permiso edit pero la concesionaria NO es titular → canEdit false (la escritura muere con la transferencia)', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst
+        .mockResolvedValueOnce(null) // ownership personal
+        .mockResolvedValueOnce(null); // titularidad de la concesionaria (no titular)
+      dealershipMemberEdit('owner');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canEdit).toBe(false);
+    });
+
+    it('DEALERSHIP titular SIN permiso dealership.vehicle.edit → canEdit false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMember(['dealership.mileage.record']);
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canEdit).toBe(false);
+    });
+
+    it('DEALERSHIP con membresía no activa → canEdit false', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+      dealershipMemberEdit('owner', 'inactive');
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: dealershipCtx,
+      });
+
+      expect(caps.canEdit).toBe(false);
+    });
+
+    it('PERSONAL con ownership activo → canEdit true (intacto, sin consultar la concesionaria)', async () => {
+      notSuperAdmin();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'own-1' });
+
+      const caps = await service.getCapabilities({
+        vehicleId: 'v1',
+        userId: 'user-1',
+        context: personalCtx,
+      });
+
+      expect(caps.canEdit).toBe(true);
+      expect(prismaMock.dealershipMember.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('assertDealershipVehicleWrite (D-133/D-149)', () => {
+    const dealershipCtx: CurrentContext = {
+      type: 'DEALERSHIP',
+      userId: 'user-1',
+      dealershipId: 'd1',
+      memberId: 'dm1',
+      roleId: 'dr1',
+    };
+
+    const memberWithEdit = (status = 'active') => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status,
+        role: {
+          permissions: [{ permission: { code: 'dealership.vehicle.edit' } }],
+        },
+      });
+    };
+
+    it('miembro titular activo con permiso edit → true (owner/admin/seller por igual)', async () => {
+      memberWithEdit();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue({
+        id: 'titular-1',
+      });
+
+      await expect(
+        service.assertDealershipVehicleWrite('v1', 'user-1', dealershipCtx),
+      ).resolves.toBe(true);
+    });
+
+    it('miembro activo titular SIN permiso edit → false (no consulta titularidad)', async () => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue({
+        status: 'active',
+        role: { permissions: [{ permission: { code: 'history.view' } }] },
+      });
+
+      await expect(
+        service.assertDealershipVehicleWrite('v1', 'user-1', dealershipCtx),
+      ).resolves.toBe(false);
+      expect(prismaMock.vehicleOwnership.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('membresía no activa → false', async () => {
+      memberWithEdit('inactive');
+
+      await expect(
+        service.assertDealershipVehicleWrite('v1', 'user-1', dealershipCtx),
+      ).resolves.toBe(false);
+    });
+
+    it('caller sin membresía → false', async () => {
+      prismaMock.dealershipMember.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.assertDealershipVehicleWrite('v1', 'user-1', dealershipCtx),
+      ).resolves.toBe(false);
+    });
+
+    it('miembro activo con permiso edit pero la concesionaria NO es titular → false', async () => {
+      memberWithEdit();
+      prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assertDealershipVehicleWrite('v1', 'user-1', dealershipCtx),
+      ).resolves.toBe(false);
+    });
+  });
 });

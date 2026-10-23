@@ -6,7 +6,9 @@ import {
   Max,
   IsUUID,
   Matches,
+  Validate,
 } from 'class-validator';
+import { IsValidVin } from './common/vin.validator';
 
 export class RegisterVehicleDto {
   // D-037: formato alfanumérico de 2 a 10 caracteres. La normalización a
@@ -18,8 +20,12 @@ export class RegisterVehicleDto {
   })
   licensePlate!: string;
 
+  // D-145/D-132: formato de VIN (17 chars, sin I/O/Q). La normalización
+  // (trim + uppercase) se aplica en RegisterVehicleHandler (única fuente de
+  // verdad), igual que la placa (D-037); el validador solo verifica forma.
   @IsOptional()
   @IsString()
+  @Validate(IsValidVin)
   vin?: string;
 
   @IsOptional()
@@ -49,4 +55,13 @@ export class RegisterVehicleDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Gap 1 (D-07): kilometraje inicial. Obligatorio cuando el contexto activo es
+  // DEALERSHIP (falla 400 en el handler si falta); rechazado en PERSONAL.
+  // El DTO solo valida la forma cuando viene; la regla de contexto no puede
+  // resolverse aquí.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  initialMileage?: number;
 }

@@ -53,7 +53,7 @@ export class TransferVehicleHandler {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { id: command.vehicleId },
       include: {
-        ownerships: { where: { endsAt: null }, take: 1 },
+        ownerships: { where: { endsAt: null }, take: 1, orderBy: { startsAt: 'desc' } },
       },
     });
 
