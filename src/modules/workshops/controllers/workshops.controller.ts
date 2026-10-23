@@ -110,9 +110,13 @@ export class WorkshopsController {
   @Patch(':id')
   @UseGuards(WorkshopGuard, PermissionsGuard)
   @Permissions('workshop.update')
-  async update(@Param('id') id: string, @Body() dto: UpdateWorkshopDto) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkshopDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.updateWorkshopHandler.execute(
-      new UpdateWorkshopCommand(id, dto),
+      new UpdateWorkshopCommand(id, dto, user.id),
     );
   }
 

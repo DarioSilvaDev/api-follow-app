@@ -4,8 +4,6 @@ import { WorkshopsController } from './controllers/workshops.controller';
 import { PublicWorkshopController } from './controllers/public.controller';
 import { WorkshopSearchController } from './controllers/search.controller';
 import { WizardController } from './controllers/wizard.controller';
-import { PrismaWorkshopRepository } from './repositories/prisma-workshop.repository';
-import { WORKSHOP_REPOSITORY } from './tokens';
 import { AuthorizationModule } from '../../common/authorization.module';
 import { UpdateWorkshopHandler } from './commands/update-workshop/update-workshop.handler';
 import { CreateBranchHandler } from './commands/create-branch/create-branch.handler';
@@ -43,10 +41,6 @@ import { envs } from '../../config/envs';
       signOptions: { expiresIn: parseInt(envs.JWT_ACCESS_EXPIRES_IN) },
     }),
   ],
-  // WorkshopSearchController ANTES de WorkshopsController: evita que
-  // `GET /api/workshops/:id` capture `search` como id (F-012).
-  // WizardController también ANTES de WorkshopsController: evita que
-  // `GET /api/workshops/:id` capture `wizard` como id (D-106).
   controllers: [
     WorkshopSearchController,
     WizardController,
@@ -78,8 +72,6 @@ import { envs } from '../../config/envs';
     WizardClaimHandler,
     WorkshopInvitationEmailListener,
     WorkshopClaimedEmailListener,
-    { provide: WORKSHOP_REPOSITORY, useClass: PrismaWorkshopRepository },
   ],
-  exports: [WORKSHOP_REPOSITORY],
 })
 export class WorkshopsModule {}

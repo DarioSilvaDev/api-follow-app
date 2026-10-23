@@ -1,4 +1,5 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsValidTaxId } from '../validators/is-valid-tax-id';
 
 export class CreateWorkshopDto {
   @IsString()
@@ -13,10 +14,12 @@ export class CreateWorkshopDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsValidTaxId()
   taxId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsEmail()
+  @MaxLength(255)
   email?: string;
 
   @IsOptional()

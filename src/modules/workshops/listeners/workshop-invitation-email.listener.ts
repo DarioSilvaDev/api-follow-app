@@ -39,10 +39,16 @@ export class WorkshopInvitationEmailListener {
     try {
       const workshop = await this.prisma.workshop.findUnique({
         where: { id: event.workshopId },
-        select: { id: true, status: true, name: true },
+        select: { id: true, status: true, name: true, dealershipId: true },
       });
 
       if (!workshop || workshop.status !== 'pending_claim') return undefined;
+
+      // D-TL-5: taller vinculado a una concesionaria (alta conjunta) NUNCA
+      // recibe su propio mail de invitación: el flujo combinado no emite
+      // `workshop.member.invited`, y el mail combinado lo manda el listener
+      // de dealership (D-TL-3). Guard defensivo estructural.
+      if (workshop.dealershipId) return undefined;
 
       return await this.mailService.sendWorkshopInvitationEmail(
         event.email,

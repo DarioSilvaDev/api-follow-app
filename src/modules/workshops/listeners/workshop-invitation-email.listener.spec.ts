@@ -39,16 +39,34 @@ describe('WorkshopInvitationEmailListener — D-106 mail del wizard de taller', 
 
     expect(prismaMock.workshop.findUnique).toHaveBeenCalledWith({
       where: { id: 'w1' },
-      select: { id: true, status: true, name: true },
+      select: { id: true, status: true, name: true, dealershipId: true },
     });
-    expect(
-      mailServiceMock.sendWorkshopInvitationEmail,
-    ).toHaveBeenCalledTimes(1);
+    expect(mailServiceMock.sendWorkshopInvitationEmail).toHaveBeenCalledTimes(
+      1,
+    );
     const [to, name, token] =
       mailServiceMock.sendWorkshopInvitationEmail.mock.calls[0];
     expect(to).toBe('dueno@example.com');
     expect(name).toBe('Taller Norte');
     expect(token).toBe('token-abcd');
+  });
+
+  it('D-TL-5: NUNCA envía el mail por su cuenta si el taller es de una concesionaria (guard dealershipId)', async () => {
+    // Alta conjunta: el taller tiene dealershipId y el mail combinado lo manda
+    // SOLO el listener de dealership. Si este listener enviara también, el
+    // dueño recibiría 2 mails con el mismo wizard.
+    prismaMock.workshop.findUnique.mockResolvedValue({
+      id: 'w1',
+      status: 'pending_claim',
+      name: 'Concesionaria Norte Service',
+      dealershipId: 'd1',
+    });
+
+    await listener.handle(
+      new MemberInvitedEvent('w1', 'dueno@example.com', 'token-abcd'),
+    );
+
+    expect(mailServiceMock.sendWorkshopInvitationEmail).not.toHaveBeenCalled();
   });
 
   it('NO envía mail para invitaciones regulares (taller ya activo)', async () => {
@@ -62,22 +80,16 @@ describe('WorkshopInvitationEmailListener — D-106 mail del wizard de taller', 
       new MemberInvitedEvent('w1', 'miembro@example.com', 'token-abcd'),
     );
 
-    expect(
-      mailServiceMock.sendWorkshopInvitationEmail,
-    ).not.toHaveBeenCalled();
+    expect(mailServiceMock.sendWorkshopInvitationEmail).not.toHaveBeenCalled();
   });
 
   it('no falla si el taller no existe', async () => {
     prismaMock.workshop.findUnique.mockResolvedValue(null);
 
     await expect(
-      listener.handle(
-        new MemberInvitedEvent('w-missing', 'a@b.com', 'tok'),
-      ),
+      listener.handle(new MemberInvitedEvent('w-missing', 'a@b.com', 'tok')),
     ).resolves.toBeUndefined();
-    expect(
-      mailServiceMock.sendWorkshopInvitationEmail,
-    ).not.toHaveBeenCalled();
+    expect(mailServiceMock.sendWorkshopInvitationEmail).not.toHaveBeenCalled();
   });
 
   it('no tumba el proceso si el envío de mail falla (SC-1): loguea con workshopId y NUNCA el token', async () => {

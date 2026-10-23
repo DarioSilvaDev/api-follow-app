@@ -29,10 +29,16 @@ export class WorkshopClaimedEmailListener {
     try {
       const workshop = await this.prisma.workshop.findUnique({
         where: { id: event.workshopId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, dealershipId: true },
       });
 
       if (!workshop) return undefined;
+
+      // D-TL-5: taller vinculado a una concesionaria (alta conjunta). El
+      // claim combinado emite `dealership.claimed` + `workshop.claimed`; sin
+      // este guard se enviarían 2 mails de confirmación. El único mail
+      // combinado lo manda el listener de dealership.
+      if (workshop.dealershipId) return undefined;
 
       return await this.mailService.sendWorkshopClaimedEmail(
         event.email,

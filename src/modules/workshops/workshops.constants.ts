@@ -29,6 +29,10 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'workshop.update',
     'workshop.branch.create',
     'workshop.hours.set',
+    'workshop.specialties.manage',
+    'workshop.roles.create',
+    'workshop.roles.update',
+    'workshop.roles.delete',
     // appointments
     'appointment.create',
     'appointment.update',
@@ -46,6 +50,7 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     // care episodes (vehicle check-in / verify owner-recorded records)
     'care-episode.create',
     'care-episode.verify',
+    'care-episode.attach',
     // history
     'history.view',
     'history.share',
@@ -63,5 +68,14 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'care-episode.verify',
     'history.view',
   ],
-  employee: ['appointment.create', 'history.view'],
+  // D-TL-7 / AC-10: la matriz `employee` es el label UI "Recepcionista" (el
+  // label es mapeo frontend; el `name` del rol en BD no cambia). Los permisos
+  // appointment.update/cancel ya existen como filas de permission (seed §216/223);
+  // el seed `systemWorkshopRolePermissions` es el espejo y usa `upsert`.
+  employee: [
+    'appointment.create',
+    'history.view',
+    'appointment.update',
+    'appointment.cancel',
+  ],
 };

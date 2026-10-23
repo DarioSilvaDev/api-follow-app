@@ -36,12 +36,29 @@ describe('WorkshopClaimedEmailListener — D-106 mail de confirmación', () => {
 
     expect(prismaMock.workshop.findUnique).toHaveBeenCalledWith({
       where: { id: 'w1' },
-      select: { id: true, name: true },
+      select: { id: true, name: true, dealershipId: true },
     });
     expect(mailServiceMock.sendWorkshopClaimedEmail).toHaveBeenCalledTimes(1);
     const [to, name] = mailServiceMock.sendWorkshopClaimedEmail.mock.calls[0];
     expect(to).toBe('dueno@example.com');
     expect(name).toBe('Taller Norte');
+  });
+
+  it('D-TL-5: NUNCA envía la confirmación si el taller es de una concesionaria (guard dealershipId)', async () => {
+    // Alta conjunta: la confirmación combinada (2 CTAs) la manda SOLO el
+    // listener de dealership. Sin este guard, el claim conjunto emitiría
+    // dealership.claimed + workshop.claimed y el dueño recibiría 2 mails.
+    prismaMock.workshop.findUnique.mockResolvedValue({
+      id: 'w1',
+      name: 'Concesionaria Norte Service',
+      dealershipId: 'd1',
+    });
+
+    await listener.handle(
+      new WorkshopClaimedEvent('w1', 'u1', 'dueno@example.com'),
+    );
+
+    expect(mailServiceMock.sendWorkshopClaimedEmail).not.toHaveBeenCalled();
   });
 
   it('no envía mail si el taller no existe', async () => {

@@ -5,6 +5,7 @@ export class UpdateWorkshopCommand extends BaseCommand {
   constructor(
     public readonly id: string,
     public readonly dto: UpdateWorkshopDto,
+    public readonly actorUserId: string,
   ) {
     super();
   }
