@@ -13,6 +13,7 @@
 import { globSync } from 'glob';
 import * as fs from 'fs';
 import * as path from 'path';
+import { WORKSHOP_ROLE_PERMISSIONS } from './workshops.constants';
 
 const permissionsRegex = /@Permissions\(([^)]+)\)/g;
 const quoteRegex = /['"]([^'"]+)['"]/g;
@@ -120,6 +121,41 @@ describe('Permissions <-> seed consistency (Lote 1)', () => {
     ];
     for (const r of required) {
       expect(constContent).toContain(r);
+    }
+  });
+
+  it('WORKSHOP_ROLE_PERMISSIONS mirrors seed systemWorkshopRolePermissions exactly', () => {
+    // Extrae la matriz `systemWorkshopRolePermissions` del seed como texto y
+    // la compara rol por rol contra la constante que usa el onboarding admin
+    // al crear talleres (create-workshop.handler). Cualquier divergence deja
+    // talleres creados por la app con menos permisos que los del seed
+    // (bug real: `care-episode.list` faltaba en owner/mechanic → 403 en
+    // GET /care-episodes para esos talleres, F-023).
+    const start = seedContent.indexOf('const systemWorkshopRolePermissions');
+    expect(start).toBeGreaterThan(-1);
+    const end = seedContent.indexOf('};', start);
+    const matrixBlock = seedContent.slice(start, end);
+
+    const codesOf = (block: string): string[] => {
+      const codes: string[] = [];
+      let q: RegExpExecArray | null;
+      const rq = /['"]([^'"]+)['"]/g;
+      while ((q = rq.exec(block)) !== null) {
+        codes.push(q[1]);
+      }
+      return codes.sort();
+    };
+
+    for (const role of ['owner', 'mechanic', 'employee']) {
+      const roleMatch = matrixBlock.match(
+        new RegExp(`\\b${role}\\s*:\\s*\\[([\\s\\S]*?)\\]`),
+      );
+      if (!roleMatch) {
+        throw new Error(`seed role block "${role}" not found`);
+      }
+      const seedCodes = codesOf(roleMatch[1]);
+      const constCodes = [...(WORKSHOP_ROLE_PERMISSIONS[role] ?? [])].sort();
+      expect(constCodes).toEqual(seedCodes);
     }
   });
 });

@@ -51,6 +51,8 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'care-episode.create',
     'care-episode.verify',
     'care-episode.attach',
+    // care episodes (workshop listing — F-023)
+    'care-episode.list',
     // history
     'history.view',
     'history.share',
@@ -66,6 +68,9 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'service-record.create',
     'care-episode.create',
     'care-episode.verify',
+    'care-episode.attach',
+    // care episodes (workshop listing — F-023; NO employee, fuera de alcance MVP)
+    'care-episode.list',
     'history.view',
   ],
   // D-TL-7 / AC-10: la matriz `employee` es el label UI "Recepcionista" (el
