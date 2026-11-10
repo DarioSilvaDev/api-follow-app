@@ -26,6 +26,8 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { WorkshopOnlyGuard } from '../../../common/guards/workshop-only.guard';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
+import { CheckInDto } from '../dto/check-in.dto';
+import { CloseCareEpisodeDto } from '../dto/close-care-episode.dto';
 import { CreateCareEpisodeDto } from '../dto/create-care-episode.dto';
 import {
   CreateOwnerCareEpisodeDto,
@@ -35,6 +37,10 @@ import { AttachEvidenceDto } from '../dto/attach-evidence.dto';
 import { RemoveAttachmentDto } from '../dto/remove-attachment.dto';
 import { CreateCareEpisodeCommand } from '../commands/create-care-episode/create-care-episode.command';
 import { CreateCareEpisodeHandler } from '../commands/create-care-episode/create-care-episode.handler';
+import { CheckInCommand } from '../commands/check-in/check-in.command';
+import { CheckInHandler } from '../commands/check-in/check-in.handler';
+import { CloseCareEpisodeCommand } from '../commands/close-care-episode/close-care-episode.command';
+import { CloseCareEpisodeHandler } from '../commands/close-care-episode/close-care-episode.handler';
 import { CreateOwnerCareEpisodeCommand } from '../commands/create-owner-care-episode/create-owner-care-episode.command';
 import { CreateOwnerCareEpisodeHandler } from '../commands/create-owner-care-episode/create-owner-care-episode.handler';
 import { VerifyCareEpisodeCommand } from '../commands/verify-care-episode/verify-care-episode.command';
@@ -44,6 +50,7 @@ import { AttachCareEpisodeAttachmentsHandler } from '../commands/attach-care-epi
 import { RemoveCareEpisodeAttachmentCommand } from '../commands/remove-care-episode-attachment/remove-care-episode-attachment.command';
 import { RemoveCareEpisodeAttachmentHandler } from '../commands/remove-care-episode-attachment/remove-care-episode-attachment.handler';
 import { LookupVehicleHandler } from '../queries/lookup-vehicle/lookup-vehicle.handler';
+import { ListServiceTypesHandler } from '../queries/list-service-types/list-service-types.handler';
 import { ListCareEpisodesHandler } from '../queries/list-care-episodes/list-care-episodes.handler';
 import { ListVerificationsHandler } from '../queries/list-verifications/list-verifications.handler';
 import { GetCareEpisodeHandler } from '../queries/get-care-episode/get-care-episode.handler';
@@ -67,8 +74,11 @@ import { evidenceFileFilter } from './attachment-upload.utils';
 export class CareEpisodesController {
   constructor(
     private readonly createCareEpisodeHandler: CreateCareEpisodeHandler,
+    private readonly checkInHandler: CheckInHandler,
+    private readonly closeCareEpisodeHandler: CloseCareEpisodeHandler,
     private readonly createOwnerCareEpisodeHandler: CreateOwnerCareEpisodeHandler,
     private readonly lookupVehicleHandler: LookupVehicleHandler,
+    private readonly listServiceTypesHandler: ListServiceTypesHandler,
     private readonly listCareEpisodesHandler: ListCareEpisodesHandler,
     private readonly listVerificationsHandler: ListVerificationsHandler,
     private readonly verifyCareEpisodeHandler: VerifyCareEpisodeHandler,
@@ -103,6 +113,34 @@ export class CareEpisodesController {
   }
 
   // ──────────────────────────────────────────────────────────
+  // POST /api/care-episodes/check-in — Check-in unificado (B-2)
+  // ──────────────────────────────────────────────────────────
+  // Recibe la PLACA (no vehicleId) y resuelve vehículo + atención + contacto
+  // en una transacción. Mismo permiso que el alta existente (no se crea uno
+  // nuevo para el ingreso). Ruta estática declarada antes de los POST
+  // dinámicos (:id/verify, :id/attachments) por la regla F-012.
+
+  @Post('check-in')
+  @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
+  @Permissions('care-episode.create')
+  async checkIn(
+    @Body() dto: CheckInDto,
+    @ActiveContext() ctx: CurrentContext,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (ctx.type !== 'WORKSHOP') {
+      // Unreachable: WorkshopOnlyGuard already rejects non-WORKSHOP contexts.
+      throw new ForbiddenException(
+        'This operation requires a WORKSHOP context',
+      );
+    }
+
+    return this.checkInHandler.execute(
+      new CheckInCommand(dto, ctx.workshopId, ctx.memberId, user.id),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
   // GET /api/care-episodes/lookup?plate= — Buscar vehículo por placa
   // ──────────────────────────────────────────────────────────
 
@@ -111,6 +149,21 @@ export class CareEpisodesController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async lookup(@Query('plate') plate: string) {
     return this.lookupVehicleHandler.execute(plate);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // GET /api/care-episodes/service-types — Catálogo del check-in (B-2)
+  // ──────────────────────────────────────────────────────────
+  // Ruta estática antes de `@Get(':id')` (F-012). Sin permiso extra: es
+  // lectura de catálogo para el formulario de check-in.
+
+  @Get('service-types')
+  @UseGuards(WorkshopOnlyGuard)
+  async listServiceTypes(@ActiveContext() ctx: CurrentContext) {
+    if (ctx.type !== 'WORKSHOP') {
+      throw new ForbiddenException('Requires a WORKSHOP context');
+    }
+    return this.listServiceTypesHandler.execute(ctx.workshopId);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -220,6 +273,33 @@ export class CareEpisodesController {
     }
     return this.verifyCareEpisodeHandler.execute(
       new VerifyCareEpisodeCommand(id, ctx.workshopId, ctx.memberId),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // POST /api/care-episodes/:id/close — Cierre de atención (B-3)
+  // ──────────────────────────────────────────────────────────
+  // Única transición open → delivered. WorkshopOnlyGuard ANTES de
+  // PermissionsGuard (anti-bypass D-024 A2). El evento `care-episode.closed`
+  // se emite sólo después del commit (dentro del handler).
+
+  @Post(':id/close')
+  @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
+  @Permissions('care-episode.close')
+  async close(
+    @Param('id') id: string,
+    @Body() dto: CloseCareEpisodeDto,
+    @ActiveContext() ctx: CurrentContext,
+  ) {
+    if (ctx.type !== 'WORKSHOP') {
+      // Unreachable: WorkshopOnlyGuard already rejects non-WORKSHOP contexts.
+      throw new ForbiddenException(
+        'This operation requires a WORKSHOP context',
+      );
+    }
+
+    return this.closeCareEpisodeHandler.execute(
+      new CloseCareEpisodeCommand(id, dto, ctx.workshopId, ctx.memberId),
     );
   }
 

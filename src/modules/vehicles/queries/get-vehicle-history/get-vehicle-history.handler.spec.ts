@@ -257,7 +257,6 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
     const excluded = [
       'internalNotes',
       'customerComplaint',
-      'closedAt',
       'updatedAt',
       'createdByUserId',
       'createdByMemberId',
@@ -280,11 +279,14 @@ describe('GetVehicleHistoryHandler — PII in history (Security Review #13)', ()
       'source',
       'verification',
       'mileageIn',
+      'mileageOut',
       'customerNotes',
       'checkedInAt',
+      'closedAt',
       'createdAt',
       'workshopName',
       'workshop',
+      'serviceTypes',
     ];
     for (const key of expected) {
       expect(selectKeys).toContain(key);

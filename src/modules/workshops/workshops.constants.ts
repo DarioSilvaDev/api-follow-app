@@ -53,9 +53,16 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'care-episode.attach',
     // care episodes (workshop listing — F-023)
     'care-episode.list',
+    // care episodes (check-out / close)
+    'care-episode.close',
     // history
     'history.view',
     'history.share',
+    // vehicle claim (reclamo del propietario)
+    'vehicle-claim.create',
+    'vehicle-claim.list',
+    'vehicle-claim.review',
+    'vehicle-claim.revoke',
   ],
   mechanic: [
     'appointment.create',
@@ -71,7 +78,12 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'care-episode.attach',
     // care episodes (workshop listing — F-023; NO employee, fuera de alcance MVP)
     'care-episode.list',
+    // care episodes (check-out / close)
+    'care-episode.close',
     'history.view',
+    // vehicle claim (reclamo del propietario: sin review/revoke)
+    'vehicle-claim.create',
+    'vehicle-claim.list',
   ],
   // D-TL-7 / AC-10: la matriz `employee` es el label UI "Recepcionista" (el
   // label es mapeo frontend; el `name` del rol en BD no cambia). Los permisos

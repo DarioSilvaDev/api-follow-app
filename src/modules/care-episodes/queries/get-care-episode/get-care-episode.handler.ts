@@ -56,17 +56,30 @@ export class GetCareEpisodeHandler {
         workshopId: true,
         workshopName: true,
         mileageIn: true,
+        mileageOut: true,
+        mileageOutUnreadable: true,
+        mileageOutUnreadableReason: true,
+        closeNotes: true,
         customerComplaint: true,
         customerNotes: true,
         internalNotes: true,
         checkedInAt: true,
         closedAt: true,
         createdAt: true,
+        serviceTypes: {
+          select: {
+            serviceTypeId: true,
+            customLabel: true,
+            serviceType: { select: { code: true, name: true } },
+          },
+        },
         vehicle: {
           select: {
             id: true,
             licensePlate: true,
             manufactureYear: true,
+            brandName: true,
+            modelName: true,
             version: {
               select: {
                 name: true,
@@ -153,8 +166,14 @@ export class GetCareEpisodeHandler {
       vehicle: {
         id: episode.vehicle.id,
         licensePlate: episode.vehicle.licensePlate,
-        brand: episode.vehicle.version?.model?.brand?.name ?? null,
-        model: episode.vehicle.version?.model?.name ?? null,
+        brand:
+          episode.vehicle.version?.model?.brand?.name ??
+          episode.vehicle.brandName ??
+          null,
+        model:
+          episode.vehicle.version?.model?.name ??
+          episode.vehicle.modelName ??
+          null,
         manufactureYear: episode.vehicle.manufactureYear,
       },
       status: episode.status,
@@ -165,6 +184,16 @@ export class GetCareEpisodeHandler {
       workshopId: episode.workshopId ?? null,
       workshopName: episode.workshopName ?? episode.workshop?.name ?? null,
       mileageIn: episode.mileageIn ?? null,
+      mileageOut: episode.mileageOut ?? null,
+      mileageOutUnreadable: episode.mileageOutUnreadable,
+      mileageOutUnreadableReason: episode.mileageOutUnreadableReason ?? null,
+      closeNotes: episode.closeNotes ?? null,
+      serviceTypes: episode.serviceTypes.map((link) => ({
+        serviceTypeId: link.serviceTypeId,
+        code: link.serviceType?.code ?? null,
+        name: link.serviceType?.name ?? null,
+        customLabel: link.customLabel ?? null,
+      })),
       customerComplaint:
         projection === 'owner' || projection === 'workshop'
           ? episode.customerComplaint

@@ -17,7 +17,8 @@ import { CurrentContext } from '../context/interfaces/current-context.interface'
  *   7. super_admin → return
  *   8. Nothing matches → ForbiddenException
  *   9. UNION legs: appointments/cancelled excluded, work_orders/cancelled excluded,
- *      estimates present (no filter), service_records present (no filter)
+ *      estimates present (no filter), service_records present (no filter),
+ *      care_episodes/cancelled excluded (B-2)
  *
  * - assertOwnershipOrSharedAccess (strict mode):
  *   1. Vehicle not exists → return
@@ -183,6 +184,10 @@ describe('VehicleAccessService', () => {
       // (d) service_records leg: present WITHOUT status filter
       expect(sql).toContain(
         'SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2',
+      );
+      // (e) care_episodes leg (B-2): status <> 'cancelled' (delivered asocia)
+      expect(sql).toContain(
+        "SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
       );
     });
 

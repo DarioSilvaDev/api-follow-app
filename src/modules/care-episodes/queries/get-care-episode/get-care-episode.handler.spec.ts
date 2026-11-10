@@ -55,6 +55,11 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
       workshopId,
       workshopName: null,
       mileageIn: 12345,
+      mileageOut: null,
+      mileageOutUnreadable: false,
+      mileageOutUnreadableReason: null,
+      closeNotes: null,
+      serviceTypes: [],
       customerComplaint: 'Ruido al frenar',
       customerNotes: 'Comentario del cliente',
       internalNotes: 'Nota interna del taller',
@@ -205,6 +210,80 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
     await expect(
       handler.execute(careEpisodeId, user, workshopCtx, false),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  // ──────────────────────────────────────────────────────
+  // Cierre (B-3): egreso, notas y tipos prellenables
+  // ──────────────────────────────────────────────────────
+
+  it('episodio cerrado: expone egreso, closeNotes y tipos resueltos', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({
+        status: 'delivered',
+        closedAt: new Date('2026-09-12T15:00:00.000Z'),
+        mileageOut: 12390,
+        closeNotes: 'Tablero reemplazado',
+        serviceTypes: [
+          {
+            serviceTypeId: 'st-1',
+            customLabel: null,
+            serviceType: { code: 'oil_change', name: 'Cambio de aceite' },
+          },
+          {
+            serviceTypeId: null,
+            customLabel: 'Revisión de GNC',
+            serviceType: null,
+          },
+        ],
+      }),
+    );
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(result.mileageOut).toBe(12390);
+    expect(result.mileageOutUnreadable).toBe(false);
+    expect(result.closeNotes).toBe('Tablero reemplazado');
+    expect(result.serviceTypes).toEqual([
+      {
+        serviceTypeId: 'st-1',
+        code: 'oil_change',
+        name: 'Cambio de aceite',
+        customLabel: null,
+      },
+      {
+        serviceTypeId: null,
+        code: null,
+        name: null,
+        customLabel: 'Revisión de GNC',
+      },
+    ]);
+  });
+
+  it('episodio con egreso no legible: expone flag y motivo', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({
+        status: 'delivered',
+        mileageOut: null,
+        mileageOutUnreadable: true,
+        mileageOutUnreadableReason: 'Tablero sin funcionar',
+      }),
+    );
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(result.mileageOut).toBeNull();
+    expect(result.mileageOutUnreadable).toBe(true);
+    expect(result.mileageOutUnreadableReason).toBe('Tablero sin funcionar');
   });
 
   // ──────────────────────────────────────────────────────

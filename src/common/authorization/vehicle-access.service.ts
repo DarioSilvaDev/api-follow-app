@@ -484,6 +484,9 @@ export class VehicleAccessService {
    * - work_orders:  status <> 'cancelled' (Wave P3 — Amendment 3)
    * - estimates:    NO status filter (estimates maintain association per D-019)
    * - service_records: NO status filter (historical records always count)
+   * - care_episodes: status <> 'cancelled' (B-2: `delivered` asocia, `cancelled`
+   *   no; las atenciones de origen owner tienen workshop_id null y quedan
+   *   excluidas naturalmente)
    */
   private async assertWorkshopVehicleAccess(
     vehicleId: string,
@@ -507,6 +510,8 @@ export class VehicleAccessService {
         SELECT workshop_id FROM estimates WHERE vehicle_id = $1 AND workshop_id = $2
         UNION
         SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2
+        UNION
+        SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'
       ) AS associations LIMIT 1`,
       vehicleId,
       workshopId,

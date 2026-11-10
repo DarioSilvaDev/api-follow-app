@@ -156,6 +156,22 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
   });
 
   // ──────────────────────────────────────────────────────
+  // POST :id/close (B-3 — cierre de atención)
+  // ──────────────────────────────────────────────────────
+
+  it('POST close carries @Permissions(care-episode.close)', () => {
+    expect(permissionsFor('close')).toEqual(['care-episode.close']);
+  });
+
+  it('POST close carries WorkshopOnlyGuard BEFORE PermissionsGuard (no super_admin bypass from PERSONAL)', () => {
+    const guards = methodGuards('close');
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
+  });
+
+  // ──────────────────────────────────────────────────────
   // GET :id (S1 — detail con proyección por actor)
   // ──────────────────────────────────────────────────────
 
@@ -200,6 +216,39 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
   });
 
   // ──────────────────────────────────────────────────────
+  // POST check-in (B-2 — check-in unificado)
+  // ──────────────────────────────────────────────────────
+
+  it('POST check-in carries @Permissions(care-episode.create) (mismo permiso que el alta)', () => {
+    expect(permissionsFor('checkIn')).toEqual(['care-episode.create']);
+  });
+
+  it('POST check-in carries WorkshopOnlyGuard BEFORE PermissionsGuard (no super_admin bypass from PERSONAL)', () => {
+    const guards = methodGuards('checkIn');
+    expect(guards).toContain(WorkshopOnlyGuard);
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
+  });
+
+  // ──────────────────────────────────────────────────────
+  // GET service-types (B-2 — catálogo del check-in)
+  // ──────────────────────────────────────────────────────
+
+  it('GET service-types carries WorkshopOnlyGuard (WORKSHOP context required)', () => {
+    expect(methodGuards('listServiceTypes')).toContain(WorkshopOnlyGuard);
+  });
+
+  it('GET service-types has NO permission requirement (lectura de catálogo)', () => {
+    expect(permissionsFor('listServiceTypes')).toBeUndefined();
+  });
+
+  it('GET service-types has NO ThrottlerGuard (no es enumeración de placas)', () => {
+    expect(methodGuards('listServiceTypes')).not.toContain(ThrottlerGuard);
+  });
+
+  // ──────────────────────────────────────────────────────
   // Route ordering (F-012)
   // ──────────────────────────────────────────────────────
 
@@ -219,6 +268,18 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
 
     it('declares POST owner (static) BEFORE dynamic POST :id/attachments', () => {
       expect(methodOrder.indexOf('createOwner')).toBeLessThan(
+        methodOrder.indexOf('attach'),
+      );
+    });
+
+    it('declares GET service-types (static) BEFORE GET :id (getDetail)', () => {
+      expect(methodOrder.indexOf('listServiceTypes')).toBeLessThan(
+        methodOrder.indexOf('getDetail'),
+      );
+    });
+
+    it('declares POST check-in (static) BEFORE dynamic POST :id/attachments', () => {
+      expect(methodOrder.indexOf('checkIn')).toBeLessThan(
         methodOrder.indexOf('attach'),
       );
     });

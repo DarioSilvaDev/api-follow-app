@@ -131,6 +131,8 @@ export class ListCareEpisodesHandler {
           select: {
             licensePlate: true,
             manufactureYear: true,
+            brandName: true,
+            modelName: true,
             version: {
               select: {
                 name: true,
@@ -164,8 +166,14 @@ export class ListCareEpisodesHandler {
         mileageIn: episode.mileageIn,
         vehicle: {
           licensePlate: episode.vehicle.licensePlate,
-          brand: episode.vehicle.version?.model?.brand?.name ?? null,
-          model: episode.vehicle.version?.model?.name ?? null,
+          brand:
+            episode.vehicle.version?.model?.brand?.name ??
+            episode.vehicle.brandName ??
+            null,
+          model:
+            episode.vehicle.version?.model?.name ??
+            episode.vehicle.modelName ??
+            null,
           manufactureYear: episode.vehicle.manufactureYear,
         },
       })),

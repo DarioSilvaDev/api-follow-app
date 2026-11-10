@@ -85,11 +85,20 @@ export class GetVehicleHistoryHandler {
             source: true,
             verification: true,
             mileageIn: true,
+            mileageOut: true,
             customerNotes: true,
             checkedInAt: true,
+            closedAt: true,
             createdAt: true,
             workshopName: true,
             workshop: { select: { id: true, name: true } },
+            serviceTypes: {
+              select: {
+                serviceTypeId: true,
+                customLabel: true,
+                serviceType: { select: { name: true } },
+              },
+            },
           },
         }),
       ]);

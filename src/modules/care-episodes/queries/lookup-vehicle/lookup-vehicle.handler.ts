@@ -28,6 +28,8 @@ export class LookupVehicleHandler {
         licensePlate: true,
         manufactureYear: true,
         modelYear: true,
+        brandName: true,
+        modelName: true,
         version: {
           select: {
             name: true,
@@ -49,8 +51,9 @@ export class LookupVehicleHandler {
     return {
       id: vehicle.id,
       licensePlate: vehicle.licensePlate,
-      brand: vehicle.version?.model?.brand?.name ?? null,
-      model: vehicle.version?.model?.name ?? null,
+      brand:
+        vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
+      model: vehicle.version?.model?.name ?? vehicle.modelName ?? null,
       version: vehicle.version?.name ?? null,
       manufactureYear: vehicle.manufactureYear,
       modelYear: vehicle.modelYear,
