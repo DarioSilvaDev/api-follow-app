@@ -480,4 +480,324 @@ describe('MailService', () => {
       }
     });
   });
+
+  describe('C-4: notificaciones de reclamo de vehículo', () => {
+    const baseParams = {
+      vehicleId: 'vehicle-1',
+      licensePlate: 'AB123CD',
+      careEpisodeId: 'episode-1',
+    };
+
+    it('claimed: arma asunto, cuerpo, CTA y panel con careEpisodeId', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        {
+          ...baseParams,
+          claimantName: 'Juan Pérez',
+          claimantEmail: 'juan@test.com',
+        },
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Juan Pérez reclamó el vehículo AB123CD - Autentia',
+      );
+      expect(payload.html).toContain('<h2>Reclamo completado</h2>');
+      expect(payload.html).toContain(
+        'Juan Pérez (juan@test.com) reclamó el vehículo AB123CD y el historial ya quedó a su nombre.',
+      );
+      expect(payload.html).toContain('podés revocarlo desde el panel');
+      expect(payload.html).toContain('Ver el reclamo');
+      expect(payload.html).toContain(
+        'https://app.followapp.test/vehicles/vehicle-1/servicios/episode-1',
+      );
+    });
+
+    it('claimed: omite el email entre paréntesis cuando no hay', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        { ...baseParams, claimantName: 'Juan' },
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain('Juan reclamó el vehículo AB123CD');
+      expect(html).not.toContain('juan@test.com');
+      expect(html).not.toContain('Juan (');
+    });
+
+    it('claimed: sin reclamante usa "Alguien" y no afirma la titularidad', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        baseParams,
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Alguien reclamó el vehículo AB123CD - Autentia',
+      );
+      expect(payload.html).toContain('<h2>Reclamo completado</h2>');
+      expect(payload.html).toContain('Alguien reclamó el vehículo AB123CD.');
+      expect(payload.html).not.toContain('ya quedó a su nombre');
+      expect(payload.html).toContain('podés revocarlo desde el panel');
+      expect(payload.html).toContain('Ver el reclamo');
+    });
+
+    it('claimed: alreadyOwner omite la frase de revocación', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        { ...baseParams, claimantName: 'Juan', alreadyOwner: true },
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain('No necesitás hacer nada.');
+      expect(html).not.toContain('podés revocarlo desde el panel');
+    });
+
+    it('verify_failed: incluye el número de intento y el CTA', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'verify_failed',
+        { ...baseParams, failedAttempts: 2 },
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Intento fallido de reclamo en AB123CD - Autentia',
+      );
+      expect(payload.html).toContain('<h2>Intento fallido de reclamo</h2>');
+      expect(payload.html).toContain(
+        'Intento 2 de verificación fallido para el vehículo AB123CD.',
+      );
+      expect(payload.html).not.toContain('Registramos un intento fallido');
+      expect(payload.html).toContain('revisá con quién compartiste el link');
+      expect(payload.html).toContain('Ver el reclamo');
+    });
+
+    it('verify_failed: sin contador usa el mensaje genérico una sola vez', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'verify_failed',
+        baseParams,
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain(
+        'Registramos un intento fallido de reclamo para el vehículo AB123CD.',
+      );
+      expect(html).not.toContain('Intento 2 de verificación');
+    });
+
+    it('blocked: no tiene CTA', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'blocked',
+        baseParams,
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Reclamo bloqueado: AB123CD ya tiene titular - Autentia',
+      );
+      expect(payload.html).toContain(
+        'Alguien intentó reclamar el vehículo AB123CD, pero ya tiene un titular registrado.',
+      );
+      expect(payload.html).toContain('No se creó ningún vínculo nuevo.');
+      expect(payload.html).not.toContain('<a href');
+    });
+
+    it('manual_review: usa nombre y email del reclamante', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'manual_review',
+        {
+          ...baseParams,
+          claimantName: 'Ana',
+          claimantEmail: 'ana@test.com',
+        },
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe('Reclamo a revisar: AB123CD - Autentia');
+      expect(payload.html).toContain(
+        'Ana (ana@test.com) reclamó el vehículo AB123CD, pero no pudimos verificarlo automáticamente.',
+      );
+      expect(payload.html).toContain('Revisar el reclamo');
+    });
+
+    it('manual_review: cae a "Alguien" sin nombre (D-2)', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'manual_review',
+        baseParams,
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain(
+        'Alguien reclamó el vehículo AB123CD, pero no pudimos verificarlo automáticamente.',
+      );
+    });
+
+    it('auto_revoked: menciona los 3 bloqueos y ofrece generar link nuevo', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'auto_revoked',
+        baseParams,
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'El link de reclamo de AB123CD fue revocado - Autentia',
+      );
+      expect(payload.html).toContain(
+        'se revocó automáticamente después de 3 bloqueos de verificación',
+      );
+      expect(payload.html).toContain('Generar link nuevo');
+    });
+
+    it('blocked_owner: no menciona taller ni reclamante y apunta a /vehicles', async () => {
+      await service.sendVehicleClaimBlockedOwnerEmail(
+        'owner@test.com',
+        'Juan',
+        'AB123CD',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'Alguien intentó reclamar tu vehículo AB123CD - Autentia',
+      );
+      expect(payload.html).toContain(
+        '<h2>Alguien intentó reclamar tu vehículo</h2>',
+      );
+      expect(payload.html).toContain('Hola Juan,');
+      expect(payload.html).toContain('el vehículo sigue siendo tuyo');
+      expect(payload.html).toContain('https://app.followapp.test/vehicles');
+      expect(payload.html).toContain('Ver mi vehículo');
+      expect(payload.html).not.toContain('Taller');
+      expect(payload.html).not.toContain('reclamante');
+    });
+
+    it('blocked_owner: sin nombre saluda "Hola,"', async () => {
+      await service.sendVehicleClaimBlockedOwnerEmail(
+        'owner@test.com',
+        '',
+        'AB123CD',
+      );
+
+      expect(sendMock.mock.calls[0][0].html).toContain('Hola,');
+    });
+
+    it('result claimed: confirma y linkea al historial', async () => {
+      await service.sendVehicleClaimResultEmail(
+        'ana@test.com',
+        'Ana',
+        'AB123CD',
+        'claimed',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe('Reclamaste el vehículo AB123CD - Autentia');
+      expect(payload.html).toContain(
+        '<h2>El vehículo ya está a tu nombre</h2>',
+      );
+      expect(payload.html).toContain('Ver el historial');
+      expect(payload.html).toContain('https://app.followapp.test/vehicles');
+    });
+
+    it('result revoked: avisa sin CTA', async () => {
+      await service.sendVehicleClaimResultEmail(
+        'ana@test.com',
+        'Ana',
+        'AB123CD',
+        'revoked',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'El reclamo de AB123CD fue revocado - Autentia',
+      );
+      expect(payload.html).toContain('<h2>El reclamo fue revocado</h2>');
+      expect(payload.html).toContain('El historial ya no figura a tu nombre.');
+      expect(payload.html).not.toContain('<a href');
+    });
+
+    it('result review_rejected: rechazo sin afirmar que perdió el historial', async () => {
+      await service.sendVehicleClaimResultEmail(
+        'ana@test.com',
+        'Ana',
+        'AB123CD',
+        'review_rejected',
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.subject).toBe(
+        'El reclamo de AB123CD fue rechazado - Autentia',
+      );
+      expect(payload.html).toContain('<h2>El reclamo fue rechazado</h2>');
+      expect(payload.html).toContain('Hola Ana,');
+      expect(payload.html).toContain(
+        'El taller revisó el reclamo del vehículo AB123CD y lo rechazó. El historial no quedó a tu nombre.',
+      );
+      expect(payload.html).not.toContain('ya no figura a tu nombre');
+      expect(payload.html).not.toContain('<a href');
+    });
+
+    it('escapa HTML en los valores dinámicos', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        {
+          ...baseParams,
+          claimantName: '<script>alert(1)</script>',
+          claimantEmail: 'x@test.com',
+        },
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;script&gt;');
+    });
+
+    it('sanea CR/LF en el asunto (headerSafe)', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        {
+          ...baseParams,
+          claimantName: 'Juan\r\nBcc: evil@test.com',
+        },
+      );
+
+      const subject = sendMock.mock.calls[0][0].subject;
+      expect(subject).not.toContain('\r');
+      expect(subject).not.toContain('\n');
+    });
+
+    it('nunca incluye el link de reclamo ni un token en el cuerpo', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        { ...baseParams, claimantName: 'Juan' },
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).not.toContain('/reclamo/');
+      expect(html).not.toContain('token=');
+    });
+
+    it('panel URL sin careEpisodeId cae a la ruta del vehículo', async () => {
+      await service.sendVehicleClaimWorkshopNotificationEmail(
+        'taller@test.com',
+        'claimed',
+        { vehicleId: 'vehicle-1', licensePlate: 'AB123CD' },
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain('https://app.followapp.test/vehicles/vehicle-1');
+      expect(html).not.toContain('/servicios/');
+    });
+  });
 });

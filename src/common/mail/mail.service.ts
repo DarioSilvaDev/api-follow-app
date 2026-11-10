@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Resend } from 'resend';
 import type { CreateEmailRequestOptions } from 'resend';
+import * as nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import { envs } from '../../config/envs';
 import { maskEmail } from './mask-email';
 import {
@@ -88,24 +91,82 @@ interface MailOptions {
   html: string;
 }
 
+/** C-4: variantes del aviso al taller sobre el estado de un reclamo. */
+export type VehicleClaimWorkshopNotificationVariant =
+  'claimed' | 'verify_failed' | 'blocked' | 'manual_review' | 'auto_revoked';
+
+/** C-4: datos dinámicos del aviso al taller. */
+export interface VehicleClaimWorkshopNotificationParams {
+  vehicleId: string;
+  licensePlate: string;
+  careEpisodeId?: string | null;
+  claimantName?: string | null;
+  claimantEmail?: string | null;
+  failedAttempts?: number;
+  alreadyOwner?: boolean;
+}
+
 @Injectable()
 export class MailService {
   private resendClient: Resend | null = null;
+  // `Transporter` sin parámetro de tipo equivale a `Transporter<any>`, lo que
+  // convierte `sendMail()` en `any` y propaga el `any` hasta `info.messageId`.
+  // El transporter SMTP siempre resuelve con `SMTPTransport.SentMessageInfo`.
+  private nodemailerTransporter: Transporter<SMTPTransport.SentMessageInfo> | null =
+    null;
   private readonly logger = new Logger(MailService.name);
+  private readonly provider: 'resend' | 'nodemailer' | 'mock';
 
   constructor() {
-    if (envs.RESEND_API_KEY) {
-      this.resendClient = new Resend(envs.RESEND_API_KEY);
+    this.provider =
+      envs.MAIL_PROVIDER || (envs.RESEND_API_KEY ? 'resend' : 'mock');
+
+    if (this.provider === 'resend') {
+      if (envs.RESEND_API_KEY) {
+        this.resendClient = new Resend(envs.RESEND_API_KEY);
+      } else {
+        this.logger.warn(
+          'RESEND_API_KEY not configured. Emails will not be sent.',
+        );
+      }
+    } else if (this.provider === 'nodemailer') {
+      try {
+        const port = envs.SMTP_PORT || 587;
+        const secure =
+          envs.SMTP_SECURE !== undefined ? envs.SMTP_SECURE : port === 465;
+        this.nodemailerTransporter = nodemailer.createTransport({
+          host: envs.SMTP_HOST,
+          port,
+          secure,
+          auth:
+            envs.SMTP_USER && envs.SMTP_PASS
+              ? {
+                  user: envs.SMTP_USER,
+                  pass: envs.SMTP_PASS,
+                }
+              : undefined,
+        });
+      } catch (error) {
+        this.logger.error(
+          'Failed to create nodemailer transporter',
+          error as Error,
+        );
+        this.nodemailerTransporter = null;
+      }
     } else {
-      this.logger.warn(
-        'RESEND_API_KEY not configured. Emails will not be sent.',
-      );
+      this.logger.warn('Mail provider set to mock. Emails will not be sent.');
     }
   }
 
   /** T-4: detección de degradación sin depender de un usuario quejándose. */
   isConfigured(): boolean {
-    return this.resendClient !== null;
+    if (this.provider === 'resend') {
+      return this.resendClient !== null;
+    }
+    if (this.provider === 'nodemailer') {
+      return this.nodemailerTransporter !== null;
+    }
+    return false;
   }
 
   /**
@@ -211,7 +272,21 @@ export class MailService {
   ): Promise<MailSendResult> {
     const recipient = this.mask(options.to);
 
-    if (!this.resendClient) {
+    if (this.provider === 'mock') {
+      this.logger.warn(
+        `Mail not sent (mock provider) (template=${template}, recipient=${recipient})`,
+      );
+      return {
+        ok: false,
+        template,
+        recipient,
+        code: 'MAIL_MOCK_PROVIDER',
+        permanent: true,
+        attempts: 0,
+      };
+    }
+
+    if (this.provider === 'resend' && !this.resendClient) {
       this.logger.error(
         `Mail not sent: provider unconfigured (template=${template}, recipient=${recipient})`,
       );
@@ -222,6 +297,20 @@ export class MailService {
         code: 'RESEND_NOT_CONFIGURED',
         // Un restart con la variable cargada es lo único que lo arregla:
         // insistir en el mismo proceso no aporta nada.
+        permanent: true,
+        attempts: 0,
+      };
+    }
+
+    if (this.provider === 'nodemailer' && !this.nodemailerTransporter) {
+      this.logger.error(
+        `Mail not sent: provider unconfigured (template=${template}, recipient=${recipient})`,
+      );
+      return {
+        ok: false,
+        template,
+        recipient,
+        code: 'NODEMAILER_NOT_CONFIGURED',
         permanent: true,
         attempts: 0,
       };
@@ -244,41 +333,75 @@ export class MailService {
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const { data, error } = await this.resendClient.emails.send(
-          {
-            from: envs.SMTP_FROM,
-            to: options.to,
-            subject: options.subject,
-            html: options.html,
-          },
-          {
-            idempotencyKey,
-            signal: controller.signal,
-          } as ResendSendOptions,
-        );
+        if (this.provider === 'resend' && this.resendClient) {
+          const { data, error } = await this.resendClient.emails.send(
+            {
+              from: envs.SMTP_FROM,
+              to: options.to,
+              subject: options.subject,
+              html: options.html,
+            },
+            {
+              idempotencyKey,
+              signal: controller.signal,
+            } as ResendSendOptions,
+          );
 
-        // El SDK resolvió, pero con error: hay que convertirlo en excepción
-        // para que el `catch` de abajo sea el ÚNICO lugar que decide. Un
-        // success silencioso acá sería un falso "Mail accepted".
-        if (error) {
-          const apiError = new Error(error.message) as Error & {
-            statusCode: number | null;
+          // El SDK resolvió, pero con error: hay que convertirlo en excepción
+          // para que el `catch` de abajo sea el ÚNICO lugar que decide. Un
+          // success silencioso acá sería un falso "Mail accepted".
+          if (error) {
+            const apiError = new Error(error.message) as Error & {
+              statusCode: number | null;
+            };
+            apiError.name = error.name;
+            apiError.statusCode = error.statusCode;
+            throw apiError;
+          }
+
+          this.logger.log(
+            `Mail accepted (template=${template}, recipient=${recipient}, attempts=${attempt}, ${this.correlation(context)})`,
+          );
+          return {
+            ok: true,
+            template,
+            recipient,
+            messageId: data?.id,
+            attempts: attempt,
           };
-          apiError.name = error.name;
-          apiError.statusCode = error.statusCode;
-          throw apiError;
-        }
+        } else if (
+          this.provider === 'nodemailer' &&
+          this.nodemailerTransporter
+        ) {
+          const info = await Promise.race([
+            this.nodemailerTransporter.sendMail({
+              from: envs.SMTP_FROM,
+              to: options.to,
+              subject: options.subject,
+              html: options.html,
+            }),
+            // `Promise<never>` evita que el rechazo del timeout ensanche el
+            // resultado de `race` a `unknown` y mantiene el tipo del envío.
+            new Promise<never>((_, reject) => {
+              controller.signal.addEventListener('abort', () => {
+                reject(new Error('MAIL_TIMEOUT'));
+              });
+            }),
+          ]);
 
-        this.logger.log(
-          `Mail accepted (template=${template}, recipient=${recipient}, attempts=${attempt}, ${this.correlation(context)})`,
-        );
-        return {
-          ok: true,
-          template,
-          recipient,
-          messageId: data?.id,
-          attempts: attempt,
-        };
+          this.logger.log(
+            `Mail accepted (template=${template}, recipient=${recipient}, attempts=${attempt}, ${this.correlation(context)})`,
+          );
+          return {
+            ok: true,
+            template,
+            recipient,
+            messageId: info.messageId,
+            attempts: attempt,
+          };
+        } else {
+          throw new Error('MAIL_PROVIDER_UNSUPPORTED');
+        }
       } catch (error) {
         const { code, permanent } = this.classify(
           // Si abortamos nosotros, el SDK ya devolvió un `application_error`
@@ -351,7 +474,37 @@ export class MailService {
     if (context.invitationId)
       parts.push(`invitationId=${context.invitationId}`);
     if (context.vehicleId) parts.push(`vehicleId=${context.vehicleId}`);
+    if (context.inviteId) parts.push(`inviteId=${context.inviteId}`);
     return parts.length > 0 ? parts.join(', ') : 'no-context';
+  }
+
+  /** C-4: escapa un valor dinámico antes de interpolarlo en el HTML. */
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /** C-4: neutraliza CR/LF para que un valor dinámico no inyecte headers. */
+  private headerSafe(value: string): string {
+    return value.replace(/[\r\n]+/g, ' ').trim();
+  }
+
+  /** C-4: URL del panel del taller para el vehículo/atención del reclamo. */
+  private vehicleClaimPanelUrl(
+    vehicleId: string,
+    careEpisodeId?: string | null,
+  ): string {
+    const base = (envs.FRONTEND_URL || 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
+    return careEpisodeId
+      ? `${base}/vehicles/${vehicleId}/servicios/${careEpisodeId}`
+      : `${base}/vehicles/${vehicleId}`;
   }
 
   async sendVerificationEmail(
@@ -757,6 +910,240 @@ export class MailService {
         <h2>Tu rol en Autentia</h2>
         <p>Te notificamos que tu usuario ahora tiene el rol <strong>${roleName}</strong> en Autentia.</p>
         <p>Ya podés acceder a las funciones correspondientes desde tu panel.</p>
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
+   * C-4: aviso al taller sobre el estado de un reclamo (copy §3.2). El mail
+   * NUNCA transporta el link de reclamo ni el token (F-11 abierta): el CTA
+   * apunta al panel del taller. Si `Workshop.email` no existe, el listener no
+   * llama a este método.
+   */
+  async sendVehicleClaimWorkshopNotificationEmail(
+    to: string,
+    variant: VehicleClaimWorkshopNotificationVariant,
+    params: VehicleClaimWorkshopNotificationParams,
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const plate = this.escapeHtml(params.licensePlate);
+    const plateHeader = this.headerSafe(params.licensePlate);
+    const panelUrl = this.vehicleClaimPanelUrl(
+      params.vehicleId,
+      params.careEpisodeId,
+    );
+
+    const rawName = params.claimantName?.trim();
+    const name = this.escapeHtml(rawName || 'Alguien');
+    const email = params.claimantEmail?.trim();
+    const emailSuffix = email ? ` (${this.escapeHtml(email)})` : '';
+
+    let subject = '';
+    let title = '';
+    const paragraphs: string[] = [];
+    let cta: { label: string; url: string } | null = null;
+
+    switch (variant) {
+      case 'claimed': {
+        // Sin reclamante identificable no se afirma la titularidad (decisión PM
+        // sobre el fallback): el aviso al taller se manda igual porque es la
+        // mitigación anti-squatting #1, pero el copy no inventa un vínculo.
+        subject = rawName
+          ? `${this.headerSafe(rawName)} reclamó el vehículo ${plateHeader} - Autentia`
+          : `Alguien reclamó el vehículo ${plateHeader} - Autentia`;
+        title = 'Reclamo completado';
+        paragraphs.push(
+          rawName
+            ? `${name}${emailSuffix} reclamó el vehículo ${plate} y el historial ya quedó a su nombre.`
+            : `Alguien reclamó el vehículo ${plate}.`,
+        );
+        paragraphs.push(
+          params.alreadyOwner
+            ? 'No necesitás hacer nada.'
+            : 'No necesitás hacer nada. Si el reclamo no corresponde, podés revocarlo desde el panel.',
+        );
+        cta = { label: 'Ver el reclamo', url: panelUrl };
+        break;
+      }
+      case 'verify_failed': {
+        subject = `Intento fallido de reclamo en ${plateHeader} - Autentia`;
+        title = 'Intento fallido de reclamo';
+        paragraphs.push(
+          params.failedAttempts !== undefined
+            ? `Intento ${params.failedAttempts} de verificación fallido para el vehículo ${plate}.`
+            : `Registramos un intento fallido de reclamo para el vehículo ${plate}.`,
+        );
+        paragraphs.push(
+          'Si no reconocés este movimiento, revisá con quién compartiste el link.',
+        );
+        cta = { label: 'Ver el reclamo', url: panelUrl };
+        break;
+      }
+      case 'blocked': {
+        subject = `Reclamo bloqueado: ${plateHeader} ya tiene titular - Autentia`;
+        title = 'Reclamo bloqueado';
+        paragraphs.push(
+          `Alguien intentó reclamar el vehículo ${plate}, pero ya tiene un titular registrado.`,
+        );
+        paragraphs.push('No se creó ningún vínculo nuevo.');
+        break;
+      }
+      case 'manual_review': {
+        subject = `Reclamo a revisar: ${plateHeader} - Autentia`;
+        title = 'Reclamo a revisar';
+        paragraphs.push(
+          rawName
+            ? `${name}${emailSuffix} reclamó el vehículo ${plate}, pero no pudimos verificarlo automáticamente.`
+            : `Alguien reclamó el vehículo ${plate}, pero no pudimos verificarlo automáticamente.`,
+        );
+        paragraphs.push(
+          'Revisá el reclamo en el panel y aprobalo o rechazalo.',
+        );
+        cta = { label: 'Revisar el reclamo', url: panelUrl };
+        break;
+      }
+      case 'auto_revoked': {
+        subject = `El link de reclamo de ${plateHeader} fue revocado - Autentia`;
+        title = 'Link de reclamo revocado';
+        paragraphs.push(
+          `El link de reclamo del vehículo ${plate} se revocó automáticamente después de 3 bloqueos de verificación.`,
+        );
+        paragraphs.push(
+          'Si el dueño todavía necesita reclamar, generá un link nuevo y entregalo en persona.',
+        );
+        cta = { label: 'Generar link nuevo', url: panelUrl };
+        break;
+      }
+      default:
+        break;
+    }
+
+    return this.send(
+      MAIL_TEMPLATES.VEHICLE_CLAIM_WORKSHOP_NOTIFICATION,
+      {
+        to,
+        subject,
+        html: `
+        <h2>${title}</h2>
+        ${paragraphs.map((p) => `<p>${p}</p>`).join('\n        ')}
+        ${
+          cta
+            ? `<p><a href="${cta.url}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">${cta.label}</a></p>`
+            : ''
+        }
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
+   * C-4: aviso al titular activo de un intento de reclamo bloqueado (copy
+   * §3.3). Prohibido mencionar el taller, al reclamante o cómo se filtró el
+   * link: este método no recibe ninguno de esos datos.
+   */
+  async sendVehicleClaimBlockedOwnerEmail(
+    to: string,
+    firstName: string,
+    licensePlate: string,
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const plate = this.escapeHtml(licensePlate);
+    const plateHeader = this.headerSafe(licensePlate);
+    const rawName = firstName?.trim();
+    const greeting = rawName ? `Hola ${this.escapeHtml(rawName)},` : 'Hola,';
+    const base = (envs.FRONTEND_URL || 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
+    return this.send(
+      MAIL_TEMPLATES.VEHICLE_CLAIM_BLOCKED_OWNER,
+      {
+        to,
+        subject: `Alguien intentó reclamar tu vehículo ${plateHeader} - Autentia`,
+        html: `
+        <h2>Alguien intentó reclamar tu vehículo</h2>
+        <p>${greeting}</p>
+        <p>Registramos un intento de reclamo para el vehículo ${plate}, que figura a tu nombre en Autentia.</p>
+        <p>El reclamo no se completó y el vehículo sigue siendo tuyo.</p>
+        <p>Si no reconocés este movimiento, contactá a soporte.</p>
+        <p><a href="${base}/vehicles" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Ver mi vehículo</a></p>
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
+   * C-4: resultado del reclamo al reclamante (copy §3.4). `revoked` y
+   * `review_rejected` no llevan CTA. Todas las variantes delegan en `send()`
+   * para heredar retry/idempotencia.
+   *
+   * `review_rejected` (rechazo de revisión manual) no puede decir "ya no figura
+   * a tu nombre": nunca hubo ownership. Reutiliza el mismo template (§3.4.c).
+   */
+  async sendVehicleClaimResultEmail(
+    to: string,
+    firstName: string,
+    licensePlate: string,
+    outcome: 'claimed' | 'revoked' | 'review_rejected',
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const plate = this.escapeHtml(licensePlate);
+    const plateHeader = this.headerSafe(licensePlate);
+    const rawName = firstName?.trim();
+    const greeting = rawName ? `Hola ${this.escapeHtml(rawName)},` : 'Hola,';
+    const base = (envs.FRONTEND_URL || 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
+
+    if (outcome === 'claimed') {
+      return this.send(
+        MAIL_TEMPLATES.VEHICLE_CLAIM_RESULT,
+        {
+          to,
+          subject: `Reclamaste el vehículo ${plateHeader} - Autentia`,
+          html: `
+        <h2>El vehículo ya está a tu nombre</h2>
+        <p>${greeting}</p>
+        <p>Reclamaste el historial del vehículo ${plate}. Ya podés consultar todas sus atenciones desde Autentia.</p>
+        <p><a href="${base}/vehicles" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Ver el historial</a></p>
+      `,
+        },
+        context,
+      );
+    }
+
+    if (outcome === 'review_rejected') {
+      return this.send(
+        MAIL_TEMPLATES.VEHICLE_CLAIM_RESULT,
+        {
+          to,
+          subject: `El reclamo de ${plateHeader} fue rechazado - Autentia`,
+          html: `
+        <h2>El reclamo fue rechazado</h2>
+        <p>${greeting}</p>
+        <p>El taller revisó el reclamo del vehículo ${plate} y lo rechazó. El historial no quedó a tu nombre.</p>
+        <p>Si creés que es un error, contactá al taller donde hiciste la última atención.</p>
+      `,
+        },
+        context,
+      );
+    }
+
+    return this.send(
+      MAIL_TEMPLATES.VEHICLE_CLAIM_RESULT,
+      {
+        to,
+        subject: `El reclamo de ${plateHeader} fue revocado - Autentia`,
+        html: `
+        <h2>El reclamo fue revocado</h2>
+        <p>${greeting}</p>
+        <p>El taller revocó el reclamo del vehículo ${plate}. El historial ya no figura a tu nombre.</p>
+        <p>Si creés que es un error, contactá al taller donde hiciste la última atención.</p>
       `,
       },
       context,

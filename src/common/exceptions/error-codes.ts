@@ -31,6 +31,10 @@ export const ERROR_CODES = {
   // frontend mapee copy exacta. NUNCA se emite para duplicados normales
   // (esos siguen usando CONFLICT).
   DEALERSHIP_CUIT_LOCKED: 'DEALERSHIP_CUIT_LOCKED',
+  // C-2 reclamo público: el ticket de 20 min del flujo verify → commit venció o
+  // no corresponde a este invite. El frontend vuelve a pedir verificación sin
+  // gastar intentos (T20).
+  TICKET_EXPIRED: 'TICKET_EXPIRED',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];

@@ -29,6 +29,10 @@ const SENSITIVE_URL_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
   // redacta solo el segmento del token y se conserva el resto de la ruta
   // (p. ej. el sufijo `/accept`), para no perder contexto de debugging.
   [/(\/vehicles\/transfer\/qr\/)[^/?#]+/, '$1{token}'],
+  // C-2: el token del reclamo público viaja como path param en las cuatro
+  // rutas (`/vehicle-claims/public/{token}[/challenge|/verify|/commit]`). Se
+  // redacta sólo el segmento del token y se conserva el sufijo de la acción.
+  [/(\/vehicle-claims\/public\/)[^/?#]+/, '$1{token}'],
   [/([?&]token=)[^&#]*/g, '$1[REDACTED]'],
 ];
 

@@ -66,6 +66,17 @@ export class AuthRequiredException extends CodedHttpException {
   }
 }
 
+/**
+ * C-2 reclamo público: el ticket JWT de 20 min que habilita el `commit` venció
+ * o no pertenece al invite. 401 con código propio para que el frontend vuelva
+ * al paso de verificación (T20) sin consumir el link.
+ */
+export class TicketExpiredException extends CodedHttpException {
+  constructor(message = 'El ticket de verificación venció') {
+    super(HttpStatus.UNAUTHORIZED, message, ERROR_CODES.TICKET_EXPIRED);
+  }
+}
+
 export class InvitationInvalidException extends CodedHttpException {
   constructor(message = 'Invitation not found') {
     super(HttpStatus.NOT_FOUND, message, ERROR_CODES.INVITATION_INVALID);

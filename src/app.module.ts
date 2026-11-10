@@ -19,6 +19,7 @@ import { CareEpisodesModule } from './modules/care-episodes/care-episodes.module
 import { AdministrationModule } from './modules/administration/administration.module';
 import { VehicleCatalogModule } from './modules/vehicle-catalog/vehicle-catalog.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { VehicleClaimsModule } from './modules/vehicle-claims/vehicle-claims.module';
 import { envs } from './config/envs';
 
 @Module({
@@ -51,6 +52,17 @@ import { envs } from './config/envs';
         limit: 10,
         getTracker: (req: Record<string, any>) => req.user?.id ?? req.ip,
       },
+      // C-2 — D-TL-C1/S-3: cuota por token del reclamo público. El valor de
+      // módulo (5/300s) es el más estricto; cada ruta lo sobreescribe con
+      // @Throttle (el bootstrap usa 10/60s). `getTracker` corre en el guard,
+      // antes de los pipes, y `req.params.token` ya está resuelto por el router.
+      {
+        name: 'vehicleClaimToken',
+        ttl: 300_000,
+        limit: 5,
+        getTracker: (req: Record<string, any>) =>
+          String(req.params?.token ?? req.ip),
+      },
     ]),
     PrismaModule,
     MailModule,
@@ -66,6 +78,7 @@ import { envs } from './config/envs';
     AdministrationModule,
     VehicleCatalogModule,
     DashboardModule,
+    VehicleClaimsModule,
   ],
   controllers: [AppController],
   providers: [AppService, SuperadminBootstrapService],

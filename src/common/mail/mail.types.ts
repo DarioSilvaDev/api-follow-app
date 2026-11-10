@@ -35,6 +35,12 @@ export const MAIL_TEMPLATES = {
   WORKSHOP_CLAIMED: 'workshop_claimed',
   USER_INVITATION: 'user_invitation',
   USER_ROLE_ASSIGNED: 'user_role_assigned',
+  // C-4: notificaciones del reclamo de vehículo (MVP taller primero).
+  // `vehicle_claim_invitation` queda fuera a propósito: depende de F-11
+  // (link de reclamo en el mail) y no se envía en el piloto.
+  VEHICLE_CLAIM_WORKSHOP_NOTIFICATION: 'vehicle_claim_workshop_notification',
+  VEHICLE_CLAIM_BLOCKED_OWNER: 'vehicle_claim_blocked_owner',
+  VEHICLE_CLAIM_RESULT: 'vehicle_claim_result',
 } as const;
 
 export type MailTemplate = (typeof MAIL_TEMPLATES)[keyof typeof MAIL_TEMPLATES];
@@ -89,4 +95,6 @@ export interface MailContext {
   dealershipId?: string;
   invitationId?: string;
   vehicleId?: string;
+  /** C-4: correlación de los mails de reclamo. Nunca transporta token ni hash. */
+  inviteId?: string;
 }
