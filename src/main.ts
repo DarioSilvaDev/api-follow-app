@@ -15,9 +15,16 @@ async function bootstrap() {
     }),
     cors: {
       origin:
-        envs.NODE_ENV === 'production'
-          ? envs.CORS_ORIGIN.split(',').map((o) => o.trim())
-          : true,
+        // envs.NODE_ENV === 'production'
+        //   ? [
+        //       'https://autentia-4kwwsaisu-dariosilvadev-3781s-projects.vercel.app',
+        //     ]
+        //   : ['http://localhost:3000', 'http://192.168.18.48:3000'],
+        [
+          // 'https://autentia-gil71d1c3-dariosilvadev-3781s-projects.vercel.app/',
+          'https://autentia-1rzruwev9-dariosilvadev-3781s-projects.vercel.app/',
+          'http://localhost:3000',
+        ],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       credentials: true,
     },

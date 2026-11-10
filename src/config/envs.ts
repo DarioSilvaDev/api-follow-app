@@ -11,11 +11,17 @@ interface Ienvs {
   JWT_ACCESS_EXPIRES_IN: string;
   JWT_REFRESH_SECRET: string;
   JWT_REFRESH_EXPIRES_IN: string;
+  MAIL_PROVIDER?: 'resend' | 'nodemailer' | 'mock';
+  SMTP_HOST?: string;
+  SMTP_PORT?: number;
+  SMTP_USER?: string;
+  SMTP_PASS?: string;
+  SMTP_SECURE?: boolean;
   SMTP_FROM: string;
   SMTP_RETRY_ATTEMPTS: number;
   /** Base del backoff exponencial entre reintentos, en ms. */
   SMTP_RETRY_BASE_DELAY_MS: number;
-  RESEND_API_KEY: string;
+  RESEND_API_KEY?: string;
   /**
    * Tope de espera de la llamada HTTP al proveedor de email. El SDK no impone
    * ninguno y su `catch` descarta el error original, así que sin este tope un
@@ -46,6 +52,7 @@ interface Ienvs {
   // B2_PUBLIC_URL?: string;
   SIGNED_URL_EXPIRES_SECONDS: number;
   FRONTEND_URL: string;
+  DEFAULT_PHONE_COUNTRY_CODE: string;
 }
 
 const schema = Joi.object({
@@ -58,7 +65,35 @@ const schema = Joi.object({
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('1500'),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
   JWT_REFRESH_SECRET: Joi.string().required(),
-  RESEND_API_KEY: Joi.string().required(),
+  MAIL_PROVIDER: Joi.string()
+    .valid('resend', 'nodemailer', 'mock')
+    .default('resend'),
+  SMTP_HOST: Joi.string().when('MAIL_PROVIDER', {
+    is: 'nodemailer',
+    then: Joi.string().required(),
+    otherwise: Joi.string().optional(),
+  }),
+  SMTP_PORT: Joi.number().when('MAIL_PROVIDER', {
+    is: 'nodemailer',
+    then: Joi.number().required(),
+    otherwise: Joi.number().optional(),
+  }),
+  SMTP_USER: Joi.string().when('MAIL_PROVIDER', {
+    is: 'nodemailer',
+    then: Joi.string().required(),
+    otherwise: Joi.string().optional(),
+  }),
+  SMTP_PASS: Joi.string().when('MAIL_PROVIDER', {
+    is: 'nodemailer',
+    then: Joi.string().required(),
+    otherwise: Joi.string().optional(),
+  }),
+  SMTP_SECURE: Joi.boolean().optional().default(false),
+  RESEND_API_KEY: Joi.string().when('MAIL_PROVIDER', {
+    is: 'resend',
+    then: Joi.string().required(),
+    otherwise: Joi.string().optional(),
+  }),
   MAIL_SEND_TIMEOUT_MS: Joi.number().default(15000),
   SMTP_FROM: Joi.string().required(),
   SMTP_RETRY_ATTEMPTS: Joi.number().integer().min(1).max(5).default(3),
@@ -86,6 +121,11 @@ const schema = Joi.object({
   // B2_PUBLIC_URL: Joi.string().required(),
   SIGNED_URL_EXPIRES_SECONDS: Joi.number().default(3600),
   FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
+  // Prefijo país fijo para normalizar celulares a E.164 (D-173). Opcional a
+  // propósito: si fuera required, rompería todos los entornos existentes (R-11).
+  DEFAULT_PHONE_COUNTRY_CODE: Joi.string()
+    .pattern(/^\+\d{1,3}$/)
+    .default('+54'),
 }).unknown(true);
 
 const { error, value: validatedEnvs } = schema.validate(process.env, {

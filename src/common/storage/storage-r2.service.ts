@@ -6,7 +6,7 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuid } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { envs } from '../../config/envs';
 import type { StorageService } from './storage.service';
@@ -50,7 +50,7 @@ export class StorageR2Service implements StorageService {
     }
 
     const ext = file.originalname.split('.').pop()?.toLowerCase() ?? 'bin';
-    const key = `${folder}/${uuid()}.${this.isImage(file.mimetype) ? 'webp' : ext}`;
+    const key = `${folder}/${randomUUID()}.${this.isImage(file.mimetype) ? 'webp' : ext}`;
     let buffer: Buffer = file.buffer;
 
     if (this.isImage(file.mimetype)) {
