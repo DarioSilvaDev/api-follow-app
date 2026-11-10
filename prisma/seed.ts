@@ -604,6 +604,13 @@ const permissions = [
   },
   {
     module: 'admin',
+    resource: 'vehicle-claims',
+    action: 'manage',
+    code: 'admin.vehicle-claims.manage',
+    description: 'Manage vehicle claim invites (admin revoke)',
+  },
+  {
+    module: 'admin',
     resource: 'permissions',
     action: 'list',
     code: 'admin.permissions.list',
@@ -5086,6 +5093,50 @@ async function seedVehicleClaimPermissions() {
   );
 }
 
+/**
+ * Permiso `admin.vehicle-claims.manage` (C-6 / F-8): revocación de reclamos
+ * desde la plataforma (`POST /api/admin/vehicle-claims/:id/revoke`).
+ *
+ * Autocontenido, igual que `seedVehicleClaimPermissions`
+ * (`seedPermissions()`/`seedSystemRoles()` están desactivados en `main()`).
+ * Se linkea sólo a `super_admin` (espejo de
+ * `systemRolePermissions.super_admin = permissions.map(p => p.code)`); en MVP
+ * NO se asigna al system role `admin` ni a roles de taller (contrato
+ * `vehicle-claim-technical-design.md` §5.3: los workshop roles sólo ejercen
+ * `vehicle-claim.*` dentro de contexto WORKSHOP).
+ */
+async function seedAdminVehicleClaimPermission() {
+  const permission = await prisma.permission.upsert({
+    where: { code: 'admin.vehicle-claims.manage' },
+    update: {},
+    create: {
+      module: 'admin',
+      resource: 'vehicle-claims',
+      action: 'manage',
+      code: 'admin.vehicle-claims.manage',
+      description: 'Manage vehicle claim invites (admin revoke)',
+    },
+  });
+
+  const superAdmin = await prisma.systemRole.findUnique({
+    where: { type: SystemRoleType.super_admin },
+  });
+  if (superAdmin) {
+    await prisma.systemRolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: superAdmin.id,
+          permissionId: permission.id,
+        },
+      },
+      update: {},
+      create: { roleId: superAdmin.id, permissionId: permission.id },
+    });
+  }
+
+  console.log('  ✓ admin.vehicle-claims.manage seeded (super_admin)');
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -5096,6 +5147,7 @@ async function main() {
   await seedServiceTypes();
   await seedCareEpisodeClosePermission();
   await seedVehicleClaimPermissions();
+  await seedAdminVehicleClaimPermission();
 
   //// await seedUsers();
   //// await seedWorkshops();

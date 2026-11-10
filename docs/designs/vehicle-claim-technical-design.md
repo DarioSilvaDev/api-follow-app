@@ -448,8 +448,8 @@ Estados **terminales**: `claimed`, `claim_blocked`, `revoked` (`expired` **no** 
 | T20 | `verified` | `verification_required` | **Expiración del ticket** (TTL 20 min): `commit` con ticket vencido/inválido → `401 TICKET_EXPIRED` (D-TL-VC-14) | `verifiedAt = null`; **sin** incrementar `failedAttempts` ni tocar el lock; el usuario re-verifica normalmente |
 | T11 | `manual_review` | `claimed` (`ownership_created`) | `POST /vehicle-claims/:id/approve` (taller) | Requiere `claimantUserId` (si no → 409); `$transaction` idéntica a T7 |
 | T12 | `manual_review` | `revoked` (`manual_review_rejected`) | `POST /:id/reject` (taller) | — |
-| T13 | `claimed` | `revoked` (`by_workshop`/`by_admin`) | `POST /:id/revoke` o endpoint admin | **Deshace** el ownership creado (T11/T7) → vehículo "sin titular" (D-TL-VC-11) |
-| T14 | `pending`, `verification_required`, `verified` | `revoked` (`by_workshop`/`by_admin`) | Revocación del taller/admin sobre invite sin consumir | `manual_review` **no** se revoca: se cierra con T12 `reject`, que emite `manual_review_rejected` y avisa al reclamante. Revocarlo como `by_workshop` dejaría el rechazo sin mail |
+| T13 | `claimed` | `revoked` (`by_workshop` o `by_admin`) | `POST /api/vehicle-claims/:id/revoke` (taller → `by_workshop`) · `POST /api/admin/vehicle-claims/:id/revoke` (admin → `by_admin`, §5.3) | **Deshace** el ownership creado (T11/T7) → vehículo "sin titular" (D-TL-VC-11), idéntico en ambos: `ownershipUndone:true` en la respuesta |
+| T14 | `pending`, `verification_required`, `verified` | `revoked` (`by_workshop` o `by_admin`) | Revocación sobre invite sin consumir: taller (`by_workshop`) o admin (`by_admin`, §5.3) | `manual_review` **no** se revoca por ninguno de los dos: 409 y se cierra con T12 `reject` (taller), que emite `manual_review_rejected` y avisa al reclamante. Revocarlo como `by_workshop`/`by_admin` dejaría el rechazo sin mail |
 | T15 | cualquier no-terminal | `expired` | Acceso (GET/verify/commit) con `expiresAt < now`; el listado solo lo calcula para display | Lazy (D-TL-VC-7) |
 | T16 | cualquier no-terminal | `revoked` (`vehicle_deleted`) | Acceso con `vehicle.deletedAt != null` | Notifica al taller (mail) |
 | T17 | `claim_blocked`, `claimed`, `expired`, `revoked` | — | Acceso posterior | Genérico "el reclamo ya no está disponible" (§6.6); `verify`/`commit` → 409/410 |
@@ -489,12 +489,27 @@ Guards: clase `JwtAuthGuard` + `ContextGuard`; método `WorkshopOnlyGuard` + `Pe
 
 **Scoping:** el handler valida `invite.workshopId === ctx.workshopId` → `404` si es de otro taller (no 403: no revela existencia — patrón de detalle del módulo). `super_admin`: bypass de `PermissionsGuard` solo aplica si tiene contexto WORKSHOP (membresía activa vía `ContextResolver`), idéntico al resto del módulo (D-TL-F023-7 como precedente).
 
-### 5.3 API admin (decisión D-VC-1: "revocable por el taller o un admin")
+### 5.3 API admin (decisión D-VC-1: "revocable por el taller o un admin"; F-8 → endpoint nuevo con permiso dedicado)
 
-| Método y path | Permiso | Nota |
-|---|---|---|
-| `POST /api/admin/vehicle-claims/:id/revoke` | `admin.vehicle-claims.manage` (nuevo, patrón `admin.vehicles.*` en `administration.controller.ts`) | Reutiliza el mismo handler de revoke; contexto sin WORKSHOP. Alternativa (sin endpoint nuevo): super_admin revoca solo por impersonación — queda como F-8 (§10) |
-| `GET/PATCH /api/admin/vehicle-claims/disputes/:id` (fase posterior) | `admin.vehicle-claims.manage` | Cola de disputas de HCDV: listar `open`/`under_review`, resolver con `resolution` → revoca `dispute_lost` + reasignación (D-TL-VC-16). **El taller nunca ve ni resuelve disputas** |
+Guards — patrón verbatim de `administration.controller.ts` (anti-bypass D-024 A2): `JwtAuthGuard` a nivel de clase + `PermissionsGuard` por método con `@Permissions(...)`. **Sin `ContextGuard` y sin `WorkshopOnlyGuard`**: el endpoint opera **sin contexto WORKSHOP** (un `super_admin` sin membresía de taller puede revocar). Como los `POST` de ese controller no declaran `HttpCode` (default 201), este método **debe** llevar `@HttpCode(HttpStatus.OK)` para respetar el 200 del contrato.
+
+| Método y path | Permiso | Request | Response |
+|---|---|---|---|
+| `POST /api/admin/vehicle-claims/:id/revoke` | `admin.vehicle-claims.manage` (nuevo, patrón `admin.vehicles.*` en `administration.controller.ts`) | `{"reason":"texto"?}` — DTO `RevokeClaimDto` reutilizado (string con trim, ≤500). **No se persiste** (no hay columna de texto libre); el motivo persistido es el enum del invite. | **200** `{"data":{"status":"revoked","reason":"by_admin","ownershipUndone":true\|false}}`. `ownershipUndone:true` solo si estaba `claimed` + `ownership_created` (cierra el ownership en la misma transacción — D-TL-VC-11, igual que el revoke del taller). **404** `CLAIM_NOT_FOUND_MESSAGE` si `:id` no existe (**sin** scoping por taller: el admin ve cualquier invite). **409** `CLAIM_MANUAL_REVIEW_REJECT_MESSAGE` en `manual_review` → cerrar con `reject` del taller (T12) — ver **pendiente de decisión** más abajo. **409** `CLAIM_UNAVAILABLE_MESSAGE` en `expired`/`revoked`/`claim_blocked` y en carrera (`updateMany` count 0) |
+| `GET/PATCH /api/admin/vehicle-claims/disputes/:id` (fase posterior) | `admin.vehicle-claims.manage` | — | Cola de disputas de HCDV: listar `open`/`under_review`, resolver con `resolution` → revoca `dispute_lost` + reasignación (D-TL-VC-16). **El taller nunca ve ni resuelve disputas** |
+
+**Notas del revoke admin:**
+
+- **Actor `by_admin`:** `revokeReason = 'by_admin'` + `revokedByUserId = id del admin` (por eso F-8 descarta la impersonación: con impersonación la auditoría apuntaría al usuario impersonado). El `reason` libre del body no viaja a la BD.
+- **Evento:** `vehicle-claim.revoked` con `reason: 'by_admin'` → el listener C-4 (`vehicle-claim-revoked.listener.ts`) tiene case explícito `by_admin` → **sin mail**, solo warn: ni al reclamante ni al taller. Asimetría con `by_workshop`, que avisa al reclamante únicamente si deshizo el ownership.
+- **Reuso del handler (gap a implementar):** `RevokeClaimHandler` hoy asume contexto de taller — `findFirst({where:{id, workshopId}})`, `revokeReason:'by_workshop'`, evento `'by_workshop'`. El endpoint admin requiere lookup solo por `id` y motivo `'by_admin'`, sin duplicar la lógica de estados/ownership. Contrato mínimo de implementación: `docs/plans/02-backend-implementation.md` §11.
+- **Permiso y seed:** entrada nueva en el array `permissions` de `prisma/seed.ts` con `module:'admin'`, `resource:'vehicle-claims'`, `action:'manage'`, `code:'admin.vehicle-claims.manage'` (upsert por `code` en `seedPermissions()`). `super_admin` lo recibe **automático** (`systemRolePermissions.super_admin = permissions.map(p => p.code)`). **No** se asigna a roles de taller (los workshop roles solo ejercen `vehicle-claim.*` dentro de contexto WORKSHOP) ni, en MVP, al system role `admin` — consistente con `admin.vehicles.list/read`, que tampoco lo tienen. Tras `npm run db:seed`, considerar el `PermissionCache` (TTL 5 min): reiniciar o esperar antes del smoke.
+
+**PENDIENTE DE DECISIÓN (producto) — revoke admin sobre `manual_review`:**
+
+- **Qué sabemos:** el handler devuelve 409 `CLAIM_MANUAL_REVIEW_REJECT_MESSAGE` ("usá Rechazar") en `manual_review` **antes** de evaluar revocabilidad; el cierre canónico es T12 `reject` (emite `manual_review_rejected` y avisa al reclamante) y hoy solo existe en el controller del taller con `vehicle-claim.review`.
+- **Qué no sabemos:** si HCDV debe poder cerrar un `manual_review` desde el endpoint admin — el admin no tiene endpoint `reject` propio, y el argumento operativo de F-8 (taller inactivo/sin miembros) aplica también acá.
+- **Recomendación (no resuelta en este documento):** mantener el **409** en C-6 (paridad de reglas; evitar que un evento de cierre tipo taller salga del contexto admin) y, si producto lo pide, agregar `POST /api/admin/vehicle-claims/:id/reject` con el mismo permiso en un PR posterior (puede colgar de la cola de disputas de la fase posterior).
 
 ### 5.4 Métricas del piloto
 
@@ -667,7 +682,7 @@ Sin endpoint nuevo: `GET /api/vehicle-claims` devuelve `meta.counts` por estado 
 
 #### Fundador
 - **F-7 (menor, no bloqueante):** el override `ownerPhone` del body de `POST /vehicle-claims` (§5.2) ¿solo afecta el snapshot del invite (propuesto — no escribe `VehicleOwnerContact`, tabla dueña del módulo de check-in) o debe corregir el registro de contacto (implica write cross-module, RF-6)? *La fuente del teléfono ya está fijada por el spec paralelo: registro activo `VehicleOwnerContact`, campo `phoneE164` (D-173).*
-- **F-8:** revocación por super_admin: ¿endpoint nuevo en `administration` con `admin.vehicle-claims.manage` (propuesto) o solo por impersonación?
+- ~~**F-8**~~ **RESUELTA → endpoint nuevo:** revocación por super_admin: `POST /api/admin/vehicle-claims/:id/revoke` con permiso dedicado `admin.vehicle-claims.manage` (§5.3, plan 02 §11). *Nota al margen: al momento de escribir, la fila F-8 sigue listada en la tabla de "aún abiertas" de `DECISION-REGISTER.md` (~:5305) con esa misma recomendación por defecto ("Endpoint nuevo con permiso dedicado"); al cerrarla formalmente en el registro, actualizar esa fila.*
 - **F-9:** ¿los estados terminales del link se distinguen en el copy (`expired` vs `revoked` vs `claimed`, propuesto) o un único "este reclamo ya no está disponible"?
 - **F-11:** cuando el propietario **ya tiene cuenta**, ¿además del WhatsApp manual se le envía el mail de invitación automático (propuesto opcional) o solo el envío manual del taller?
 
@@ -688,7 +703,7 @@ Sin endpoint nuevo: `GET /api/vehicle-claims` devuelve `meta.counts` por estado 
 | **PR-2 — API pública** | Módulo + controller público (`GET` bootstrap / `GET challenge` / `verify` con ticket / `commit`, lookup por **hash** del token — S-1, F-10), handlers con máquina de estados (incl. escalera de lock F-4), DTOs, throttles S-3 (incl. bucket `vehicleClaimToken` en `app.module.ts`), log de intentos, eventos `vehicle-claim.*`, specs unitarios (matriz de estados, anti-enumeración, single-use, hash lookup, challenge F-3, ticket F-10). | `src/modules/vehicle-claims/**`, `src/app.module.ts` |
 | **PR-3 — API taller** | Controller autenticado (create idempotente con **generación del QR y subida a R2** — S-1, `link`/`whatsappUrl` one-time — / list / detail con `qrImageUrl` firmada / approve / reject / revoke con deshace de ownership), guards + permisos, scoping por taller, specs de guard order y revoke. | `src/modules/vehicle-claims/controllers`, commands de revoke/review/create, specs |
 | **PR-4 — Notificaciones** | Templates + métodos `MailService` + listeners `@OnEvent` + tests de listeners (skip sin `Workshop.email`, sin PII, sin token en logs). | `src/common/mail/mail.types.ts`, `mail.service.ts`, `src/modules/vehicle-claims/listeners/**` |
-| **PR-5 — Admin + métricas** | Endpoint de revoke admin (`administration`) + `meta.counts` del listado. | `src/modules/administration/controllers/administration.controller.ts`, handler admin, list handler |
+| **PR-5 — Admin + métricas** | Endpoint de revoke admin (`administration`) + `meta.counts` del listado (**`meta.counts` ya implementado** — queda solo el endpoint). | `src/modules/administration/controllers/administration.controller.ts`, `administration.module.ts`, `revoke-claim.command/handler`, `prisma/seed.ts` (permiso admin) |
 | **PR-6 — Frontend (`web-follow-app`)** | Página pública `/reclamo/[token]` **fuera** de `(dashboard)` (precedente `src/app/transfer/qr/[token]/page.tsx` e `invitations/[token]/page.tsx`) con el control pre-verificación, el **multiple choice de rangos** (F-3) y el salto a `/register`/`/login` con `?next=` + ticket (F-10); panel del taller (generar, confirmar celular, QR persistido S-1, `wa.me` en la creación, revocar, cola de revisión manual, aviso "ya tiene titular" F-1); tipos + funciones API. | `web-follow-app/src/app/reclamo/[token]/page.tsx`, componentes del panel, `src/lib/api.ts`, `src/types/vehicle-claim.ts` |
 | **PR-7 — Hook `care-episode.closed`** (depende de la fase C del spec de check-in) | Listener `@OnEvent('care-episode.closed')` → reglas de primer cierre (generar / reactivar / nada — D-TL-VC-9) + spec del flujo en `docs/specs/`. | `src/modules/vehicle-claims/listeners/`, `docs/specs/vehicle-claim-flow.md` |
 | **PR-8 — Disputa del dueño real** (fase posterior, no bloquea el piloto) | `POST /public/dispute` + cola admin de HCDV (listar/resolver) + resolución que revoca y reasigna con auditoría (D-TL-VC-16, AC-28). El modelo `VehicleClaimDispute` ya entra en PR-1. | `src/modules/vehicle-claims/**`, `src/modules/administration/**` |
@@ -701,7 +716,8 @@ Sin endpoint nuevo: `GET /api/vehicle-claims` devuelve `meta.counts` por estado 
 - [ ] AC-1..AC-28 mapeados a tests manuales/automatizados
 - [ ] Control pre-verificación (AC-3) con test de contrato
 - [x] Decisiones del fundador aplicadas (2026-11-01): S-1, S-2, F-1, F-2, F-3, F-4, F-5, F-6, F-10, F-12, S-3, aviso pasivo, disputa
-- [ ] Pendientes (§10): F-7, F-8, F-9, F-11, S-4, P-1, **P-2 ⛔ (único bloqueante, contenido)**
+- [x] **F-8 → endpoint nuevo con permiso dedicado** (§5.3, contrato en plan 02 §11)
+- [ ] Pendientes (§10): F-7, F-9, F-11, S-4, P-1, **P-2 ⛔ (único bloqueante, contenido)**
 - [ ] Contratos públicos alineados con la página frontend (copy de estados)
 - [ ] Migración aditiva + índices parciales verificados en dev
 

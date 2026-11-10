@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -114,6 +116,9 @@ import { UpdateDealershipStatusHandler } from '../commands/update-dealership-sta
 import { InvitePlatformUserDto } from '../dto/invite-platform-user.dto';
 import { InvitePlatformUserCommand } from '../commands/invite-platform-user/invite-platform-user.command';
 import { InvitePlatformUserHandler } from '../commands/invite-platform-user/invite-platform-user.handler';
+import { RevokeClaimCommand } from '../../vehicle-claims/commands/revoke-claim/revoke-claim.command';
+import { RevokeClaimHandler } from '../../vehicle-claims/commands/revoke-claim/revoke-claim.handler';
+import { RevokeClaimDto } from '../../vehicle-claims/dto/revoke-claim.dto';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard)
@@ -159,6 +164,7 @@ export class AdministrationController {
     private readonly invitePlatformUserHandler: InvitePlatformUserHandler,
     private readonly updateDealershipHandler: UpdateDealershipHandler,
     private readonly updateDealershipStatusHandler: UpdateDealershipStatusHandler,
+    private readonly revokeClaimHandler: RevokeClaimHandler,
   ) {}
 
   @Post('roles/assign')
@@ -659,6 +665,37 @@ export class AdministrationController {
   ) {
     return this.reinviteDealershipInvitationHandler.execute(
       new ReinviteDealershipInvitationCommand(id, currentUser.id),
+    );
+  }
+
+  /**
+   * C-6 / F-8: revocación de un reclamo desde la plataforma.
+   *
+   * `POST /api/admin/vehicle-claims/:id/revoke` — reusa `RevokeClaimHandler`
+   * con contexto admin: sin `ContextGuard` ni `WorkshopOnlyGuard` (el
+   * endpoint opera sin contexto WORKSHOP), lookup solo por `id` y motivo
+   * canónico `by_admin` (auditoría `revokedByUserId` = admin; F-8 descarta
+   * la impersonación por eso). `@HttpCode(200)` porque los POST de este
+   * controller responden 201 por default y el contrato pide el 200 del
+   * revoke del taller. `manual_review` sigue en 409 (cerrar con `reject`,
+   * T12 — pendiente de decisión de producto en el diseño §5.3).
+   */
+  @Post('vehicle-claims/:id/revoke')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.vehicle-claims.manage')
+  async revokeVehicleClaim(
+    @Param('id') id: string,
+    @Body() dto: RevokeClaimDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.revokeClaimHandler.execute(
+      new RevokeClaimCommand(
+        id,
+        { type: 'admin' },
+        currentUser.id,
+        dto.reason ?? null,
+      ),
     );
   }
 }

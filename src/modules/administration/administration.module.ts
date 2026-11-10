@@ -44,6 +44,7 @@ import { ReinviteWorkshopInvitationHandler } from './commands/reinvite-workshop-
 import { InvitePlatformUserHandler } from './commands/invite-platform-user/invite-platform-user.handler';
 import { UpdateDealershipHandler } from './commands/update-dealership/update-dealership.handler';
 import { UpdateDealershipStatusHandler } from './commands/update-dealership-status/update-dealership-status.handler';
+import { RevokeClaimHandler } from '../vehicle-claims/commands/revoke-claim/revoke-claim.handler';
 
 @Module({
   imports: [
@@ -96,6 +97,9 @@ import { UpdateDealershipStatusHandler } from './commands/update-dealership-stat
     InvitePlatformUserHandler,
     UpdateDealershipHandler,
     UpdateDealershipStatusHandler,
+    // C-6 / F-8: revoke admin reusa el handler del módulo de reclamos
+    // (patrón de reuso cross-module de ListRolesHandler).
+    RevokeClaimHandler,
   ],
 })
 export class AdministrationModule {}

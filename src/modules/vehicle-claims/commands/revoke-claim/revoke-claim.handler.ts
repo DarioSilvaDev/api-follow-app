@@ -4,7 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { VehicleClaimOutcome, VehicleClaimStatus } from '@prisma/client';
+import {
+  VehicleClaimOutcome,
+  VehicleClaimRevokeReason,
+  VehicleClaimStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import {
   CLAIM_MANUAL_REVIEW_REJECT_MESSAGE,
@@ -42,7 +46,13 @@ interface ScopedInvite {
  *
  * `expired`, `revoked` y `claim_blocked` ya no tienen link vivo: 409.
  * El texto libre del body no se persiste (no hay columna); el motivo canónico
- * del enum es `by_workshop`.
+ * del enum es `by_workshop` (taller) o `by_admin` (plataforma).
+ *
+ * C-6 / F-8 — contexto admin (`POST /api/admin/vehicle-claims/:id/revoke`,
+ * permiso `admin.vehicle-claims.manage`): el mismo handler sin scope de
+ * taller (lookup solo por `id`, el admin ve cualquier invite) y con motivo
+ * `by_admin`. Las reglas de estado, el cierre de ownership y los 409
+ * (`manual_review`, no vigente, carrera) son idénticos al revoke del taller.
  */
 @Injectable()
 export class RevokeClaimHandler {
@@ -70,6 +80,9 @@ export class RevokeClaimHandler {
       throw new ConflictException(CLAIM_UNAVAILABLE_MESSAGE);
     }
 
+    const revokeReason: VehicleClaimRevokeReason =
+      command.context.type === 'admin' ? 'by_admin' : 'by_workshop';
+
     const now = new Date();
 
     const ownershipUndone = await this.prisma.$transaction(async (tx) => {
@@ -95,7 +108,7 @@ export class RevokeClaimHandler {
         data: {
           status: 'revoked',
           revokedAt: now,
-          revokeReason: 'by_workshop',
+          revokeReason,
           revokedByUserId: command.userId,
         },
       });
@@ -112,7 +125,7 @@ export class RevokeClaimHandler {
         invite.id,
         invite.vehicleId,
         invite.workshopId,
-        'by_workshop',
+        revokeReason,
         false,
       ),
     );
@@ -120,18 +133,23 @@ export class RevokeClaimHandler {
     return {
       data: {
         status: 'revoked',
-        reason: 'by_workshop',
+        reason: revokeReason,
         ownershipUndone,
       },
     };
   }
 
+  /**
+   * Workshop: scope por `workshopId` (404 si es de otro taller). Admin (C-6):
+   * lookup solo por `id` — el permiso `admin.vehicle-claims.manage` es la
+   * frontera de autorización, no el taller.
+   */
   private async findScoped(
     id: string,
-    workshopId: string,
+    workshopId: string | null,
   ): Promise<ScopedInvite | null> {
     return this.prisma.vehicleClaimInvite.findFirst({
-      where: { id, workshopId },
+      where: workshopId ? { id, workshopId } : { id },
       select: {
         id: true,
         vehicleId: true,

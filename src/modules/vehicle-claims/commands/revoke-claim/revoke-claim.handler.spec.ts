@@ -211,4 +211,100 @@ describe('RevokeClaimHandler — T13/T14', () => {
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as Error).message).toBe(CLAIM_UNAVAILABLE_MESSAGE);
   });
+
+  describe('contexto admin (C-6 / F-8)', () => {
+    function adminCommand(): RevokeClaimCommand {
+      return new RevokeClaimCommand(
+        id,
+        { type: 'admin' },
+        userId,
+        'motivo libre',
+      );
+    }
+
+    it('sin scope de taller → findFirst solo por id; si no existe → 404', async () => {
+      prisma.vehicleClaimInvite.findFirst.mockResolvedValue(null);
+
+      const error = await capture(handler.execute(adminCommand()));
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as Error).message).toBe(CLAIM_NOT_FOUND_MESSAGE);
+      const findArgs = firstArg<{ where: Record<string, string> }>(
+        prisma.vehicleClaimInvite.findFirst,
+      );
+      expect(findArgs.where).toEqual({ id });
+    });
+
+    it('pending → revokeReason by_admin, sin scope y evento by_admin', async () => {
+      prisma.vehicleClaimInvite.findFirst.mockResolvedValue(invite());
+
+      const result = await handler.execute(adminCommand());
+
+      expect(result).toEqual({
+        data: {
+          status: 'revoked',
+          reason: 'by_admin',
+          ownershipUndone: false,
+        },
+      });
+      const findArgs = firstArg<{ where: Record<string, string> }>(
+        prisma.vehicleClaimInvite.findFirst,
+      );
+      expect(findArgs.where).toEqual({ id });
+
+      const revokeArgs = firstArg<{
+        where: { id: string; workshopId: string; status: string };
+        data: {
+          status: string;
+          revokedAt: Date;
+          revokeReason: string;
+          revokedByUserId: string;
+        };
+      }>(prisma.vehicleClaimInvite.updateMany);
+      // El guard de carrera conserva el taller del invite (fila), no un scope.
+      expect(revokeArgs.where).toEqual({ id, workshopId, status: 'pending' });
+      expect(revokeArgs.data.revokeReason).toBe('by_admin');
+      expect(revokeArgs.data.revokedByUserId).toBe(userId);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'vehicle-claim.revoked',
+        expect.objectContaining({ inviteId: id, reason: 'by_admin' }),
+      );
+    });
+
+    it('manual_review → 409 y no revoca (paridad con el revoke del taller)', async () => {
+      prisma.vehicleClaimInvite.findFirst.mockResolvedValue(
+        invite({ status: 'manual_review' }),
+      );
+
+      const error = await capture(handler.execute(adminCommand()));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as Error).message).toBe(CLAIM_MANUAL_REVIEW_REJECT_MESSAGE);
+      expect(prisma.vehicleClaimInvite.updateMany).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('claimed/ownership_created → cierra el ownership y ownershipUndone true', async () => {
+      prisma.vehicleClaimInvite.findFirst.mockResolvedValue(
+        invite({ status: 'claimed', claimOutcome: 'ownership_created' }),
+      );
+
+      const result = await handler.execute(adminCommand());
+
+      expect(result.data).toEqual({
+        status: 'revoked',
+        reason: 'by_admin',
+        ownershipUndone: true,
+      });
+      expect(prisma.vehicleOwnership.updateMany).toHaveBeenCalledTimes(1);
+      const ownershipArgs = firstArg<{
+        where: { acquiredByClaimInviteId: string; endsAt: null };
+        data: { endsAt: Date };
+      }>(prisma.vehicleOwnership.updateMany);
+      expect(ownershipArgs.where).toEqual({
+        acquiredByClaimInviteId: id,
+        endsAt: null,
+      });
+    });
+  });
 });
