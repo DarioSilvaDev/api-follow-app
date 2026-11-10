@@ -59,6 +59,11 @@ model User {
   workshopMemberships            WorkshopMember[]
   workshopProfileChanges         WorkshopProfileChange[]
   vehicleAuditLogs               VehicleAuditLog[]
+  claimInvites                   VehicleClaimInvite[]    @relation("ClaimInviteClaimant")
+  revokedClaims                  VehicleClaimInvite[]    @relation("ClaimInviteRevokedBy")
+  createdClaims                  VehicleClaimInvite[]    @relation("ClaimInviteCreatedBy")
+  disputesOpened                 VehicleClaimDispute[]   @relation("DisputeOpenedBy")
+  disputesReviewed               VehicleClaimDispute[]   @relation("DisputeReviewedBy")
 
   @@map("users")
 }
@@ -220,6 +225,7 @@ model Workshop {
   specialties            WorkshopSpecialty[]
   dealership             Dealership?             @relation(fields: [dealershipId], references: [id])
   workshopProfileChanges WorkshopProfileChange[]
+  claimInvites           VehicleClaimInvite[]
 
   @@index([name])
   @@map("workshops")
@@ -291,6 +297,8 @@ model WorkshopMember {
   uploadedCareEpisodeAttachments CareEpisodeAttachment[] @relation("CareEpisodeAttachmentUploadedByMember")
   createdCareEpisodes            CareEpisode[]
   verifiedCareEpisodes           CareEpisode[]           @relation("VerifiedCareEpisodes")
+  closedCareEpisodes             CareEpisode[]           @relation("ClosedCareEpisodes")
+  recordedOwnerContacts          VehicleOwnerContact[]   @relation("OwnerContactsRecorded")
   performedServiceRecords        ServiceRecord[]
   recordedMileages               VehicleMileage[]
   assignedWorkOrders             WorkOrder[]
@@ -551,11 +559,12 @@ model BusinessHourException {
 }
 
 model Specialty {
-  id          String              @id @default(uuid()) @db.Uuid
-  code        String              @unique @db.VarChar(50)
-  name        String              @db.VarChar(100)
-  description String?
-  workshops   WorkshopSpecialty[]
+  id           String                 @id @default(uuid()) @db.Uuid
+  code         String                 @unique @db.VarChar(50)
+  name         String                 @db.VarChar(100)
+  description  String?
+  workshops    WorkshopSpecialty[]
+  serviceTypes ServiceTypeSpecialty[]
 
   @@map("specialties")
 }
@@ -659,6 +668,7 @@ model VehicleVersion {
   model              VehicleModel     @relation(fields: [modelId], references: [id], onDelete: Cascade)
   vehicles           Vehicle[]
 
+  @@unique([modelId, name])
   @@map("vehicle_versions")
 }
 
@@ -691,18 +701,20 @@ model VehicleDocument {
 }
 
 model Vehicle {
-  id              String              @id @default(uuid()) @db.Uuid
-  versionId       String?             @map("version_id") @db.Uuid
-  licensePlate    String              @unique @map("license_plate") @db.VarChar(20)
-  vin             String?             @unique @db.VarChar(100)
-  engineNumber    String?             @unique @map("engine_number")
-  manufactureYear Int?                @map("manufacture_year")
-  modelYear       Int?                @map("model_year")
-  color           String?             @db.VarChar(50)
+  id              String                @id @default(uuid()) @db.Uuid
+  versionId       String?               @map("version_id") @db.Uuid
+  licensePlate    String                @unique @map("license_plate") @db.VarChar(20)
+  vin             String?               @unique @db.VarChar(100)
+  engineNumber    String?               @unique @map("engine_number")
+  manufactureYear Int?                  @map("manufacture_year")
+  modelYear       Int?                  @map("model_year")
+  color           String?               @db.VarChar(50)
+  brandName       String?               @map("brand_name") @db.VarChar(100)
+  modelName       String?               @map("model_name") @db.VarChar(100)
   notes           String?
-  createdAt       DateTime            @default(now()) @map("created_at")
-  updatedAt       DateTime            @updatedAt @map("updated_at")
-  deletedAt       DateTime?           @map("deleted_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  deletedAt       DateTime?             @map("deleted_at")
   appointments    Appointment[]
   careEpisodes    CareEpisode[]
   estimates       Estimate[]
@@ -711,15 +723,19 @@ model Vehicle {
   documents       VehicleDocument[]
   mileages        VehicleMileage[]
   ownerships      VehicleOwnership[]
+  ownerContacts   VehicleOwnerContact[]
   photos          VehiclePhoto[]
   shares          VehicleShare[]
   transferQrs     VehicleTransferQr[]
   transfers       VehicleTransfer[]
-  version         VehicleVersion?     @relation(fields: [versionId], references: [id])
+  version         VehicleVersion?       @relation(fields: [versionId], references: [id])
   workOrders      WorkOrder[]
   auditLogs       VehicleAuditLog[]
+  claimInvites    VehicleClaimInvite[]
+  claimDisputes   VehicleClaimDispute[]
 
   @@index([licensePlate])
+  @@index([versionId])
   @@map("vehicles")
 }
 
@@ -771,20 +787,22 @@ model VehicleAuditLog {
 }
 
 model VehicleOwnership {
-  id                   String           @id @default(uuid()) @db.Uuid
-  vehicleId            String           @map("vehicle_id") @db.Uuid
-  userId               String?          @map("user_id") @db.Uuid
-  type                 OwnershipType    @default(owner)
-  startsAt             DateTime         @map("starts_at")
-  endsAt               DateTime?        @map("ends_at")
-  acquiredByTransferId String?          @map("acquired_by_transfer_id") @db.Uuid
-  notes                String?
-  createdAt            DateTime         @default(now()) @map("created_at")
-  dealershipId         String?          @map("dealership_id") @db.Uuid
-  acquiredByTransfer   VehicleTransfer? @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id])
-  dealership           Dealership?      @relation(fields: [dealershipId], references: [id], onDelete: Restrict)
-  user                 User?            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  vehicle              Vehicle          @relation(fields: [vehicleId], references: [id])
+  id                      String              @id @default(uuid()) @db.Uuid
+  vehicleId               String              @map("vehicle_id") @db.Uuid
+  userId                  String?             @map("user_id") @db.Uuid
+  type                    OwnershipType       @default(owner)
+  startsAt                DateTime            @map("starts_at")
+  endsAt                  DateTime?           @map("ends_at")
+  acquiredByTransferId    String?             @map("acquired_by_transfer_id") @db.Uuid
+  acquiredByClaimInviteId String?             @map("acquired_by_claim_invite_id") @db.Uuid
+  notes                   String?
+  createdAt               DateTime            @default(now()) @map("created_at")
+  dealershipId            String?             @map("dealership_id") @db.Uuid
+  acquiredByTransfer      VehicleTransfer?    @relation("TransferCreatesOwnership", fields: [acquiredByTransferId], references: [id])
+  acquiredByClaimInvite   VehicleClaimInvite? @relation("ClaimInviteCreatesOwnership", fields: [acquiredByClaimInviteId], references: [id], onDelete: SetNull)
+  dealership              Dealership?         @relation(fields: [dealershipId], references: [id], onDelete: Restrict)
+  user                    User?               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  vehicle                 Vehicle             @relation(fields: [vehicleId], references: [id])
 
   @@index([vehicleId])
   @@index([userId])
@@ -959,40 +977,50 @@ model Appointment {
 }
 
 model CareEpisode {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  vehicleId          String                  @map("vehicle_id") @db.Uuid
-  workshopId         String?                 @map("workshop_id") @db.Uuid
-  branchId           String?                 @map("branch_id") @db.Uuid
-  appointmentId      String?                 @map("appointment_id") @db.Uuid
-  createdByMemberId  String?                 @map("created_by_member_id") @db.Uuid
-  status             CareEpisodeStatus       @default(open)
-  mileageIn          Int?                    @map("mileage_in")
-  customerComplaint  String?                 @map("customer_complaint") @db.VarChar(500)
-  customerNotes      String?                 @map("customer_notes") @db.VarChar(1000)
-  internalNotes      String?                 @map("internal_notes") @db.VarChar(1000)
-  checkedInAt        DateTime?               @map("checked_in_at") @db.Timestamptz(6)
-  closedAt           DateTime?               @map("closed_at") @db.Timestamptz(6)
-  createdAt          DateTime                @default(now()) @map("created_at")
-  updatedAt          DateTime                @updatedAt @map("updated_at")
-  createdByUserId    String?                 @map("created_by_user_id") @db.Uuid
-  serviceDate        DateTime?               @map("service_date") @db.Timestamptz(6)
-  source             CareEpisodeSource       @default(workshop)
-  title              String?                 @db.VarChar(120)
-  verification       CareEpisodeVerification @default(unverified)
-  verifiedAt         DateTime?               @map("verified_at") @db.Timestamptz(6)
-  verifiedByMemberId String?                 @map("verified_by_member_id") @db.Uuid
-  workshopName       String?                 @map("workshop_name") @db.VarChar(150)
-  attachments        CareEpisodeAttachment[]
-  appointment        Appointment?            @relation(fields: [appointmentId], references: [id])
-  branch             WorkshopBranch?         @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  createdByMember    WorkshopMember?         @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
-  createdByUser      User?                   @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
-  vehicle            Vehicle                 @relation(fields: [vehicleId], references: [id])
-  verifiedByMember   WorkshopMember?         @relation("VerifiedCareEpisodes", fields: [verifiedByMemberId], references: [id], onDelete: Restrict)
-  workshop           Workshop?               @relation(fields: [workshopId], references: [id], onDelete: Restrict)
-  estimates          Estimate[]
-  serviceRecords     ServiceRecord[]
-  workOrders         WorkOrder[]
+  id                         String                   @id @default(uuid()) @db.Uuid
+  vehicleId                  String                   @map("vehicle_id") @db.Uuid
+  workshopId                 String?                  @map("workshop_id") @db.Uuid
+  branchId                   String?                  @map("branch_id") @db.Uuid
+  appointmentId              String?                  @map("appointment_id") @db.Uuid
+  createdByMemberId          String?                  @map("created_by_member_id") @db.Uuid
+  status                     CareEpisodeStatus        @default(open)
+  mileageIn                  Int?                     @map("mileage_in")
+  mileageOut                 Int?                     @map("mileage_out")
+  mileageInUnreadable        Boolean                  @default(false) @map("mileage_in_unreadable")
+  mileageInUnreadableReason  String?                  @map("mileage_in_unreadable_reason") @db.VarChar(200)
+  mileageOutUnreadable       Boolean                  @default(false) @map("mileage_out_unreadable")
+  mileageOutUnreadableReason String?                  @map("mileage_out_unreadable_reason") @db.VarChar(200)
+  closeNotes                 String?                  @map("close_notes") @db.VarChar(1000)
+  customerComplaint          String?                  @map("customer_complaint") @db.VarChar(500)
+  customerNotes              String?                  @map("customer_notes") @db.VarChar(1000)
+  internalNotes              String?                  @map("internal_notes") @db.VarChar(1000)
+  checkedInAt                DateTime?                @map("checked_in_at") @db.Timestamptz(6)
+  closedAt                   DateTime?                @map("closed_at") @db.Timestamptz(6)
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+  createdByUserId            String?                  @map("created_by_user_id") @db.Uuid
+  serviceDate                DateTime?                @map("service_date") @db.Timestamptz(6)
+  source                     CareEpisodeSource        @default(workshop)
+  title                      String?                  @db.VarChar(120)
+  verification               CareEpisodeVerification  @default(unverified)
+  verifiedAt                 DateTime?                @map("verified_at") @db.Timestamptz(6)
+  verifiedByMemberId         String?                  @map("verified_by_member_id") @db.Uuid
+  closedByMemberId           String?                  @map("closed_by_member_id") @db.Uuid
+  workshopName               String?                  @map("workshop_name") @db.VarChar(150)
+  attachments                CareEpisodeAttachment[]
+  appointment                Appointment?             @relation(fields: [appointmentId], references: [id])
+  branch                     WorkshopBranch?          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  createdByMember            WorkshopMember?          @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
+  createdByUser              User?                    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  vehicle                    Vehicle                  @relation(fields: [vehicleId], references: [id])
+  verifiedByMember           WorkshopMember?          @relation("VerifiedCareEpisodes", fields: [verifiedByMemberId], references: [id], onDelete: Restrict)
+  closedByMember             WorkshopMember?          @relation("ClosedCareEpisodes", fields: [closedByMemberId], references: [id], onDelete: Restrict)
+  workshop                   Workshop?                @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  estimates                  Estimate[]
+  serviceRecords             ServiceRecord[]
+  serviceTypes               CareEpisodeServiceType[]
+  workOrders                 WorkOrder[]
+  claimInvites               VehicleClaimInvite[]
 
   @@index([vehicleId, createdAt])
   @@index([workshopId, createdAt])
@@ -1392,4 +1420,193 @@ model WorkshopProfileChange {
   @@index([changedByUserId])
   @@index([changedAt])
   @@map("workshop_profile_changes")
+}
+
+model VehicleOwnerContact {
+  id                  String               @id @default(uuid()) @db.Uuid
+  vehicleId           String               @map("vehicle_id") @db.Uuid
+  phoneE164           String?              @map("phone_e164") @db.VarChar(20)
+  phoneAreaCode       String?              @map("phone_area_code") @db.VarChar(6)
+  phoneNationalNumber String?              @map("phone_national_number") @db.VarChar(12)
+  status              VehicleContactStatus
+  source              String               @default("workshop_counter")
+  recordedByMemberId  String?              @map("recorded_by_member_id") @db.Uuid
+  isActive            Boolean              @default(true) @map("is_active")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  vehicle             Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  recordedByMember    WorkshopMember?      @relation("OwnerContactsRecorded", fields: [recordedByMemberId], references: [id], onDelete: SetNull)
+
+  @@map("vehicle_owner_contacts")
+}
+
+enum VehicleContactStatus {
+  available
+  unavailable
+}
+
+model ServiceType {
+  id          String                   @id @default(uuid()) @db.Uuid
+  code        String                   @unique @db.VarChar(60)
+  name        String                   @db.VarChar(120)
+  description String?
+  isActive    Boolean                  @default(true) @map("is_active")
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  specialties ServiceTypeSpecialty[]
+  links       CareEpisodeServiceType[]
+
+  @@map("service_types")
+}
+
+model ServiceTypeSpecialty {
+  id            String      @id @default(uuid()) @db.Uuid
+  serviceTypeId String      @map("service_type_id") @db.Uuid
+  specialtyId   String      @map("specialty_id") @db.Uuid
+  serviceType   ServiceType @relation(fields: [serviceTypeId], references: [id], onDelete: Cascade)
+  specialty     Specialty   @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceTypeId, specialtyId])
+  @@map("service_type_specialties")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Reclamo de vehículo (MVP "taller primero" — C-1)
+// Diseño: docs/designs/vehicle-claim-technical-design.md §3.1
+// ─────────────────────────────────────────────────────────────
+
+model VehicleClaimInvite {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  vehicleId            String                    @map("vehicle_id") @db.Uuid
+  workshopId           String                    @map("workshop_id") @db.Uuid
+  careEpisodeId        String?                   @map("care_episode_id") @db.Uuid
+  tokenHash            String                    @unique @map("token_hash") @db.VarChar(64)
+  qrObjectKey          String?                   @map("qr_object_key") @db.VarChar(300)
+  status               VehicleClaimStatus        @default(pending)
+  expiresAt            DateTime                  @map("expires_at")
+  ownerPhone           String?                   @map("owner_phone") @db.VarChar(30)
+  claimantUserId       String?                   @map("claimant_user_id") @db.Uuid
+  openedAt             DateTime?                 @map("opened_at")
+  verifiedAt           DateTime?                 @map("verified_at")
+  failedAttempts       Int                       @default(0) @map("failed_attempts")
+  lastFailedAt         DateTime?                 @map("last_failed_at")
+  verificationLockedAt DateTime?                 @map("verification_locked_at")
+  lockoutCount         Int                       @default(0) @map("lockout_count")
+  usedAt               DateTime?                 @map("used_at")
+  blockedAt            DateTime?                 @map("blocked_at")
+  revokedAt            DateTime?                 @map("revoked_at")
+  revokedByUserId      String?                   @map("revoked_by_user_id") @db.Uuid
+  revokeReason         VehicleClaimRevokeReason? @map("revoke_reason")
+  claimOutcome         VehicleClaimOutcome?      @map("claim_outcome")
+  createdByUserId      String?                   @map("created_by_user_id") @db.Uuid
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  vehicle              Vehicle                   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  workshop             Workshop                  @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  careEpisode          CareEpisode?              @relation(fields: [careEpisodeId], references: [id], onDelete: SetNull)
+  claimant             User?                     @relation("ClaimInviteClaimant", fields: [claimantUserId], references: [id], onDelete: SetNull)
+  revokedBy            User?                     @relation("ClaimInviteRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  createdBy            User?                     @relation("ClaimInviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  attempts             VehicleClaimAttempt[]
+  ownerships           VehicleOwnership[]        @relation("ClaimInviteCreatesOwnership")
+  disputes             VehicleClaimDispute[]
+
+  @@index([vehicleId, status])
+  @@index([workshopId, createdAt])
+  @@map("vehicle_claim_invites")
+}
+
+enum VehicleClaimStatus {
+  pending
+  verification_required
+  verified
+  manual_review
+  claimed
+  claim_blocked
+  expired
+  revoked
+}
+
+enum VehicleClaimRevokeReason {
+  by_workshop
+  by_admin
+  manual_review_rejected
+  vehicle_deleted
+  max_attempts
+  dispute_lost
+}
+
+enum VehicleClaimOutcome {
+  ownership_created
+  already_owner
+}
+
+model VehicleClaimAttempt {
+  id         String                     @id @default(uuid()) @db.Uuid
+  inviteId   String                     @map("invite_id") @db.Uuid
+  outcome    VehicleClaimAttemptOutcome
+  ip         String?                    @db.VarChar(45)
+  userAgent  String?                    @map("user_agent") @db.VarChar(300)
+  plateInput String?                    @map("plate_input") @db.VarChar(20)
+  createdAt  DateTime                   @default(now()) @map("created_at")
+  invite     VehicleClaimInvite         @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+
+  @@index([inviteId, createdAt])
+  @@map("vehicle_claim_attempts")
+}
+
+enum VehicleClaimAttemptOutcome {
+  verification_failed
+  verification_passed
+  manual_review
+  claim_success
+  claim_already_owner
+  claim_blocked
+  lockout_started
+  lockout_released
+  auto_revoked
+}
+
+model VehicleClaimDispute {
+  id             String                    @id @default(uuid()) @db.Uuid
+  inviteId       String                    @map("invite_id") @db.Uuid
+  vehicleId      String                    @map("vehicle_id") @db.Uuid
+  claimantUserId String?                   @map("claimant_user_id") @db.Uuid
+  openedByUserId String?                   @map("opened_by_user_id") @db.Uuid
+  contactPhone   String?                   @map("contact_phone") @db.VarChar(30)
+  motivo         String                    @db.VarChar(500)
+  evidenceKeys   String[]                  @default([]) @map("evidence_keys")
+  status         VehicleClaimDisputeStatus @default(open)
+  resolution     String?                   @db.VarChar(1000)
+  reviewedById   String?                   @map("reviewed_by_id") @db.Uuid
+  openedAt       DateTime                  @default(now()) @map("opened_at")
+  resolvedAt     DateTime?                 @map("resolved_at")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  invite         VehicleClaimInvite        @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  vehicle        Vehicle                   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  openedBy       User?                     @relation("DisputeOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
+  reviewedBy     User?                     @relation("DisputeReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status, openedAt])
+  @@index([vehicleId])
+  @@map("vehicle_claim_disputes")
+}
+
+enum VehicleClaimDisputeStatus {
+  open
+  under_review
+  resolved_claimant
+  resolved_rejected
+}
+
+model CareEpisodeServiceType {
+  id            String       @id @default(uuid()) @db.Uuid
+  careEpisodeId String       @map("care_episode_id") @db.Uuid
+  serviceTypeId String?      @map("service_type_id") @db.Uuid
+  customLabel   String?      @map("custom_label") @db.VarChar(120)
+  careEpisode   CareEpisode  @relation(fields: [careEpisodeId], references: [id], onDelete: Restrict)
+  serviceType   ServiceType? @relation(fields: [serviceTypeId], references: [id])
+
+  @@index([careEpisodeId])
+  @@map("care_episode_service_types")
 }
