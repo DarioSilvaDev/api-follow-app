@@ -973,6 +973,49 @@ Definir:
 - mÃºltiples pestaÃ±as;
 - sincronizaciÃ³n frontend/backend.
 
+### Resolución parcial del frontend (2026-10-29)
+
+El frontend resolvió el caso de mayor impacto (pérdida de contexto en rutas
+no-detalle, ej. F5 en `/vehicles/new`) con persistencia **UX** en
+`sessionStorage`, sin cambiar el modelo de autoridad:
+
+- clave versionada `autentia:active-context:v1`, payload mínimo `{type, id}`
+  (`WORKSHOP` | `DEALERSHIP`); nunca datos de usuario, permisos ni tokens
+  (D-001: la sesión vive en cookies HttpOnly);
+- por-pestaña (muere con la pestaña): sin sincronización multi-pestaña ni
+  persistencia entre reinicios del navegador;
+- precedencia: ruta explícita (`/workshops/<uuid>`, `/dealerships/<uuid>`) >
+  contexto persistido > PERSONAL;
+- el contexto persistido se valida contra las membresías de la sesión
+  (`workshopMemberships` / `dealershipMemberships` de `GET /auth/me`) en toda
+  ruta bajo el layout `(dashboard)` antes de emitir `X-Context-*`; se limpia en
+  logout, refresh fallido y membresía revocada;
+- PERSONAL se sigue expresando como **ausencia** de headers (o
+  `X-Context-Type: PERSONAL` sin id); el cliente solo emite `WORKSHOP` o
+  `DEALERSHIP` acompañado de `X-Context-Id`. Valores aceptados por el backend:
+  `PERSONAL` | `WORKSHOP` | `DEALERSHIP` | `PLATFORM`;
+- **no es frontera de seguridad**: `ContextResolver` sigue revalidando por
+  request —en todo endpoint protegido por `ContextGuard`— contra la membresía
+  activa (`workshopMember` / `dealershipMember`, `status = 'active'`). Header
+  ausente ⇒ PERSONAL; contexto no autorizado ⇒ `403` con
+  `code: "INVALID_CONTEXT"` (`src/common/context/services/context-resolver.service.ts`,
+  `src/common/exceptions/coded.exception.ts`). El storage solo recuerda la
+  selección UX.
+
+Riesgo residual aceptado (no es bypass): entre la hidratación y el primer
+`GET /auth/me` la pestaña puede emitir un `X-Context-*` de una membresía ya
+revocada ⇒ `403 INVALID_CONTEXT` (falso negativo de UX). Riesgo simétrico
+observado: al limpiar el contexto por membresía revocada la pestaña continúa en
+semántica PERSONAL y el backend no puede distinguir "sin intención de operar en
+taller" de "taller revocado"; la degradación debe ser visible en la UI para no
+repetir el fallo original (alta guardada en PERSONAL en silencio) y para
+respetar D-020 (un contexto inválido no se degrada en silencio).
+
+Sigue **PENDING** el alcance amplio de D-021: autoridad definitiva del
+contexto (sesión vs ruta), comportamiento SSR/deep links, cookie HttpOnly
+(SEC-002 del registro de decisiones del frontend, `PENDING`), persistencia
+entre reinicios y múltiples pestañas.
+
 ---
 
 # D-022 â€” MVP CareEpisode policies
@@ -1936,7 +1979,15 @@ Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propiet
 - **Impacto:** ningÃºn cambio de cÃ³digo requerido en el guard de contexto (el default PERSONAL ya aplica); solo documentaciÃ³n de journey y ausencia del header en el cliente.
 - **Alternativas descartadas:** alta en WORKSHOP (requiere Ownership por taller/miembro y semÃ¡ntica de contexto no resuelta â€” post-MVP).
 
-### D-036 â€” VIN opcional en MVP
+### Amendment 1 — El taller registra vehículos desde el día 1 (2026-10-31, fundador)
+
+**Enmienda confirmada** (Decisión D del fundador; D-159 de la §42 y spec `docs/specs/workshop-checkin-flow.md`). La regla "solo contexto PERSONAL / el taller **no** registra vehículos" **queda enmendada**: el taller registra vehículos desde el día 1, **como efecto del check-in unificado** (un solo acto, permiso `care-episode.create` existente), y **sin crear titularidad** — el vehículo queda sin `VehicleOwnership` hasta el reclamo/transferencia (D-171; consistente con D-155).
+
+- **Motivo:** GTM del MVP "el taller primero": un vehículo que llega por primera vez no tenía dónde registrarse (el handler rechaza WORKSHOP con 403 fail-closed y la alta PERSONAL exige sesión de propietario con `ownerId`).
+- **Alcance:** la alta en contexto PERSONAL (F-010, `POST /api/vehicles`) **no cambia** (sigue con 409 por placa duplicada); el alta desde taller es un camino nuevo y distinto (`POST /api/care-episodes/check-in`).
+- **Efecto sobre D-004/D-021:** no cierra su PENDING; la rama WORKSHOP del alta se habilita acotadamente a este journey.
+
+### D-036 — VIN opcional en MVP
 
 - **DecisiÃ³n:** `vin` es opcional al crear vehÃ­culo. La UI informa que completarlo mejora la trazabilidad, pero no bloquea el registro. `vin` duplicado â†’ 409 CONFLICT con mensaje especÃ­fico.
 - **RazÃ³n:** obligar VIN aumenta fricciÃ³n de alta sin valor probado en MVP; la trazabilidad mejora si se completa, pero el registro con placa es vÃ¡lido.
@@ -1956,6 +2007,15 @@ Completar el journey F-010 de extremo a extremo (features.md Fase 1): el propiet
 - **RazÃ³n:** el catÃ¡logo ya existe; el texto libre degradarÃ­a la consistencia de datos y complicarÃ­a el timeline futuro (F-013).
 - **Impacto:** frontend â€” cascada brands/models/versions on-demand; si el catÃ¡logo falla, el registro sigue sin versionId. Backend â€” sin cambios (versionId ya es opcional).
 - **Alternativas descartadas:** texto libre (deuda de normalizaciÃ³n de datos); catÃ¡logo obligatorio (bloquea registros cuando el catÃ¡logo estÃ¡ incompleto).
+
+### Amendment 1 — Texto libre de marca/modelo desde el taller (2026-10-31, fundador)
+
+**Enmienda confirmada** (Decisión D del fundador; D-160 de la §42 y spec `docs/specs/workshop-checkin-flow.md` §7.3.1). Se habilita texto libre de marca/modelo **"Otra marca"/"Otro modelo"** (columnas nuevas `Vehicle.brandName`/`modelName`, nullable) **en el alta desde taller** del check-in unificado.
+
+- **Motivo:** en el mostrador del taller la marca/modelo real muchas veces no está en el catálogo; exigir catálogo frena el ingreso del vehículo (GTM "taller primero").
+- **Precedencia de lectura:** `versionId` (catálogo) → `brandName`/`modelName` (texto libre) → `null`.
+- **Alcance:** alta **desde taller**; el alta PERSONAL (F-010) queda como está por ahora (unificación = OA-06, abierta).
+- **Coordinación:** el diseño técnico de reclamos (`docs/designs/vehicle-claim-technical-design.md` §1.2/§3.2) **ya fue corregido** el 2026-11-01 y cita D-038 como **enmendada** por D-160 (texto libre `brandName`/`modelName` en alta desde taller) — ver §42, choques (resuelto).
 
 ## Implementado
 
@@ -4913,3 +4973,355 @@ Handlers de lectura de `Vehicle` (`list-vehicles`, `get-dealership-vehicles`, `g
 - `DELETE /vehicles/:id` → 500 con history: §35 §2, ítem 1 (línea 3832), que remite a ADR-005.
 - R-10, soft-delete de 0 km: §39 (línea 4720) y §40 (línea 4806).
 - Principio de lifecycle por entidad, sin soft-delete universal: ADR-005 T3 (`docs/ADR/ADR-005--Vehicle Care Lifecycle.md:842-897`).
+
+---
+
+# 42. Registro (2026-10-31 / 2026-11-01): Check-in unificado del taller y conexión con reclamos (D-158..D-186)
+
+Consolida las decisiones de producto del spec `docs/specs/workshop-checkin-flow.md` (check-in unificado del taller: alta de vehículo desde WORKSHOP + `CareEpisode` con cierre) y las del módulo de reclamos (`docs/designs/vehicle-claim-technical-design.md`) que el fundador cerró el **2026-10-31** (Decisions A/B/C/D) y el **2026-11-01** (lote OA-03/04/05/09/10/11 más F-1/F-2/F-4/F-5/F-6/F-12/S-1/S-2 del módulo de reclamos). Las enmiendas "Amendment 1" de **D-035** y **D-038** citan **D-159/D-160 de esta sección**.
+
+Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = propuesta de producto en el spec, a validar en el diseño técnico; `PENDING` = decisión abierta (ver la tabla final de esta sección).
+
+## D-158 — Ingreso unificado en un solo acto (sin permiso nuevo)
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED · **Tipo:** Product / API
+
+**Contexto:** `GET /care-episodes/lookup` devuelve 404 si la placa no existe y `POST /care-episodes` exige `vehicleId`: un vehículo que llega por primera vez no tenía dónde registrarse desde el taller.
+
+**Decisión:** un solo endpoint (`POST /api/care-episodes/check-in`) resuelve la placa — existe → reutiliza con confirmación; no existe → crea `Vehicle` + `CareEpisode(open)` + contacto **en una transacción**. **No** se crea permiso `workshop.vehicle.create`: rige el `care-episode.create` existente (el alta del vehículo es efecto del mismo acto).
+
+**Consecuencias:** dos formularios separados quedan descartados; la rama "crear" solo se activa con 404 **confirmado** del lookup; placa repetida en el check-in → reutilizar, nunca 409; P2002 por carrera (RF-15) → reintenta como reutilización.
+
+## D-159 — Enmienda: el taller registra vehículos desde el día 1 *(enmienda de D-035 y de F-020 §5)*
+
+**Fecha:** 2026-10-31 (Decisión D del fundador) · **Estado:** ACCEPTED · **Tipo:** Product / Domain
+
+**Contexto:** D-035 prohibía el alta de vehículos fuera de contexto PERSONAL, y la spec F-020 §5 decía "el taller NO lo registra en esta iteración". El GTM del MVP es "el taller primero".
+
+**Decisión:** el taller registra vehículos desde el día 1, **como efecto del check-in unificado** (D-158), y **sin crear titularidad** — el vehículo queda sin `VehicleOwnership` hasta el reclamo/transferencia (D-171; consistente con D-155). Enmienda aplicada inline en **D-035 (Amendment 1)** y en la spec `docs/specs/care-episode-create-flow.md` F-020 §5 (actualización de texto = Fase G).
+
+**Consecuencias:** la alta PERSONAL (F-010, `POST /api/vehicles`) **no cambia** (sigue con 409 por placa duplicada); D-004/D-021 no cierran su PENDING — la rama WORKSHOP se habilita acotadamente a este journey.
+
+## D-160 — Enmienda: texto libre de marca/modelo desde el taller *(enmienda de D-038)*
+
+**Fecha:** 2026-10-31 (Decisión D del fundador) · **Estado:** ACCEPTED · **Tipo:** Product / Data
+
+**Contexto:** D-038 prohibía texto libre de marca/modelo/versión; en el mostrador la marca/modelo real muchas veces no está en el catálogo.
+
+**Decisión:** selects de marca/modelo con opciones finales **"Otra marca" / "Otro modelo"** que habilitan texto libre (obligatorio si se elige), persistido en columnas nuevas `Vehicle.brandName`/`modelName` (nullable) — **solo en el alta desde taller**. Precedencia de lectura: `versionId` (catálogo) → `brandName`/`modelName` (texto libre) → `null`. Enmienda aplicada inline en **D-038 (Amendment 1)**.
+
+**Consecuencias:** el alta PERSONAL (F-010) queda como está (unificación = OA-06, abierta); el diseño de reclamos §1.2/§3.2 **ya fue corregido** el 2026-11-01 (cita D-038 como enmendada — choque cerrado al final de esta sección).
+
+## D-161 — Contacto del propietario en tabla nueva `vehicle_owner_contacts`
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED · **Tipo:** Product / Data
+
+**Contexto:** el celular del propietario (canal del link de reclamo) no tiene dónde guardarse sin crear `User` (exige email unique) ni `VehicleOwnership` (implicaría titularidad y ocuparía el slot único de D-155).
+
+**Decisión:** tabla nueva `vehicle_owner_contacts` (un registro **activo** por vehículo, patrón de índice único parcial de D-155), con `status: available | unavailable` y auditoría quién/cuándo. **Por qué no columnas en `Vehicle`:** preserva historial de correcciones y deja crecer a otros canales.
+
+**Consecuencias:** el módulo de reclamos lee el registro activo como fuente del contacto; sin `User`, sin sesión, sin credenciales. *Enmendada en detalle por D-173 (celular opcional + E.164).*
+
+## D-162 — "Sin canal de reclamo" nunca bloquea el mostrador
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED · **Tipo:** Product
+
+**Decisión:** si el taller no puede registrar un celular (excepción explícita "No disponible", y desde D-173 también si simplemente no lo informa), el vehículo queda con `status=unavailable` = **sin canal de reclamo**: el check-in y el cierre **proceden igual**; el link de reclamo se entrega **solo QR en mostrador**.
+
+**Consecuencias:** el cierre jamás depende del contacto; el fallback QR es obligatorio en el panel del taller (F-7 del diseño de reclamos).
+
+## D-163 — Odómetro obligatorio (ingreso y egreso) con excepción "no legible"
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED · **Tipo:** Product / Data
+
+**Decisión:** `mileageIn` (check-in) y `mileageOut` (cierre) son obligatorios, enteros ≥ 0. Única excepción: flag `*Unreadable` + motivo (≥3 caracteres) + **foto del tablero** obligatoria (`phase=before` en ingreso, `phase=after` en egreso), XOR en handler.
+
+**Consecuencias:** enmienda C-3 sobre F-020 (DTO hoy lo tiene opcional); el modelo sigue nullable para episodios legacy y para el alta del propietario.
+
+## D-164 — Odómetro regresivo: contra el MÁXIMO HISTÓRICO + excepción "tablero reemplazado"
+
+**Fecha:** 2026-10-31 (Decisión A del fundador) · **Estado:** ACCEPTED · **Tipo:** Product / Data
+
+**Contexto:** OA-02 preguntaba si comparar contra el último registro por fecha o contra el máximo histórico (D-150 ya comparaba contra el máximo).
+
+**Decisión:** la validación de no-regresión compara contra el **máximo histórico** del vehículo. Si la lectura es menor → backend responde código de aviso + referencia; la UI muestra **modal de confirmación** y reenvía con confirmación explícita. **Nunca bloquea.** Opción del mismo modal: **"tablero reemplazado"** — la lectura persiste marcada como excepción y **reinicia la base de comparación** a partir de ese punto; la marca es **auditable** (quién/cuándo, patrón D-156).
+
+**Consecuencias:** coherencia con D-150 confirmada. **NOTA DE CONSISTENCIA (2026-10-31):** el reinicio de la base aplica a **ambas rutas** de escritura de km — `POST /vehicles/:id/mileage` (D-150) y el check-in/cierre de este spec —; deben usar la misma base de comparación (§13-9 del spec, diseño técnico pendiente).
+
+## D-165 — Catálogo global de tipos de atención `ServiceType` (relación con especialidad M:N)
+
+**Fecha:** 2026-10-31 · **Estado:** ACCEPTED en lo esencial (M:N + semilla confirmados 2026-11-01 vía D-174) · **Tipo:** Product / Data
+
+**Decisión:** catálogo **global** `ServiceType` (jamás enum por taller) filtrado por las especialidades del taller del contexto; relación episodio↔tipo **M:N** (`CareEpisodeServiceType`), **máximo 3** por episodio, más opción **"Otro"** con texto libre obligatorio (XOR `serviceTypeId`/`customLabel`). La relación tipo↔especialidad es **M:N** (`ServiceTypeSpecialty`) y la semilla es de **14 tipos aprobados** para las 3 especialidades del piloto — ver D-174/D-192.
+
+**Consecuencias:** seed en `prisma/seed.ts`; sin especialidades cargadas → catálogo completo + aviso de onboarding (no bloquea el ingreso).
+
+## D-166 — Tipos de atención: obligatorios AL CIERRE, opcionales al ingreso
+
+**Fecha:** 2026-10-31 (Decisión B del fundador) · **Estado:** ACCEPTED · **Tipo:** Product
+
+**Contexto:** OA-01 preguntaba cuándo exigir el tipo.
+
+**Decisión:** al **cierre ≥1** (si no → 400 "Agregá al menos un tipo de atención" con el selector); al **ingreso puede nacer sin tipo** (el ingreso puede venir de un diagnóstico).
+
+**Consecuencias:** el valor (historial confiable) vive donde aporta: el cierre; episodios legacy se muestran sin chip y no bloquean lectura.
+
+## D-167 — Cierre `open → delivered` con `closedAt` + evento `care-episode.closed`
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED (específico) / ACCEPTED (genérico) · **Tipo:** Product / API / Events
+
+**Decisión:** comando de cierre `POST /api/care-episodes/:id/close`: solo desde `open` (si ya está cerrado → 409), exige odómetro de egreso + ≥1 tipo; transacción primero (`open → delivered`, `closedAt = now`) y **eventos después**. El evento se llama **`care-episode.closed`** (no `care-episode.delivered`) con payload `{ careEpisodeId, vehicleId, workshopId }`. El fallo del consumidor de reclamo **no** revierte ni retrasa el cierre (best-effort + reintento desde el módulo).
+
+**Consecuencias:** `CareEpisodeStatus` no cambia; sin reapertura en MVP (D-176); refinada por D-172 (solo el primer cierre genera enlace).
+
+## D-168 — Lectura multi-taller en proyección resumida
+
+**Fecha:** 2026-10-31 · **Estado:** ACCEPTED (detalle de visibilidad enmendado por D-175) · **Tipo:** Product / Security
+
+**Decisión:** cada taller escribe solo en **sus** episodios; un taller con ≥1 atención sobre el vehículo **lee** el historial y el detalle de episodios de otros talleres en **proyección resumida** (resumen + adjuntos, solo lectura). Lo que se oculta: **`internalNotes`** y la PII del propietario (email/nombre/teléfono). Sin relación previa sobre el vehículo → 404/403 controlado (no revelar existencia).
+
+**Consecuencias:** requiere B-2 (pata `care_episodes` en el UNION de `assertWorkshopVehicleAccess`) y B-7 (proyección "resumida" en `GET /care-episodes/:id`); select explícito, patrón Security Review #13. *El alcance exacto de lo visible fue confirmado el 2026-11-01 en D-175.*
+
+## D-169 — El onboarding del taller pasa a pedir especialidad
+
+**Fecha:** 2026-10-31 · **Estado:** PENDING (ver OA-07) · **Tipo:** Product
+
+**Decisión (propuesta):** `WizardClaimDto` pasa a exigir `specialtyIds: string[]` (mín. 1), persistido `WorkshopSpecialty` en la misma transacción del claim. **Queda abierta (OA-07)** el tratamiento de talleres ya activos sin especialidad — recomendación por defecto: exigirla solo en el wizard nuevo; para los existentes, fallback de catálogo completo + banner "Completá tu perfil".
+
+## D-170 — Fotos opcionales, con recomendación de 1 en `before`
+
+**Fecha:** 2026-10-31 · **Estado:** ACCEPTED (confirmada 2026-11-01 vía D-177) · **Tipo:** Product
+
+**Decisión:** las fotos de ingreso/egreso son **opcionales** (no frenan el mostrador); la UI **recomienda 1 en `before`** (copy de ayuda + contador, sin bloqueo). Única foto obligatoria: la del odómetro ilegible (D-163).
+
+## D-171 — El alta desde taller NO crea titularidad
+
+**Fecha:** 2026-10-31 · **Estado:** PROPOSED · **Tipo:** Product / Domain
+
+**Decisión:** el vehículo registrado en el check-in queda **sin `VehicleOwnership`**: "el vehículo sin titular no es propiedad del taller". El titular lo define el módulo de reclamo (o una transferencia posterior).
+
+**Consecuencias:** consistente con D-155 (el índice único parcial reserva el slot del titular activo) y con la enmienda D-159; sin `User` ni credenciales con el celular.
+
+## D-172 — El link de reclamo se genera SOLO en el primer cierre del vehículo
+
+**Fecha:** 2026-10-31 (Decisión C del fundador) · **Estado:** ACCEPTED · **Tipo:** Product / Integración
+
+**Contexto:** el diseño de reclamos prevé "un invite activo por vehículo" (índice único parcial); el cierre puede repetirse en el tiempo.
+
+**Decisión:** el consumidor del módulo de reclamos genera el invite **solo en el primer cierre efectivo** del vehículo — si hay invite **vigente** o el vehículo ya fue **reclamado**, se **omite** (sin error). Payload mínimo consumido: `{ vehicleId, careEpisodeId, workshopId }`. "Sin canal de reclamo" (D-162) → invite igual, entrega **solo QR**; nunca bloquea el cierre.
+
+**Consecuencias:** el módulo no implementa "cierre inexistente" como premisa (la fase C de este spec lo implementa, B-4); el evento que consume es `care-episode.closed` (D-167).
+
+---
+
+## Lote 2026-11-01 — decisiones del fundador sobre el spec de check-in (OA-03/04/05/09/10/11)
+
+## D-173 — Celular OPCIONAL en el alta + dos inputs + E.164 canónico *(enmienda de D-161/D-162; cierra OA-03 y F-7 parcial)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Data / UI
+
+**Contexto:** OA-03 preguntaba el formato del celular; el fundador fue más allá: en ~90% de los casos el taller ya tiene el contacto del propietario, exigirlo no aporta y frena el mostrador.
+
+**Decisión:** el celular pasa a ser **opcional en el alta** (si no se informa → `status=unavailable`, sin canal de reclamo, D-162). UI: **dos inputs separados** — código de área + número — validados **en par, sin longitud fija** (ej. `336 4687486`, `11 22681000`). **País fijo en configuración:** `DEFAULT_PHONE_COUNTRY_CODE` (default `+54`); **sin selector de país en MVP**. Persistencia: **E.164 canónico en columna única** `phoneE164` (fuente de verdad; el `wa.me` se arma **solo** desde el E.164, nunca desde el formato local) + dos campos de display `phoneAreaCode` / `phoneNationalNumber`.
+
+**Consecuencias:** `phoneE164` se construye servidor-side (`+<país><área><número>`); el módulo de reclamos debe leer `phoneE164` del registro activo de `vehicle_owner_contacts`; RF-4/RF-6/§7.3.3 del spec actualizados. *F-7 del diseño de reclamos (alcance del override `ownerPhone`) sigue abierto.*
+
+## D-174 — `ServiceType↔Specialty` es M:N; semilla de 14 tipos aprobados *(revierte la 1:N propuesta; cierra OA-04)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Data
+
+**Contexto:** el borrador del spec modelaba `ServiceType.specialtyId` 1:N y descartaba M:N "para MVP". El fundador eligió **M:N + semilla chica**.
+
+**Decisión:** tabla intermedia **`ServiceTypeSpecialty`** (unicidad par tipo/especialidad). Un tipo puede pertenecer a varias especialidades (ej. "Diagnóstico por escáner" en mecánica y electricidad; "Batería"; "Alineación y balanceo"). Semilla: **14 tipos aprobados por el fundador el 2026-11-01** para las 3 especialidades del piloto (**mecánica general, chapa y pintura, electricidad**; lista en D-192). **Regla de mantenimiento:** si la opción "Otro" supera ~10% del uso del catálogo, falta un tipo — se da de alta por admin (**sin deploy**).
+
+**Consecuencias:** filas extra en la migración §7.3 (5 objetos nuevos: `VehicleOwnerContact` + enum, `ServiceType`, `ServiceTypeSpecialty`, `CareEpisodeServiceType`); el catálogo que ve el taller = **unión** de sus especialidades.
+
+## D-175 — Visibilidad multi-taller = "todo salvo `internalNotes`" *(enmienda de D-168; cierra OA-09)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Security
+
+**Decisión:** la proyección resumida para el taller con relación **incluye `customerComplaint`** (motivo de ingreso) **y `customerNotes`** (notas del cliente). Lo **único** oculto: **`internalNotes`** y la PII del propietario (email/nombre/teléfono).
+
+**Razón:** la información del vehículo es del vehículo; el taller B que ya trabajó el vehículo necesita el motivo y las notas del cliente para continuar el diagnóstico. Enmienda explícita del "sin `internalNotes`" original de D-168.
+
+**Consecuencias:** RF-10/CV-9/AC-25/AC-35 del spec actualizados; el `select` explícito de la proyección ahora **sí** incluye esas dos columnas — revisar que el timeline del propietario (D-072/D-F023-2) no se confunda con esta proyección (son superficies distintas).
+
+## D-176 — Sin reapertura de atención cerrada en el MVP *(cierra OA-10)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Lifecycle
+
+**Decisión:** una atención cerrada (`delivered`) **no se reabre** en el MVP; no existe comando de reapertura. La corrección de errores de cierre es por registro nuevo / edición futura (candidate 2-5, D-075).
+
+**Consecuencias:** si en el futuro se pide reapertura, debe resolver la interacción con el link de reclamo generado (invalidar/regenerar) — por eso queda fuera del MVP.
+
+## D-177 — Foto `before` recomendada, no bloqueante *(confirma OA-05)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product
+
+**Decisión:** confirmado lo que el cuerpo del spec ya decía: la foto `before` es **recomendada** (contador "0/1 fotos" en la UI), **nunca bloquea** el check-in ni el cierre; obligatoria **solo** en la excepción de odómetro ilegible (D-163).
+
+## D-178 — Testing: solo 3 tests críticos (+ suites existentes en verde) *(cierra OA-11)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Process / QA
+
+**Contexto:** F-023 registró "sin testing" para su iteración; OA-11 preguntaba si aplica a este flujo, que toca transiciones críticas.
+
+**Decisión:** el testing amplio se pospone, **con 3 excepciones críticas**: (1) **transiciones de estado** — guard `updateMany` de episodio e invite (un estado mal salido = vehículo reclamado dos veces); (2) **atomicidad del check-in** — `Vehicle` + `CareEpisode` en la misma transacción (fallo = vehículo huérfano); (3) **test de contrato del GET pre-verificación** del módulo de reclamos (no expone datos antes de verificar; control de seguridad). **Además:** las suites existentes de backend y frontend deben seguir **en verde**.
+
+---
+
+## Módulo de reclamos (`docs/designs/vehicle-claim-technical-design.md`) — decisiones cerradas el 2026-11-01
+
+## D-179 — F-1: si el vehículo ya tiene titular activo (por transferencia), se OMITE el invite
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Domain
+
+**Decisión:** en el primer cierre (D-172), si el vehículo **ya tiene `VehicleOwnership` activa** (transferencia posterior a la generación), **no se genera invite nuevo** — el panel del taller muestra el aviso "ya tiene titular". Los invites ya creados resuelven por identidad en el commit: `already_owner` o `claim_blocked` (T8/T9, D-TL-VC-12, como guarda residual).
+
+**Consecuencias:** sin escrito cross-module de ownership en el listener; coherente con "el taller no otorga titularidad" (D-171).
+
+## D-180 — F-2: el VIN EXCLUYE al odómetro como factor de verificación
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Security
+
+**Decisión:** verificación de identidad del vehículo: patente + factor — si hay **VIN** registrado y capturado → **últimos 4 del VIN y nada más** (el odómetro **no** se pregunta); si **no** hay VIN → **odómetro** de la última atención; sin dato verificable → **revisión manual**, nunca aprobación automática.
+
+**Consecuencias:** elimina la ambigüedad de pedir ambos datos (D-VC-2, T5/T6, §6.6); el factor restante queda abierto en F-3 (tolerancia vs exacto).
+
+## D-181 — F-4: 5 fallos → `locked` (auto-liberación 30 min); 3 lockouts → auto-revocación
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Security / Abuse
+
+**Decisión:** escalera de bloqueo en `POST /claim`: **5 fallos** → estado `locked` con **auto-liberación a los 30 min** (contador `failedAttempts`); **3 lockouts** acumulados → **auto-revocación** del invite + **notificación al taller** (`lockoutCount`). **Lock ≠ revoke:** la revocación jamás es accionable por un atacante (el lock es reversible por tiempo, el revoke es terminal y notifica).
+
+**Consecuencias:** `lockoutCount` y outcomes de lockout en `VehicleClaimAttempt` (PR-1); números exactos de throttle/ventana quedan por confirmar en S-3.
+
+## D-182 — F-5: `review`/`revoke` solo rol `owner` del taller + `super_admin`
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Security / AuthZ
+
+**Decisión:** las acciones de revisión y revocación de invites se restringen al rol **`owner`** del taller y a **`super_admin`**. `mechanic` y roles custom **no** las reciben por defecto.
+
+**Consecuencias:** matriz de permisos en seed (PR-1); `super_admin` sigue con el bypass de `PermissionsGuard` pero **después** de `WorkshopOnlyGuard` (anti-bypass D-024 A2).
+
+## D-183 — F-6: se CONSERVA `POST /api/vehicle-claims` manual
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / API
+
+**Decisión:** el endpoint manual `POST /api/vehicle-claims` **se mantiene** como **única salida** tras una revocación (o `claim_blocked`): el taller puede generar un invite nuevo de forma explícita. No se elimina "porque ya está el listener".
+
+**Consecuencias:** convive con las reglas de primer cierre (D-172): el listener genera solo donde corresponde y la vía manual cubre los casos restantes.
+
+## D-184 — F-12: reactivar un invite expirado rota el token y resetea contadores
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Security / Data
+
+**Decisión:** al reactivar (T18) un invite `expired`, se **rota el token** (hash nuevo) y se **resetean** `failedAttempts`/`lockoutCount`. El token anterior queda inválido.
+
+**Consecuencias:** sin tokens viejos válidos tras la reactivación; el QR viejo (si se persistió) deja de servir — coherente con S-1.
+
+## D-185 — S-1: token hasheado (SHA-256) + QR persistido en R2
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Security / Data
+
+**Decisión:** en BD **solo** `tokenHash` (SHA-256, unique) — **sin token crudo**. El token en claro existe únicamente en la respuesta de creación, en el **QR persistido en R2** (`qrObjectKey`, re-mostrable desde el panel) y en el navegador del propietario. Lookup público por **hash**, nunca por token en claro.
+
+**Consecuencias:** riesgo residual de filtración por URL (proxy/historial/`Referer`) cubierto por single-use + expiración 7 días + rate-limit (controles independientes); requiere dependencia `qrcode` (backend) en `package.json`.
+
+## D-186 — S-2: IP truncada en el log de intentos + retención 90 días
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED (política definitiva sujeta a revisión legal) · **Tipo:** Security / Privacy
+
+**Decisión:** la IP registrada en `VehicleClaimAttempt` se guarda **truncada** (`/24` en IPv4, `/48` en IPv6) y la retención de los datos de intentos es de **90 días** (depuración por runbook — sin cron en el repo).
+
+**Consecuencias:** suficiente para detección de abuso sin conservar PII precisa; la política definitiva queda sujeta a asesoría legal.
+
+## D-187 — F-3: verificación del odómetro por multiple choice *(solo sin VIN)*
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Security
+
+**Decisión:** cuando el vehículo **no** tiene VIN registrado (F-2/D-180 fijó: si hay VIN → últimos 4 y nada más), la pregunta del odómetro se resuelve por **multiple choice**: **4-6 rangos de ~250 km** generados **server-side** alrededor del valor real de la última atención + opción **"No lo sé"** (que deriva a **revisión manual**, nunca aprueba). El **orden se aleatoriza** por request. El GET pre-verificación **no expone nada** (control de seguridad, test de contrato — D-178).
+
+**Riesgo residual aceptado y documentado:** con 4 opciones y 5 intentos el acierto por azar es **~76%**. El multiple choice **filtra accidentes, no autentica** — el factor real de autenticidad del módulo es el token del invite (single-use + hash + expiración). **Mitigación en capas:** aviso pasivo al taller (D-190) + revocación (F-5/D-182) + disputa del dueño real (D-191).
+
+**Consecuencias:** reemplaza la pregunta exacta de km (que el dueño recuerda aproximado); sin dependencia de tolerancia numérica; PR-2 deja de estar bloqueado por F-3.
+
+## D-188 — S-3: throttle y lock del módulo de reclamos
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Security
+
+**Decisión:** números finales de rate limit y bloqueo: **10 GET/min por token** (bucket `vehicleClaimToken`), **5 POST/5 min** (claim), **ventana de conteo de `failedAttempts` 15 min**, **5 fallos → lock 30 min** (D-181), **3 lockouts → auto-revocación** + notificación al taller.
+
+**Consecuencias:** PR-2 deja de estar bloqueado por S-3; los números se implementan con el mecanismo `@Throttle` existente (no contador propio, patrón D-154).
+
+## D-189 — F-10: orden verificar → registrar/login → reclamar
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Frontend
+
+**Decisión:** el flujo del propietario que escanea el link es: **(1) verificar** (patente + factor), **(2) registrarse o loguearse** — reusando el **auth existente** (`/register`, `/login`, compatible con **Google**) preservando el contexto del reclamo, **(3) reclamar** (confirmar y atar el vehículo a su cuenta). La verificación deja un estado intermedio **`verified`** con un **ticket firmado de 15-30 min** que porta el resultado. La verificación **no consume el token**: solo lo consume el **compromiso** (el claim efectivo).
+
+**Consecuencias:** no se construye un wizard de alta dentro del flujo de reclamo (no pedía email en el invite); el token sigue siendo single-use para el compromiso final; PR-6 deja de estar bloqueado por F-10.
+
+## D-190 — Aviso pasivo al taller al reclamarse un vehículo
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Integración
+
+**Decisión:** cuando un invite se consuma en un reclamo efectivo, el taller recibe **mail + aviso en panel** ("tu vehículo ABC123 fue reclamado"). El aviso **no confirma nada** (no es un paso del flujo): es informativo, y el taller **puede revocar** después (F-5/D-182) si lo considera indebido.
+
+**Alternativa descartada:** **confirmación obligatoria del taller** antes de dar titularidad — **rechazada por el fundador** (2026-11-01): no escala operativamente (todo taller tendría que atender cada reclamo) y frenaría el journey del propietario legítimo.
+
+**Consecuencias:** listener `vehicle-claim.*` → mail (patrón PR-4) + badge en panel; la seguridad no depende de esta confirmación (token fuerte + revisión manual + disputa).
+
+## D-191 — Disputa del dueño real: modelo `VehicleClaimDispute`
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Domain / Legal
+
+**Decisión:** si el propietario real detecta un **reclamo indebido** (alguien reclamó su vehículo sin ser el dueño), abre una **disputa con evidencia** (cédula verde / título de propiedad u otro documento que acredite titularidad). Las disputas las revisa **HCDV (la plataforma)** — **nunca el taller** (es parte interesada). Resolución: **revoca el reclamo indebido y reasigna** la titularidad al disputeante, **con auditoría** completa de quién, cuándo y con qué evidencia.
+
+**Consecuencias:** modelo nuevo `VehicleClaimDispute` (evidencia adjunta, estados de revisión, resolución auditable — patrón D-156); es la contraparte del aviso pasivo D-190: el taller avisa, pero el árbitro final es la plataforma; requiere bandeja de revisión interna (super_admin) en el MVP-administrativo.
+
+## D-192 — Semilla de `ServiceType` aprobada (lista del 2026-11-01)
+
+**Fecha:** 2026-11-01 · **Estado:** ACCEPTED · **Tipo:** Product / Data
+
+**Decisión:** la semilla del catálogo global es la **lista aprobada por el fundador**, enumerada con `code`/`name`/especialidades en el spec `docs/specs/workshop-checkin-flow.md` §7.3.4: 6 de mecánica general, 4 de chapa y pintura, 4 de electricidad — con **"Diagnóstico por escáner"** (`diagnostico_escanner`) y **"Batería / alternador"** (`bateria_alternador`) en **dos especialidades** cada uno (2 filas en `ServiceTypeSpecialty`). **"Otro"** con texto libre **no** es una fila del catálogo (existe en todos los rubros, se persiste como `customLabel`).
+
+**Conteo:** **14 códigos distintos** (6+4+4, de los cuales 2 son multi-especialidad), **confirmado por el fundador el 2026-11-01**. La regla de mantenimiento ">10% de 'Otro' ⇒ falta un tipo" cubre cualquier ajuste futuro.
+
+**Consecuencias:** seed en `prisma/seed.ts` (filas `service_types` + `service_type_specialties`, con las 2 excepciones multi); si el fundador ajusta el conteo, el cambio es de datos, no de diseño.
+
+---
+
+## Decisiones aún ABiertas (consolidadas 2026-11-01)
+
+> **Actualizada 2026-11-01:** **F-3, S-3 y F-10 RESUELTAS** (→ D-187, D-188, D-189); del lado del módulo de reclamos queda como **único bloqueante P-2** (contenido, PR-6).
+
+⛔ = bloqueante para el PR del módulo de reclamos indicado. Recomendación por defecto = lo propuesto en cada documento, para aprobar de una si el fundador no objeta.
+
+| ID | Decisión abierta | Bloqueante | Recomendación por defecto |
+|---|---|---|---|
+| ~~**F-3**~~ **RESUELTA (D-187, 2026-11-01)** | **Verificación del odómetro por multiple choice (solo sin VIN):** 4-6 rangos de ~250 km generados server-side + "No lo sé" → revisión manual; orden aleatorizado; el GET pre-verificación no expone nada. **Riesgo residual aceptado y documentado:** ~76% de acierto por azar (4 opciones × 5 intentos) — el MC filtra accidentes, no autentica. | — | Mitigación en capas: aviso pasivo (D-190) + revocación (D-182) + disputa (D-191). |
+| **F-7** | Override `ownerPhone` del body de `POST /vehicle-claims`: ¿solo afecta el **snapshot** del invite (no escribe `VehicleOwnerContact`) o debe corregir el registro de contacto (write cross-module)? | No (menor) | **Solo snapshot** — la fuente dueña del módulo de check-in es el registro activo (D-161/D-173) |
+| **F-8** | Revocación por `super_admin`: ¿endpoint nuevo en `administration` con `admin.vehicle-claims.manage` o solo por impersonación? | No | **Endpoint nuevo** con permiso dedicado |
+| **F-9** | Copy: ¿distinguir estados terminales del link (`expired`/`revoked`/`claimed`) o un único "este reclamo ya no está disponible"? | No | **Distinguir** (mejor UX para el dueño real) |
+| ~~**F-10**~~ **RESUELTA (D-189, 2026-11-01)** | **Orden verificar → registrar/login → reclamar:** estado `verified` intermedio con **ticket firmado de 15-30 min**; la verificación **no** consume el token (solo el compromiso); reusa el auth existente y es compatible con Google. | — | Sin wizard de alta nuevo dentro del flujo de reclamo. |
+| **F-11** | Con propietario ya con cuenta: ¿mail de invitación automático además del WhatsApp manual o solo envío manual del taller? | No | **Solo manual** (sin mail automático en MVP) |
+| ~~**S-3**~~ **RESUELTA (D-188, 2026-11-01)** | **Números finales:** 10 GET/min por token; 5 POST/5 min; ventana de conteo de `failedAttempts` **15 min**; 5 fallos → lock 30 min; 3 lockouts → auto-revocación (D-181). | — | Implementar con el mecanismo `@Throttle` existente (patrón D-154). |
+| **S-4** | Asignación de `vehicle-claim.*` a roles custom de taller. | No | **Aceptar y documentar** (patrón F-023) |
+| **P-1** | Métricas del piloto: ¿`meta.counts` del listado alcanza o se quiere bloque en el dashboard? | No | **`meta.counts`** (listado) |
+| **P-2** | Copy de la página pública "Reclamá tu vehículo" y de los 4 mails (es-AR, tono Autentia) — aprobación de contenido. | ⛔ **PR-6** (contenido) | El copy del diseño, sujeto a aprobación del fundador |
+| **OA-06** (D-160) | ¿Unificar también el alta PERSONAL con texto libre de marca/modelo? | No | **No en esta iteración** (F-010 queda como está) |
+| **OA-07** (D-169) | Especialidad obligatoria en el wizard + tratamiento de talleres ya activos sin especialidad. | No | Exigirla **solo en el wizard nuevo**; existentes → fallback de catálogo completo + banner (RF-9) |
+| **OA-08** | ¿Replicar el km de ingreso del episodio en `VehicleMileage`? | No | **No duplicar en MVP** (el episodio es la fuente de esa lectura) |
+
+**Nota:** del lado del spec de check-in quedan abiertas **solo OA-06, OA-07 y OA-08** (todas no bloqueantes, con recomendación por defecto); el resto de las OA fueron resueltas el 2026-10-31 (OA-01/02/12) y el 2026-11-01 (OA-03/04/05/09/10/11). **F-3, S-3 y F-10 quedaron RESUELTAS el 2026-11-01 (D-187/D-188/D-189)** — siguen abiertas F-7, F-8, F-9, F-11, S-4, P-1, P-2, OA-06, OA-07 y OA-08; **P-2 es ahora el único bloqueante** (contenido, PR-6).
+
+---
+
+## Choques detectados contra `docs/designs/vehicle-claim-technical-design.md` — estado al 2026-11-01
+
+1. ~~**§1.2/§3.2 citan "D-038 vigente, sin texto libre"**~~ **RESUELTO:** el diseño ya cita D-038 como **enmendada** por D-160 (texto libre `brandName`/`modelName` en alta desde taller).
+2. ~~**Nombre del evento**~~ **RESUELTO:** el diseño ya usa `care-episode.closed` (D-167) en D-TL-VC-9, §4, §7 y PR-7.
+3. ~~**Premisa "cierre de atención inexistente"**~~ **RESUELTO:** el diseño ya remite a la fase C de este spec (B-4, D-167) como precondición de PR-7.
+4. **Fuente del contacto — RESUELTO en la fuente, ABIERTO en el alcance:** el diseño ya declara el registro activo `VehicleOwnerContact` (D-161) y su campo canónico `phoneE164` (D-173) como fuente de `ownerPhone`. El alcance del override `ownerPhone` sigue abierto (F-7).
+5. **C-5 (verificado, matiz correcto):** `VehicleOwnership.userId` es nullable **pero** el CHECK `vehicle_ownerships_owner_xor` exige `user_id XOR dealership_id NOT NULL` — no puede existir una fila sin persona ni concesionaria; el problema real sigue siendo titularidad + slot de D-155 (resuelto con D-161).
