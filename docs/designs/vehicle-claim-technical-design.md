@@ -682,7 +682,7 @@ Sin endpoint nuevo: `GET /api/vehicle-claims` devuelve `meta.counts` por estado 
 
 #### Fundador
 - **F-7 (menor, no bloqueante):** el override `ownerPhone` del body de `POST /vehicle-claims` (§5.2) ¿solo afecta el snapshot del invite (propuesto — no escribe `VehicleOwnerContact`, tabla dueña del módulo de check-in) o debe corregir el registro de contacto (implica write cross-module, RF-6)? *La fuente del teléfono ya está fijada por el spec paralelo: registro activo `VehicleOwnerContact`, campo `phoneE164` (D-173).*
-- ~~**F-8**~~ **RESUELTA → endpoint nuevo:** revocación por super_admin: `POST /api/admin/vehicle-claims/:id/revoke` con permiso dedicado `admin.vehicle-claims.manage` (§5.3, plan 02 §11). *Nota al margen: al momento de escribir, la fila F-8 sigue listada en la tabla de "aún abiertas" de `DECISION-REGISTER.md` (~:5305) con esa misma recomendación por defecto ("Endpoint nuevo con permiso dedicado"); al cerrarla formalmente en el registro, actualizar esa fila.*
+- ~~**F-8**~~ **RESUELTA → endpoint nuevo:** revocación por super_admin: `POST /api/admin/vehicle-claims/:id/revoke` con permiso dedicado `admin.vehicle-claims.manage` (§5.3, plan 02 §11). *Implementado en `b263cef`, revisado en `6bc1d17`; fila cerrada en `DECISION-REGISTER.md` el 2026-11-10.*
 - **F-9:** ¿los estados terminales del link se distinguen en el copy (`expired` vs `revoked` vs `claimed`, propuesto) o un único "este reclamo ya no está disponible"?
 - **F-11:** cuando el propietario **ya tiene cuenta**, ¿además del WhatsApp manual se le envía el mail de invitación automático (propuesto opcional) o solo el envío manual del taller?
 

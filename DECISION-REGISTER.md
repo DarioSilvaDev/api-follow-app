@@ -5309,7 +5309,7 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 ## Decisiones aún ABiertas (consolidadas 2026-11-01)
 
 > **Actualizada 2026-11-01:** **F-3, S-3 y F-10 RESUELTAS** (→ D-187, D-188, D-189); del lado del módulo de reclamos queda como **único bloqueante P-2** (contenido, PR-6).
-> **Actualizada 2026-11-10:** **P-2 RESUELTA** (→ copy aprobado por el fundador el 2026-11-01, `docs/specs/vehicle-claim-copy.md`; el hueco final del copy `already_owner` se cerró con **D-193**). **Ya no queda ningún bloqueante de contenido para PR-6.**
+> **Actualizada 2026-11-10:** **P-2 RESUELTA** (→ copy aprobado por el fundador el 2026-11-01, `docs/specs/vehicle-claim-copy.md`; el hueco final del copy `already_owner` se cerró con **D-193**) y **F-8 RESUELTA** (→ endpoint admin implementado en `b263cef`). **Ya no queda ningún bloqueante de contenido para PR-6.**
 
 ⛔ = bloqueante para el PR del módulo de reclamos indicado. Recomendación por defecto = lo propuesto en cada documento, para aprobar de una si el fundador no objeta.
 
@@ -5317,7 +5317,7 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 |---|---|---|---|
 | ~~**F-3**~~ **RESUELTA (D-187, 2026-11-01)** | **Verificación del odómetro por multiple choice (solo sin VIN):** 4-6 rangos de ~250 km generados server-side + "No lo sé" → revisión manual; orden aleatorizado; el GET pre-verificación no expone nada. **Riesgo residual aceptado y documentado:** ~76% de acierto por azar (4 opciones × 5 intentos) — el MC filtra accidentes, no autentica. | — | Mitigación en capas: aviso pasivo (D-190) + revocación (D-182) + disputa (D-191). |
 | **F-7** | Override `ownerPhone` del body de `POST /vehicle-claims`: ¿solo afecta el **snapshot** del invite (no escribe `VehicleOwnerContact`) o debe corregir el registro de contacto (write cross-module)? | No (menor) | **Solo snapshot** — la fuente dueña del módulo de check-in es el registro activo (D-161/D-173) |
-| **F-8** | Revocación por `super_admin`: ¿endpoint nuevo en `administration` con `admin.vehicle-claims.manage` o solo por impersonación? | No | **Endpoint nuevo** con permiso dedicado |
+| ~~**F-8**~~ **RESUELTA (2026-11-10, implementado en `b263cef`)** | Revocación por `super_admin`: ¿endpoint nuevo en `administration` con `admin.vehicle-claims.manage` o solo por impersonación? | — | **Endpoint nuevo** con permiso dedicado (implementado: `POST /api/admin/vehicle-claims/:id/revoke`, diseño §5.3, revisado en `6bc1d17`) |
 | **F-9** | Copy: ¿distinguir estados terminales del link (`expired`/`revoked`/`claimed`) o un único "este reclamo ya no está disponible"? | No | **Distinguir** (mejor UX para el dueño real) |
 | ~~**F-10**~~ **RESUELTA (D-189, 2026-11-01)** | **Orden verificar → registrar/login → reclamar:** estado `verified` intermedio con **ticket firmado de 15-30 min**; la verificación **no** consume el token (solo el compromiso); reusa el auth existente y es compatible con Google. | — | Sin wizard de alta nuevo dentro del flujo de reclamo. |
 | **F-11** | Con propietario ya con cuenta: ¿mail de invitación automático además del WhatsApp manual o solo envío manual del taller? | No | **Solo manual** (sin mail automático en MVP) |
@@ -5329,7 +5329,7 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 | **OA-07** (D-169) | Especialidad obligatoria en el wizard + tratamiento de talleres ya activos sin especialidad. | No | Exigirla **solo en el wizard nuevo**; existentes → fallback de catálogo completo + banner (RF-9) |
 | **OA-08** | ¿Replicar el km de ingreso del episodio en `VehicleMileage`? | No | **No duplicar en MVP** (el episodio es la fuente de esa lectura) |
 
-**Nota:** del lado del spec de check-in quedan abiertas **solo OA-06, OA-07 y OA-08** (todas no bloqueantes, con recomendación por defecto); el resto de las OA fueron resueltas el 2026-10-31 (OA-01/02/12) y el 2026-11-01 (OA-03/04/05/09/10/11). **F-3, S-3 y F-10 quedaron RESUELTAS el 2026-11-01 (D-187/D-188/D-189)** y **P-2 quedó RESUELTA** (copy aprobado el 2026-11-01 en `docs/specs/vehicle-claim-copy.md`, cierre del hueco `already_owner` → D-193) — siguen abiertas F-7, F-8, F-9, F-11, S-4, P-1, OA-06, OA-07 y OA-08; **ninguna bloqueante de contenido** (P-2 era el último bloqueante de PR-6).
+**Nota:** del lado del spec de check-in quedan abiertas **solo OA-06, OA-07 y OA-08** (todas no bloqueantes, con recomendación por defecto); el resto de las OA fueron resueltas el 2026-10-31 (OA-01/02/12) y el 2026-11-01 (OA-03/04/05/09/10/11). **F-3, S-3 y F-10 quedaron RESUELTAS el 2026-11-01 (D-187/D-188/D-189)**, **P-2 quedó RESUELTA** (copy aprobado el 2026-11-01 en `docs/specs/vehicle-claim-copy.md`, cierre del hueco `already_owner` → D-193) y **F-8 quedó RESUELTA el 2026-11-10** (endpoint admin implementado en `b263cef`) — siguen abiertas F-7, F-9, F-11, S-4, P-1, OA-06, OA-07 y OA-08; **ninguna bloqueante de contenido** (P-2 era el último bloqueante de PR-6).
 
 ---
 
