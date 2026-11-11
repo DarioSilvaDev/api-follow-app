@@ -171,23 +171,23 @@ describe('VehicleAccessService', () => {
 
       // (a) appointments leg: status <> 'cancelled'
       expect(sql).toContain(
-        "SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
+        "SELECT workshop_id FROM appointments WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'",
       );
       // (b) work_orders leg: status <> 'cancelled' (Wave P3 — Amendment 3)
       expect(sql).toContain(
-        "SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
+        "SELECT workshop_id FROM work_orders WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'",
       );
       // (c) estimates leg: present WITHOUT status filter (D-019)
       expect(sql).toContain(
-        'SELECT workshop_id FROM estimates WHERE vehicle_id = $1 AND workshop_id = $2',
+        'SELECT workshop_id FROM estimates WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid',
       );
       // (d) service_records leg: present WITHOUT status filter
       expect(sql).toContain(
-        'SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2',
+        'SELECT workshop_id FROM service_records WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid',
       );
       // (e) care_episodes leg (B-2): status <> 'cancelled' (delivered asocia)
       expect(sql).toContain(
-        "SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'",
+        "SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'",
       );
     });
 

@@ -502,16 +502,18 @@ export class VehicleAccessService {
 
     // Check vehicle-workshop association via any maintenance record
     const association = await this.prisma.$queryRawUnsafe<unknown[]>(
+      // Casts explícitos: Prisma envía los parámetros como `text` y Postgres
+      // no puede inferir `uuid = text` dentro del UNION (42883).
       `SELECT 1 FROM (
-        SELECT workshop_id FROM appointments WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'
+        SELECT workshop_id FROM appointments WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'
         UNION
-        SELECT workshop_id FROM work_orders WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'
+        SELECT workshop_id FROM work_orders WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'
         UNION
-        SELECT workshop_id FROM estimates WHERE vehicle_id = $1 AND workshop_id = $2
+        SELECT workshop_id FROM estimates WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid
         UNION
-        SELECT workshop_id FROM service_records WHERE vehicle_id = $1 AND workshop_id = $2
+        SELECT workshop_id FROM service_records WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid
         UNION
-        SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1 AND workshop_id = $2 AND status <> 'cancelled'
+        SELECT workshop_id FROM care_episodes WHERE vehicle_id = $1::uuid AND workshop_id = $2::uuid AND status <> 'cancelled'
       ) AS associations LIMIT 1`,
       vehicleId,
       workshopId,
