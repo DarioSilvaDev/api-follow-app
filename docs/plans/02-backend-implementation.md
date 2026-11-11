@@ -667,10 +667,11 @@ async handle(event: CareEpisodeClosedEvent) {
 
 ## 11. C-6 — Admin y métricas
 
-**Estado al escribir:**
+**Estado (tras implementación en `b263cef`):**
 
 - ✅ `meta.counts` por estado en `GET /api/vehicle-claims`, con `status` **efectivo** (incluye `expired` calculado) — **YA IMPLEMENTADO** (`list-claims.handler.ts` + `WorkshopClaimListMeta.counts`). **No tocar.**
-- ⬜ `POST /api/admin/vehicle-claims/:id/revoke` — **queda implementar**. F-8 decidida: **endpoint nuevo con permiso dedicado** (recomendación por defecto de `DECISION-REGISTER.md:5305`, respaldada en `docs/plans/01-scope-acceptance.md` §C F-8). **No bloquea el piloto.**
+- ✅ `POST /api/admin/vehicle-claims/:id/revoke` — **implementado** (F-8: endpoint nuevo con permiso dedicado; contract en §11.1). Build verde + suite completa en verde (124 suites / 1244 tests según revisión). **No bloquea el piloto.**
+- ⬜ **Pendiente menor:** spec de reflexión del endpoint admin (§11.3, segundo bullet).
 
 ### 11.1 Contrato del endpoint admin
 
@@ -689,26 +690,23 @@ async handle(event: CareEpisodeClosedEvent) {
 
 > **Nota de AuthZ (verificado en `permissions.guard.ts`):** sin `ContextGuard`, `PermissionsGuard` cae en su fallback de scope (`workshopId = params.id` → acá el `:id` del invite, que **no** matchea ningún `workshopMember`). Efecto: el permiso **solo** puede venir de system roles (el bypass de `super_admin` funciona igual). Por eso la clave vive en el módulo `admin` del seed y jamás en `systemWorkshopRolePermissions`.
 
-### 11.2 Archivos a tocar
+### 11.2 Archivos a tocar — estado: implementados en `b263cef`
 
-1. **`prisma/seed.ts`** — nueva entrada en el array `permissions`:
-   `{ module: 'admin', resource: 'vehicle-claims', action: 'manage', code: 'admin.vehicle-claims.manage', description: 'Manage vehicle claim invites (platform)' }`.
-   La levanta `seedPermissions()` (upsert por `code`) y `super_admin` la recibe **automática** (`systemRolePermissions.super_admin = permissions.map(p => p.code)`). **No** agregar a `systemWorkshopRolePermissions` ni (MVP) a `systemRolePermissions.admin` — consistente con `admin.vehicles.list/read`, que tampoco los tienen. Correr `npm run db:seed`; `PermissionCache` tiene TTL de 5 min (reiniciar o esperar antes del smoke).
-2. **`src/modules/vehicle-claims/commands/revoke-claim/revoke-claim.command.ts` + `.handler.ts`** — extender **sin romper** el caller del taller ni el spec actual:
-   - lookup **sin** `workshopId` cuando el caller es admin (`findFirst({where:{id}})`), manteniendo `{id, workshopId}` cuando hay taller (404 de scoping intacto);
-   - motivo de actor parametrizado: `'by_workshop'` (default) vs `'by_admin'` — se usa en `data.revokeReason`, en el `reason` de la respuesta y en el evento;
-   - todo lo demás idéntico: 409 en `manual_review` (antes de evaluar revocabilidad), 409 no disponible, guarda `updateMany` (count 0 → 409), deshace de ownership.
-   - Sugerencia: 5º parámetro opcional del command (`actor: 'by_workshop' | 'by_admin' = 'by_workshop'`) para no tocar la firma actual.
-3. **`src/modules/administration/controllers/administration.controller.ts`** — método `@Post('vehicle-claims/:id/revoke')` + `@HttpCode(HttpStatus.OK)` + `@UseGuards(PermissionsGuard)` + `@Permissions('admin.vehicle-claims.manage')`, inyectando `RevokeClaimHandler` y construyendo el command con `user.id` del admin.
-4. **`src/modules/administration/administration.module.ts`** — disponibilizar el handler. **Opción A (recomendada, precedente `ListRolesHandler`):** importar la clase `RevokeClaimHandler` y registrarla en `providers` (handler stateless: solo `PrismaService` global + `EventEmitter2` global). **Opción B:** `exports: [RevokeClaimHandler]` en `vehicle-claims.module.ts` + `imports: [VehicleClaimsModule]` en `AdministrationModule`. Elegir **una**; no ambas.
+1. ✅ **`prisma/seed.ts`** — entrada en el array `permissions`:
+   `{ module: 'admin', resource: 'vehicle-claims', action: 'manage', code: 'admin.vehicle-claims.manage', description: 'Manage vehicle claim invites (admin revoke)' }` (catálogo declarativo) **+** función autocontenida **`seedAdminVehicleClaimPermission()`** invocada en `main()`: upsert por `code` del permiso + link **solo a `super_admin`**. *Desvío aprobado:* el contrato original decía "upsert en `seedPermissions()`", pero `seedPermissions()`/`seedSystemRoles()` están **comentados en `main()`** (`prisma/seed.ts:5143-5144`) — ahí el permiso nunca llegaría a la BD; la función propia sigue el patrón activo (`seedCareEpisodeClosePermission`, `seedVehicleClaimPermissions`). **No** se asigna a `systemWorkshopRolePermissions` ni (MVP) a `systemRolePermissions.admin` — consistente con `admin.vehicles.list/read`. Tras `npm run db:seed`, `PermissionCache` TTL 5 min (reiniciar o esperar antes del smoke).
+2. ✅ **`src/modules/vehicle-claims/commands/revoke-claim/revoke-claim.command.ts` + `.handler.ts`** — implementado con **unión discriminada** `RevokeClaimContext` (`{type:'workshop', workshopId}` | `{type:'admin'}`); el 2º parámetro del command acepta `string | RevokeClaimContext` (compat con el call site del taller, que sigue pasando `ctx.workshopId`). El handler: `findScoped(id, workshopId: string | null)` → `where: workshopId ? {id, workshopId} : {id}`; `revokeReason` y evento según `command.context.type`. Sin lógica duplicada; los 409 (incluida la guarda de carrera con el `workshopId` de la fila) y el deshace de ownership quedan idénticos para ambos contextos.
+3. ✅ **`src/modules/administration/controllers/administration.controller.ts`** — `@Post('vehicle-claims/:id/revoke')` + `@HttpCode(HttpStatus.OK)` + `@UseGuards(PermissionsGuard)` + `@Permissions('admin.vehicle-claims.manage')`, inyectando `RevokeClaimHandler` y construyendo `new RevokeClaimCommand(id, { type: 'admin' }, currentUser.id, dto.reason ?? null)`.
+4. ✅ **`src/modules/administration/administration.module.ts`** — **opción A** (la recomendada): `RevokeClaimHandler` registrado en `providers` (precedente `ListRolesHandler`); sin `exports` en `VehicleClaimsModule`.
 
-**No tocar:** schema/migración (no hay columnas nuevas), `meta.counts`, el controller del taller, `docs/specs/vehicle-claim-copy.md`.
+**No tocar (verificado):** schema/migración (no hay columnas nuevas), `meta.counts`, el controller del taller, `docs/specs/vehicle-claim-copy.md`.
 
-### 11.3 Tests esperados
+### 11.3 Tests esperados — estado
 
-- **`revoke-claim.handler.spec.ts` (extender):** caso admin → lookup solo por `id` (sin `workshopId`), `revokeReason:'by_admin'`, respuesta `reason:'by_admin'`, evento `reason:'by_admin'`, `ownershipUndone:true` en `claimed/ownership_created`; **regresión**: todos los casos `by_workshop` actuales siguen verdes.
-- **Spec del camino admin (nuevo, patrón de reflection de `vehicle-claims.controller.spec.ts`):** permiso `admin.vehicle-claims.manage` en el método; `@HttpCode` = 200; guards = `PermissionsGuard` y **no** `WorkshopOnlyGuard` (admin sin membresía WORKSHOP puede ejecutarlo); 403 sin permiso (system role sin la clave); 409 en `manual_review`; 404 id inexistente; body 200 exacto (`status`/`reason`/`ownershipUndone`).
-- **`npm test`** verde (regresión §13.3).
+- ✅ **`revoke-claim.handler.spec.ts`:** bloque `contexto admin (C-6 / F-8)` con 4 tests — lookup solo por `id` + 404; `revokeReason:'by_admin'` en `updateMany` (guard de carrera conserva el `workshopId` de la fila) + respuesta `reason:'by_admin'` + evento `reason:'by_admin'`; 409 en `manual_review` sin emitir; `ownershipUndone:true` en `claimed/ownership_created`. Los 10 tests `by_workshop` existentes intactos. Regresión: suite completa **124 suites / 1244 tests en verde** (revisión `b263cef`).
+- ⬜ **FALTA — spec de reflexión del camino admin** (patrón de `vehicle-claims.controller.spec.ts`, que ya usa `GUARDS_METADATA`/`HTTP_CODE_METADATA`): permiso `admin.vehicle-claims.manage` en el método; `@HttpCode` = 200; guards = `PermissionsGuard` y **no** `WorkshopOnlyGuard` (admin sin membresía WORKSHOP puede ejecutarlo). *Los tests de handler no cubren los decoradores del controller: sin este spec nada impide que un cambio futuro quite el `@HttpCode` (pasaría a 201) o agregue `WorkshopOnlyGuard` (bloquearía al admin sin contexto WORKSHOP, el bug anti-bypass D-024 A2 que el endpoint busca evitar).*
+- Cubiertos por los tests de handler (no hacen falta a nivel controller): 404 id inexistente, 409 `manual_review`, body 200 exacto (`status`/`reason`/`ownershipUndone`).
+- 403 sin permiso / bypass `super_admin`: comportamiento genérico de `PermissionsGuard` — **no tiene spec propio** (`src/common/guards/permissions.guard.spec.ts` no existe); opcional cubrirlo junto con el spec de reflexión.
+- **`npm test`** verde (regresión §13.3) ✅.
 
 ### 11.4 PENDIENTE DE DECISIÓN (producto) — revoke admin sobre `manual_review`
 
@@ -725,7 +723,7 @@ async handle(event: CareEpisodeClosedEvent) {
 | `prisma/schema.prisma` | B-1, C-1 | Modelos/enums nuevos + relaciones |
 | `prisma/migrations/<A>/migration.sql` | B-1 | **4 tablas** (`vehicle_owner_contacts`, `service_types`, `service_type_specialties`, `care_episode_service_types`) + **9 columnas** (2 en `vehicles`, 7 en `care_episodes` con `close_notes`) + **1 enum** (`VehicleContactStatus`) + CHECK XOR + índice parcial |
 | `prisma/migrations/<B>/migration.sql` | C-1 | 3 tablas + 6 enums + FK ownership + índice parcial |
-| `prisma/seed.ts` | B-1, C-1, C-6 | 14 tipos + 16 vínculos + `care-episode.close` + 4 permisos de reclamo + **1 permiso admin** `admin.vehicle-claims.manage` (C-6, §11.2) |
+| `prisma/seed.ts` | B-1, C-1, C-6 | 14 tipos + 16 vínculos + `care-episode.close` + 4 permisos de reclamo + **1 permiso admin** `admin.vehicle-claims.manage` vía `seedAdminVehicleClaimPermission()` — link solo `super_admin` (C-6, §11.2) |
 | `package.json` | C-1 | `qrcode` en `dependencies` + `@types/qrcode` en `devDependencies` (confirmado por el review) |
 | `.env.example` | B-1 | `DEFAULT_PHONE_COUNTRY_CODE=+54` junto al resto de las variables |
 | `src/config/envs.ts` | B-1 | `DEFAULT_PHONE_COUNTRY_CODE` con default `+54` |
@@ -738,7 +736,7 @@ async handle(event: CareEpisodeClosedEvent) {
 | `src/common/mail/mail.service.ts` | C-4 | 4 métodos |
 | `src/modules/administration/controllers/administration.controller.ts` | C-6 | `POST vehicle-claims/:id/revoke` con permiso dedicado (F-8 decidida — contrato §11.1) |
 | `src/modules/administration/administration.module.ts` | C-6 | Disponibilizar `RevokeClaimHandler` (§11.2, opción A o B) |
-| `src/modules/vehicle-claims/commands/revoke-claim/revoke-claim.command.ts` + `.handler.ts` | C-6 | Lookup sin `workshopId` para admin + actor `'by_admin'` (§11.2); sin regresión del caller del taller |
+| `src/modules/vehicle-claims/commands/revoke-claim/revoke-claim.command.ts` + `.handler.ts` | C-6 | Unión `RevokeClaimContext` (2º parámetro `string \| RevokeClaimContext`): lookup sin `workshopId` para admin + motivo `by_admin` (§11.2); sin regresión del caller del taller |
 | `src/common/vehicles/vehicle-display-name.ts` | B-1 | **nuevo** helper de fallback |
 | `src/modules/vehicles/queries/lookup-vehicle/lookup-vehicle.handler.ts` | B-1 | Consumidor del fallback (`:52-53`): usar `resolveVehicleDisplayName` |
 | `src/modules/care-episodes/queries/get-care-episode/get-care-episode.handler.ts` | B-1 | Consumidor del fallback (`:156-157`): marca/modelo aunque no haya versión de catálogo |
