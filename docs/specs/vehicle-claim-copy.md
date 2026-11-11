@@ -362,12 +362,14 @@ Todos usan el mismo componente (`ClaimError`): ícono `AlertCircle` en círculo 
 | Atención de otro taller | `No pudimos encontrar este reclamo.` |
 | Error de red | `No pudimos completar la acción. Intentá de nuevo.` |
 | QR no disponible | `No pudimos cargar el QR. Generá un link nuevo o intentá de nuevo en unos minutos.` |
+| Aprobar sin cuenta vinculada | `Todavía no hay una cuenta vinculada a este reclamo.` |
+| Revocar un reclamo en revisión | `Este reclamo está en revisión manual. Para rechazarlo, usá Rechazar.` |
 
 ---
 
 ## 3. Mails
 
-**Implementación:** HTML inline en `src/common/mail/mail.service.ts`, mismo patrón que `sendWorkshopInvitationEmail` (`:751-774`): `<h2>`, párrafos, botón inline cuando hay CTA. Sin firma ni footer. Sin emojis.
+**Implementación:** HTML inline en `src/common/mail/mail.service.ts`, mismo patrón que `sendWorkshopInvitationEmail` (`:812-835`): `<h2>`, párrafos, botón inline cuando hay CTA. Sin firma ni footer. Sin emojis.
 
 **Templates en `MAIL_TEMPLATES`:** `vehicle_claim_workshop_notification`, `vehicle_claim_blocked_owner`, `vehicle_claim_result`.
 
@@ -403,6 +405,16 @@ Cinco variantes. Todas van a `Workshop.email`; si no existe, **no se envía** (s
 | Cuerpo | `{Nombre} ({email}) reclamó el vehículo {patente} y el historial ya quedó a su nombre.` |
 | Cuerpo 2 | `No necesitás hacer nada. Si el reclamo no corresponde, podés revocarlo desde el panel.` |
 | CTA | `Ver el reclamo` → panel del vehículo |
+
+> **Alcance — variante `already_owner`** (el reclamante ya era el titular activo del vehículo; el commit no crea un vínculo nuevo): el aviso al taller **se envía igual** y **omite la frase de revocación** porque no hay vínculo nuevo que revocar. Sólo cambia el Cuerpo 2; asunto, título, cuerpo y CTA son los mismos que en la variante `claimed`. Aplica también al fallback sin reclamante (ver su fila `Cuerpo 2 (already_owner)` más abajo).
+>
+> | Campo | Copy |
+> |---|---|
+> | Asunto | `{Nombre} reclamó el vehículo {patente} - Autentia` |
+> | Título | `Reclamo completado` |
+> | Cuerpo | `{Nombre} ({email}) reclamó el vehículo {patente} y el historial ya quedó a su nombre.` |
+> | Cuerpo 2 | `No necesitás hacer nada.` |
+> | CTA | `Ver el reclamo` → panel del vehículo |
 
 > **Fallback sin reclamante identificable** (cuenta borrada; `claimant = null`): el aviso al taller **se envía igual** (mitigación anti-squatting #1), pero el copy **no afirma la titularidad**:
 >

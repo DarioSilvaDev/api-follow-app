@@ -2,7 +2,8 @@
  * Copy de los errores de la API pública de reclamo.
  *
  * Fuente de verdad: `docs/specs/vehicle-claim-copy.md` (P-2 aprobado).
- * El mensaje de verificación es ÚNICO a propósito (anti-enumeración, §6.6):
+ * El mensaje de verificación es ÚNICO a propósito (anti-enumeración: copy
+ * spec §0 regla 8 / §1.6; diseño `vehicle-claim-technical-design.md` §6.6):
  * patente ajena, VIN incorrecto, rango incorrecto y factor faltante devuelven
  * exactamente el mismo texto.
  */
@@ -26,7 +27,7 @@ export const CLAIM_EXPIRED_MESSAGE =
 export const CLAIM_REVOKED_MESSAGE =
   'El taller o Autentia revocó este link. Contactá al taller para solicitar uno nuevo.';
 
-/** 409 de link ya consumido o bloqueado, sin datos del titular (§6.5). */
+/** 409 de link ya consumido o bloqueado, sin datos del titular (diseño §6.5). */
 export const CLAIM_UNAVAILABLE_MESSAGE = 'El reclamo ya no está disponible.';
 
 /** 409 del commit cuando el vehículo ya tiene titular (§1.11 claim_blocked). */

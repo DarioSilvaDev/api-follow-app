@@ -5292,9 +5292,24 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 
 ---
 
+## D-193 — Copy de la variante `already_owner` del aviso al taller
+
+**Fecha:** 2026-11-10 · **Estado:** ACCEPTED (RESUELTA / adoptada) · **Tipo:** Product / UX / Copy
+
+**Fuente:** `docs/specs/vehicle-claim-copy.md` §3.2 (`vehicle_claim_workshop_notification`), nota "Alcance — variante `already_owner`".
+
+**Contexto:** el evento `vehicle-claim.claimed` avisa **siempre** al taller (D-190) y tiene dos desenlaces: `ownership_created` y `already_owner` (el reclamante ya era el titular activo del vehículo; T8/AC-12). El mail de `already_owner` ya estaba implementado en `src/common/mail/mail.service.ts` (`case 'claimed'` con `alreadyOwner: true`) y documentado en el listener `vehicle-claim-claimed`, pero su copy no estaba aprobado en el spec.
+
+**Decisión:** se aprueba y documenta el copy de la variante `already_owner` del aviso al taller: asunto, título, cuerpo y CTA **idénticos** a la variante `claimed` (`{Nombre} reclamó el vehículo {patente} - Autentia` · `Reclamo completado` · `{Nombre} ({email}) reclamó el vehículo {patente} y el historial ya quedó a su nombre.` · `Ver el reclamo` → panel del vehículo), con el **Cuerpo 2 reducido a `No necesitás hacer nada.`** — se omite `Si el reclamo no corresponde, podés revocarlo desde el panel.` porque no hay vínculo nuevo que revocar. En el fallback sin reclamante rige su propia fila `Cuerpo 2 (already_owner)` (ya existente en §3.2.a).
+
+**Consecuencias:** el copy spec queda alineado con el comportamiento real de `mail.service.ts` y de los listeners del módulo; **cero cambios de código**. Se conservan las reglas del módulo: asunto termina en ` - Autentia`, patente permitida en el asunto de mails transaccionales (§0, regla 9), mail sin link ni token de reclamo (§0, regla 10), sin emojis ni firma, tono rioplatense, y **sin afirmar titularidad cuando no hay reclamante verificado**.
+
+---
+
 ## Decisiones aún ABiertas (consolidadas 2026-11-01)
 
 > **Actualizada 2026-11-01:** **F-3, S-3 y F-10 RESUELTAS** (→ D-187, D-188, D-189); del lado del módulo de reclamos queda como **único bloqueante P-2** (contenido, PR-6).
+> **Actualizada 2026-11-10:** **P-2 RESUELTA** (→ copy aprobado por el fundador el 2026-11-01, `docs/specs/vehicle-claim-copy.md`; el hueco final del copy `already_owner` se cerró con **D-193**). **Ya no queda ningún bloqueante de contenido para PR-6.**
 
 ⛔ = bloqueante para el PR del módulo de reclamos indicado. Recomendación por defecto = lo propuesto en cada documento, para aprobar de una si el fundador no objeta.
 
@@ -5309,12 +5324,12 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 | ~~**S-3**~~ **RESUELTA (D-188, 2026-11-01)** | **Números finales:** 10 GET/min por token; 5 POST/5 min; ventana de conteo de `failedAttempts` **15 min**; 5 fallos → lock 30 min; 3 lockouts → auto-revocación (D-181). | — | Implementar con el mecanismo `@Throttle` existente (patrón D-154). |
 | **S-4** | Asignación de `vehicle-claim.*` a roles custom de taller. | No | **Aceptar y documentar** (patrón F-023) |
 | **P-1** | Métricas del piloto: ¿`meta.counts` del listado alcanza o se quiere bloque en el dashboard? | No | **`meta.counts`** (listado) |
-| **P-2** | Copy de la página pública "Reclamá tu vehículo" y de los 4 mails (es-AR, tono Autentia) — aprobación de contenido. | ⛔ **PR-6** (contenido) | El copy del diseño, sujeto a aprobación del fundador |
+| ~~**P-2**~~ **RESUELTA (2026-11-01, aprobación del fundador — `docs/specs/vehicle-claim-copy.md`)** | Copy de la página pública "Reclamá tu vehículo" y de los 4 mails (es-AR, tono Autentia) — aprobación de contenido. | — | El copy del diseño, sujeto a aprobación del fundador |
 | **OA-06** (D-160) | ¿Unificar también el alta PERSONAL con texto libre de marca/modelo? | No | **No en esta iteración** (F-010 queda como está) |
 | **OA-07** (D-169) | Especialidad obligatoria en el wizard + tratamiento de talleres ya activos sin especialidad. | No | Exigirla **solo en el wizard nuevo**; existentes → fallback de catálogo completo + banner (RF-9) |
 | **OA-08** | ¿Replicar el km de ingreso del episodio en `VehicleMileage`? | No | **No duplicar en MVP** (el episodio es la fuente de esa lectura) |
 
-**Nota:** del lado del spec de check-in quedan abiertas **solo OA-06, OA-07 y OA-08** (todas no bloqueantes, con recomendación por defecto); el resto de las OA fueron resueltas el 2026-10-31 (OA-01/02/12) y el 2026-11-01 (OA-03/04/05/09/10/11). **F-3, S-3 y F-10 quedaron RESUELTAS el 2026-11-01 (D-187/D-188/D-189)** — siguen abiertas F-7, F-8, F-9, F-11, S-4, P-1, P-2, OA-06, OA-07 y OA-08; **P-2 es ahora el único bloqueante** (contenido, PR-6).
+**Nota:** del lado del spec de check-in quedan abiertas **solo OA-06, OA-07 y OA-08** (todas no bloqueantes, con recomendación por defecto); el resto de las OA fueron resueltas el 2026-10-31 (OA-01/02/12) y el 2026-11-01 (OA-03/04/05/09/10/11). **F-3, S-3 y F-10 quedaron RESUELTAS el 2026-11-01 (D-187/D-188/D-189)** y **P-2 quedó RESUELTA** (copy aprobado el 2026-11-01 en `docs/specs/vehicle-claim-copy.md`, cierre del hueco `already_owner` → D-193) — siguen abiertas F-7, F-8, F-9, F-11, S-4, P-1, OA-06, OA-07 y OA-08; **ninguna bloqueante de contenido** (P-2 era el último bloqueante de PR-6).
 
 ---
 
