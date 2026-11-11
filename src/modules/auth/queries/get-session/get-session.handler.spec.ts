@@ -171,6 +171,59 @@ describe('GetSessionHandler', () => {
     expect(arg.include.role.include).toHaveProperty('permissions');
   });
 
+  it('workshopMemberships: expone role.permissions como códigos planos ordenados', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      ...userRow,
+      workshopMemberships: [
+        {
+          workshopId: 'ws-1',
+          workshop: { id: 'ws-1', name: 'Taller de Ceci' },
+          role: {
+            id: 'role-ws-owner',
+            code: 'owner',
+            name: 'Dueño',
+            permissions: [
+              { permission: { code: 'vehicle-claim.review' } },
+              { permission: { code: 'vehicle-claim.create' } },
+              { permission: { code: 'vehicle-claim.list' } },
+            ],
+          },
+        },
+      ],
+    });
+
+    const result = await handler.execute('user-1');
+
+    expect(result.workshopMemberships).toEqual([
+      {
+        workshopId: 'ws-1',
+        workshop: { id: 'ws-1', name: 'Taller de Ceci' },
+        role: {
+          id: 'role-ws-owner',
+          code: 'owner',
+          name: 'Dueño',
+          permissions: [
+            'vehicle-claim.create',
+            'vehicle-claim.list',
+            'vehicle-claim.review',
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('la query de workshopMemberships pide role.permissions (gate de UX del frontend)', async () => {
+    prismaMock.user.findUnique.mockResolvedValue(userRow);
+
+    await handler.execute('user-1');
+
+    const arg = prismaMock.user.findUnique.mock.calls[0][0];
+    expect(
+      arg.select.workshopMemberships.select.role.select.permissions.select
+        .permission.select.code,
+    ).toBe(true);
+  });
+
   it('dealershipMemberships vacío cuando el usuario no pertenece a ninguna dealership', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
       ...userRow,

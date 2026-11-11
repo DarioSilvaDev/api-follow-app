@@ -34,7 +34,19 @@ export class GetSessionHandler {
           select: {
             workshopId: true,
             workshop: { select: { id: true, name: true } },
-            role: { select: { id: true, code: true, name: true } },
+            // `permissions` alimenta los gates de UX por taller del frontend
+            // (p. ej. panel de reclamo). El enforcement sigue en
+            // PermissionsGuard: esto es solo el espejo de lo que el rol puede.
+            role: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                permissions: {
+                  select: { permission: { select: { code: true } } },
+                },
+              },
+            },
           },
         },
         // §28 §3.4: memberships de concesionaria para bootstrap del contexto
@@ -57,7 +69,8 @@ export class GetSessionHandler {
 
     const roles = await this.roleService.loadUserRoles(userId, true);
 
-    const { _count, dealershipMemberships, ...userData } = user;
+    const { _count, dealershipMemberships, workshopMemberships, ...userData } =
+      user;
 
     // §28 §3.4: shape público `{ dealershipId, dealershipName, logoUrl?, role }`
     // (el campo anidado `dealership` es interno de Prisma).
@@ -68,10 +81,27 @@ export class GetSessionHandler {
       role: m.role,
     }));
 
+    // El rol del taller suma `permissions` (códigos planos, ordenados) para que
+    // la UI pueda ocultar acciones que el backend igual va a rechazar. El
+    // grafo anidado de Prisma (`permissions[].permission`) no se filtra.
+    const workshopMembershipsOut = (workshopMemberships ?? []).map((m) => ({
+      workshopId: m.workshopId,
+      workshop: m.workshop,
+      role: {
+        id: m.role.id,
+        code: m.role.code,
+        name: m.role.name,
+        permissions: (m.role.permissions ?? [])
+          .map((p) => p.permission.code)
+          .sort(),
+      },
+    }));
+
     return {
       ...userData,
       isVehicleOwner: _count.ownerships > 0,
       roles,
+      workshopMemberships: workshopMembershipsOut,
       dealershipMemberships: memberships,
       ...(impersonation?.impersonated
         ? {
