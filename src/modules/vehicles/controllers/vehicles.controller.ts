@@ -602,7 +602,6 @@ export class VehiclesController {
     return VehicleResponseDto.from(vehicle);
   }
 
-
   /**
    * D-154 (Security M4): el 409 de "VIN ya existe" es un oráculo distinguible;
    * se limita el endpoint con el mismo bucket por identidad que el alta
@@ -735,6 +734,3 @@ export class VehiclesController {
     return this.getVehicleHistoryHandler.execute(id, user);
   }
 }
-
-
-

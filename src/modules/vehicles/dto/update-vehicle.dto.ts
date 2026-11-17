@@ -7,7 +7,9 @@ import {
   Matches,
   Max,
   Min,
+  Validate,
 } from 'class-validator';
+import { IsValidBrandModelPair } from './common/brand-model-pair.validator';
 
 /**
  * PATCH parcial de vehículo (D-040). Cada campo editable DEBE llevar su
@@ -56,7 +58,14 @@ export class UpdateVehicleDto {
   @IsString()
   engineNumber?: string;
 
+  // MVP sin versiones de vehículo: el catálogo se identifica por marca + modelo
+  // (ambos o ninguno). Si vienen, el handler resuelve los nombres y los
+  // persiste en `brandName`/`modelName`, limpiando `versionId` (D-160). `versionId`
+  // ya no se acepta en el PATCH.
   @IsOptional()
   @IsUUID()
-  versionId?: string;
+  brandId?: string;
+
+  @Validate(IsValidBrandModelPair)
+  modelId?: string;
 }

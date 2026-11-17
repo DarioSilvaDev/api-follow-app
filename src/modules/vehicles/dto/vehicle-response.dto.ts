@@ -40,6 +40,8 @@ type VehicleWithRelations = {
   vin: string | null;
   engineNumber: string | null;
   versionId: string | null;
+  brandName?: string | null;
+  modelName?: string | null;
   manufactureYear: number | null;
   modelYear: number | null;
   color: string | null;
@@ -106,8 +108,10 @@ export class VehicleResponseDto {
       versionId: vehicle.versionId,
       brandId: vehicle.version?.model?.brand?.id ?? null,
       modelId: vehicle.version?.model?.id ?? null,
-      brand: vehicle.version?.model?.brand?.name ?? null,
-      model: vehicle.version?.model?.name ?? null,
+      // MVP sin versiones: los vehículos nuevos guardan marca/modelo como texto
+      // (D-160). Precedencia: catálogo legacy → texto libre → null.
+      brand: vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
+      model: vehicle.version?.model?.name ?? vehicle.modelName ?? null,
       version: vehicle.version?.name ?? null,
       manufactureYear: vehicle.manufactureYear,
       modelYear: vehicle.modelYear,

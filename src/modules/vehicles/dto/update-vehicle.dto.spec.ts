@@ -32,7 +32,8 @@ describe('UpdateVehicleDto — whitelist del PATCH (regresión)', () => {
       manufactureYear: 2019,
       modelYear: 2020,
       engineNumber: 'ENG-001',
-      versionId: '11111111-1111-4111-8111-111111111111',
+      brandId: '11111111-1111-4111-8111-111111111111',
+      modelId: '22222222-2222-4222-8222-222222222222',
     };
 
     const result = (await transform(body)) as UpdateVehicleDto;
@@ -44,7 +45,8 @@ describe('UpdateVehicleDto — whitelist del PATCH (regresión)', () => {
       manufactureYear: 2019,
       modelYear: 2020,
       engineNumber: 'ENG-001',
-      versionId: '11111111-1111-4111-8111-111111111111',
+      brandId: '11111111-1111-4111-8111-111111111111',
+      modelId: '22222222-2222-4222-8222-222222222222',
     });
     // Cada propiedad demostrablemente sobrevivió al whitelist.
     expect(Object.keys(result)).toEqual(
@@ -55,7 +57,8 @@ describe('UpdateVehicleDto — whitelist del PATCH (regresión)', () => {
         'manufactureYear',
         'modelYear',
         'engineNumber',
-        'versionId',
+        'brandId',
+        'modelId',
       ]),
     );
   });
@@ -78,9 +81,15 @@ describe('UpdateVehicleDto — whitelist del PATCH (regresión)', () => {
     );
   });
 
-  it('versionId no-UUID → 400', async () => {
-    await expect(transform({ versionId: 'not-a-uuid' })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+  it('brandId sin modelId → 400 (par incompleto; MVP sin versiones)', async () => {
+    await expect(
+      transform({ brandId: '11111111-1111-4111-8111-111111111111' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('modelId sin brandId → 400 (par incompleto; MVP sin versiones)', async () => {
+    await expect(
+      transform({ modelId: '22222222-2222-4222-8222-222222222222' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -50,8 +50,10 @@ export class DealershipVehicleResponseDto {
       versionId: vehicle.versionId,
       brandId: vehicle.version?.model?.brand?.id ?? null,
       modelId: vehicle.version?.model?.id ?? null,
-      brand: vehicle.version?.model?.brand?.name ?? null,
-      model: vehicle.version?.model?.name ?? null,
+      // MVP sin versiones: fallback al texto libre (D-160) para que un vehículo
+      // cargado con marca/modelo no muestre brand/model vacíos.
+      brand: vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
+      model: vehicle.version?.model?.name ?? vehicle.modelName ?? null,
       version: vehicle.version?.name ?? null,
       manufactureYear: vehicle.manufactureYear,
       modelYear: vehicle.modelYear,

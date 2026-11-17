@@ -280,6 +280,116 @@ describe('PrismaVehicleRepository — P2002 → 409, include hydration and plate
     );
   });
 
+  // ── createPersonalRegistration() — D-206 ────────────────────────────────
+
+  describe('createPersonalRegistration (D-206)', () => {
+    let txMock: {
+      vehicle: { create: jest.Mock };
+      vehicleMileage: { create: jest.Mock };
+      vehicleAuditLog: { create: jest.Mock };
+    };
+    let transactionalPrisma: { $transaction: jest.Mock };
+    let repo: PrismaVehicleRepository;
+
+    const personalData = {
+      licensePlate: 'ABC123',
+      vin: undefined,
+      engineNumber: undefined,
+      versionId: undefined,
+      manufactureYear: undefined,
+      modelYear: undefined,
+      color: undefined,
+      notes: undefined,
+      ownerId: 'user-1',
+      initialMileage: 85000,
+    };
+
+    beforeEach(() => {
+      txMock = {
+        vehicle: { create: jest.fn() },
+        vehicleMileage: { create: jest.fn() },
+        vehicleAuditLog: { create: jest.fn() },
+      };
+      txMock.vehicle.create.mockResolvedValue({
+        id: 'v1',
+        licensePlate: 'ABC123',
+      });
+      txMock.vehicleMileage.create.mockResolvedValue({ id: 'm-1' });
+      txMock.vehicleAuditLog.create.mockResolvedValue({ id: 'a-1' });
+
+      transactionalPrisma = {
+        $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(txMock)),
+      };
+      repo = new PrismaVehicleRepository(transactionalPrisma as any);
+    });
+
+    it('creates vehicle + owner ownership + mileage + audit in one transaction', async () => {
+      const result = await repo.createPersonalRegistration(personalData);
+
+      expect(transactionalPrisma.$transaction).toHaveBeenCalledTimes(1);
+
+      expect(txMock.vehicle.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            licensePlate: 'ABC123',
+            ownerships: {
+              create: expect.objectContaining({
+                userId: 'user-1',
+                type: 'owner',
+              }),
+            },
+          }),
+        }),
+      );
+      // initialMileage es input de servicio, no columna de Vehicle.
+      const vehicleArg = txMock.vehicle.create.mock.calls[0][0];
+      expect(vehicleArg.data.initialMileage).toBeUndefined();
+
+      // Mileage: source owner, atribuido al propietario.
+      expect(txMock.vehicleMileage.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          vehicleId: 'v1',
+          mileage: 85000,
+          source: 'owner',
+          recordedByUserId: 'user-1',
+        }),
+      });
+
+      // Audit: mileage_recorded atribuido al actor y al contexto personal.
+      expect(txMock.vehicleAuditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          vehicleId: 'v1',
+          action: 'mileage_recorded',
+          field: 'mileage',
+          newValue: '85000',
+          actorUserId: 'user-1',
+          contextType: 'personal',
+        }),
+      });
+
+      expect(result).toEqual({ id: 'v1', licensePlate: 'ABC123' });
+    });
+
+    it('aborts the whole transaction when the audit insert fails (no partial writes)', async () => {
+      const auditError = new Error('audit insert failed');
+      txMock.vehicleAuditLog.create.mockRejectedValue(auditError);
+
+      await expect(repo.createPersonalRegistration(personalData)).rejects.toBe(
+        auditError,
+      );
+
+      expect(transactionalPrisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+    it('maps P2002 (duplicate plate) to a specific 409', async () => {
+      txMock.vehicle.create.mockRejectedValue(p2002(['license_plate']));
+
+      await expectConflictWithMessage(
+        'Ya existe un vehículo registrado con esa placa',
+        () => repo.createPersonalRegistration(personalData),
+      );
+    });
+  });
+
   // ── createDealershipRegistration() — Gap 1 (D-128) ──────────────────────
 
   describe('createDealershipRegistration (Gap 1)', () => {

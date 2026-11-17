@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/database/prisma.service';
 import { MailService } from '../../../common/mail/mail.service';
 import type { MailSendResult } from '../../../common/mail/mail.types';
 import { VehicleTransferQrExpiredEvent } from '../events/vehicle-transfer-qr-expired.event';
+import { resolveVehicleDisplayName } from '../../../common/vehicles/vehicle-display-name';
 
 /**
  * D-088 / D-094: el QR vencido se notifica SOLO al emisor, porque es el único
@@ -46,9 +47,7 @@ export class TransferQrExpiredEmailListener {
         return undefined;
       }
 
-      const vehicleName = vehicle.version
-        ? `${vehicle.version.model.brand.name} ${vehicle.version.model.name} ${vehicle.version.name}`
-        : vehicle.licensePlate;
+      const vehicleName = resolveVehicleDisplayName(vehicle);
 
       return await this.mailService.sendTransferQrExpiredEmail(
         createdBy.email,

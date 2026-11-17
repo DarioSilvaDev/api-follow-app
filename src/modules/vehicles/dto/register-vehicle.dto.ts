@@ -9,6 +9,7 @@ import {
   Validate,
 } from 'class-validator';
 import { IsValidVin } from './common/vin.validator';
+import { IsValidBrandModelPair } from './common/brand-model-pair.validator';
 
 export class RegisterVehicleDto {
   // D-037: formato alfanumérico de 2 a 10 caracteres. La normalización a
@@ -32,9 +33,15 @@ export class RegisterVehicleDto {
   @IsString()
   engineNumber?: string;
 
+  // MVP sin versiones de vehículo: el catálogo se identifica por marca + modelo
+  // (ambos o ninguno). El handler resuelve los nombres y los persiste en
+  // `brandName`/`modelName` (D-160). `versionId` ya no se acepta en el alta.
   @IsOptional()
   @IsUUID()
-  versionId?: string;
+  brandId?: string;
+
+  @Validate(IsValidBrandModelPair)
+  modelId?: string;
 
   @IsOptional()
   @IsInt()
@@ -56,8 +63,11 @@ export class RegisterVehicleDto {
   @IsString()
   notes?: string;
 
-  // Gap 1 (D-07): kilometraje inicial. Obligatorio cuando el contexto activo es
-  // DEALERSHIP (falla 400 en el handler si falta); rechazado en PERSONAL.
+  // Gap 1 (D-07): kilometraje al dar de alta el vehículo.
+  // - DEALERSHIP: obligatorio (falla 400 en el handler si falta).
+  // - PERSONAL (D-206): opcional; el propietario conoce el odómetro actual de
+  //   su vehículo y puede declararlo. Cuando viaja se persiste como la primera
+  //   lectura (source=owner) en la misma transacción que el alta.
   // El DTO solo valida la forma cuando viene; la regla de contexto no puede
   // resolverse aquí.
   @IsOptional()

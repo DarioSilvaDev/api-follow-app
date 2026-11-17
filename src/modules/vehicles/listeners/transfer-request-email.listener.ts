@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/database/prisma.service';
 import { MailService } from '../../../common/mail/mail.service';
 import type { MailSendResult } from '../../../common/mail/mail.types';
 import { VehicleTransferRequestedEvent } from '../events/vehicle-transfer-requested.event';
+import { resolveVehicleDisplayName } from '../../../common/vehicles/vehicle-display-name';
 
 /**
  * D-087 / D-119: las notificaciones de transferencia usan email solamente y el
@@ -50,9 +51,7 @@ export class TransferRequestEmailListener {
         return undefined;
       }
 
-      const vehicleName = vehicle.version
-        ? `${vehicle.version.model.brand.name} ${vehicle.version.model.name} ${vehicle.version.name}`
-        : vehicle.licensePlate;
+      const vehicleName = resolveVehicleDisplayName(vehicle);
 
       return await this.mailService.sendTransferRequestEmail(
         toUser.email,

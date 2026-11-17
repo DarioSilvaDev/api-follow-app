@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { resolveVehicleDisplayName } from '../../../common/vehicles/vehicle-display-name';
 import { OwnerDashboardResponseDto } from '../dto/owner-response.dto';
 
 @Injectable()
@@ -33,10 +34,8 @@ export class OwnerStatsHandler {
       },
     });
 
-    const formatVehicleName = (v: any): string => {
-      if (!v?.version?.model?.brand) return 'Vehículo';
-      return `${v.version.model.brand.name} ${v.version.model.name}`;
-    };
+    const formatVehicleName = (v: any): string =>
+      resolveVehicleDisplayName(v) || 'Vehículo';
 
     const vehicles = ownerships.map((o) => {
       const v = o.vehicle;

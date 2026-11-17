@@ -1,19 +1,26 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/database/prisma.service';
-import { UpdateVehicleDto } from '../dto/update-vehicle.dto';
 import {
   RegisterVehicleData,
+  RegisterPersonalVehicleData,
   RegisterDealershipVehicleData,
+  UpdateVehicleData,
   VehicleRepository,
 } from './vehicle.repository';
+import { stripCatalogPair } from '../utils/vehicle-catalog-pair';
 
 @Injectable()
 export class PrismaVehicleRepository implements VehicleRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(data: RegisterVehicleData) {
-    const { ownerId, ...vehicleData } = data;
+    const { ownerId, ...rawVehicleData } = data;
+    // `initialMileage` es un input de servicio (no una columna de Vehicle): la
+    // ruta personal con kilometraje usa `createPersonalRegistration` (D-206).
+    // `brandId`/`modelId` tampoco son columnas: los resuelve el handler.
+    const vehicleData = stripCatalogPair(rawVehicleData);
+    delete vehicleData.initialMileage;
 
     try {
       return await this.prisma.vehicle.create({
@@ -49,6 +56,76 @@ export class PrismaVehicleRepository implements VehicleRepository {
   }
 
   /**
+   * D-206: alta personal con kilometraje declarado por el propietario. Crea en
+   * UNA transacción: Vehicle + VehicleOwnership (type=owner, el usuario
+   * autenticado) + VehicleMileage inicial (source=owner, atribuida al usuario) +
+   * VehicleAuditLog (mileage_recorded). Si cualquiera falla, PostgreSQL revierte
+   * todo el bloque, igual que el alta por concesionaria (D-128).
+   */
+  async createPersonalRegistration(data: RegisterPersonalVehicleData) {
+    const { ownerId, initialMileage, ...rawVehicleData } = data;
+    // `brandId`/`modelId` no son columnas de Vehicle: los resuelve el handler.
+    // Igual que create()/createDealershipRegistration (D-160), se descartan acá.
+    const vehicleData = stripCatalogPair(rawVehicleData);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+
+        const vehicle = await tx.vehicle.create({
+          data: {
+            ...vehicleData,
+            ownerships: {
+              create: {
+                userId: ownerId,
+                type: 'owner',
+                startsAt: now,
+              },
+            },
+          },
+          include: {
+            // Mismo shape hidratado que create()/list/get (F-010 §10).
+            version: { include: { model: { include: { brand: true } } } },
+          },
+        });
+
+        await tx.vehicleMileage.create({
+          data: {
+            vehicleId: vehicle.id,
+            mileage: initialMileage,
+            source: 'owner',
+            recordedAt: now,
+            recordedByUserId: ownerId,
+          },
+        });
+
+        await tx.vehicleAuditLog.create({
+          data: {
+            vehicleId: vehicle.id,
+            action: 'mileage_recorded',
+            field: 'mileage',
+            previousValue: null,
+            newValue: String(initialMileage),
+            actorUserId: ownerId,
+            contextType: 'personal',
+          },
+        });
+
+        return vehicle;
+      });
+    } catch (error) {
+      // D-036: mismos únicos (license_plate/vin/engine_number) → 409.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw this.mapUniqueViolation(error);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Gap 1 (D-128 / §6.1): alta de stock propio por concesionaria. Crea en UNA
    * transacción: Vehicle + VehicleOwnership (type=company, userId=null,
    * endsAt=null) + VehicleMileage inicial (source=dealership, atribuida a la
@@ -61,8 +138,9 @@ export class PrismaVehicleRepository implements VehicleRepository {
       dealershipMemberId,
       recordedByUserId,
       initialMileage,
-      ...vehicleData
+      ...rawVehicleData
     } = data;
+    const vehicleData = stripCatalogPair(rawVehicleData);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -129,15 +207,20 @@ export class PrismaVehicleRepository implements VehicleRepository {
     }
   }
 
-  async update(id: string, data: UpdateVehicleDto) {
+  async update(id: string, data: UpdateVehicleData) {
     // D-042 (red de seguridad, mismo criterio que findByLicensePlate / D-037):
     // si un caller no normalizó la placa, la normalizamos acá para impedir
     // duplicados case-insensitive ("abc123" vs "ABC123") que un constraint
     // unique case-sensitive no detectaría → P2002 no se dispararía.
+    // `brandId`/`modelId` se descartan: el handler ya resolvió los textos.
+    const sanitized = stripCatalogPair(data);
     const normalizedData =
-      typeof data.licensePlate === 'string'
-        ? { ...data, licensePlate: data.licensePlate.trim().toUpperCase() }
-        : data;
+      typeof sanitized.licensePlate === 'string'
+        ? {
+            ...sanitized,
+            licensePlate: sanitized.licensePlate.trim().toUpperCase(),
+          }
+        : sanitized;
 
     try {
       return await this.prisma.vehicle.update({

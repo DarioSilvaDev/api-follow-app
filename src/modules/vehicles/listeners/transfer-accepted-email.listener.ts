@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/database/prisma.service';
 import { MailService } from '../../../common/mail/mail.service';
 import type { MailSendResult } from '../../../common/mail/mail.types';
 import { VehicleTransferAcceptedEvent } from '../events/vehicle-transfer-accepted.event';
+import { resolveVehicleDisplayName } from '../../../common/vehicles/vehicle-display-name';
 
 /**
  * Notificación al ex-titular (persona) por email.
@@ -52,9 +53,7 @@ export class TransferAcceptedEmailListener {
         return undefined;
       }
 
-      const vehicleName = vehicle.version
-        ? `${vehicle.version.model.brand.name} ${vehicle.version.model.name} ${vehicle.version.name}`
-        : vehicle.licensePlate;
+      const vehicleName = resolveVehicleDisplayName(vehicle);
 
       return await this.mailService.sendTransferAcceptedEmail(
         fromUser.email,

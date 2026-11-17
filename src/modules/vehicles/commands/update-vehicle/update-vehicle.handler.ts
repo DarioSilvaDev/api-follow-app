@@ -1,14 +1,23 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
+import { PrismaService } from '../../../../common/database/prisma.service';
 import { VEHICLE_REPOSITORY } from '../../tokens';
-import type { VehicleRepository } from '../../repositories/vehicle.repository';
+import type {
+  UpdateVehicleData,
+  VehicleRepository,
+} from '../../repositories/vehicle.repository';
 import { UpdateVehicleCommand } from './update-vehicle.command';
+import {
+  resolveCatalogBrandModel,
+  stripCatalogPair,
+} from '../../utils/vehicle-catalog-pair';
 
 @Injectable()
 export class UpdateVehicleHandler {
   constructor(
     @Inject(VEHICLE_REPOSITORY)
     private readonly repository: VehicleRepository,
+    private readonly prisma: PrismaService,
   ) {}
 
   async execute(command: UpdateVehicleCommand) {
@@ -32,6 +41,24 @@ export class UpdateVehicleHandler {
             licensePlate: command.dto.licensePlate.trim().toUpperCase(),
           }
         : command.dto;
-    return this.repository.update(command.id, dto);
+
+    // MVP sin versiones: `brandId`/`modelId` (ambos o ninguno) se resuelven en
+    // el catálogo y reemplazan a `versionId` (se limpia, D-160). Omitidos = no
+    // se tocan `brandName`/`modelName`/`versionId` existentes.
+    const catalog = await resolveCatalogBrandModel(this.prisma, dto);
+    const data: UpdateVehicleData = { ...stripCatalogPair(dto) };
+
+    if (catalog) {
+      data.brandName = catalog.brandName;
+      data.modelName = catalog.modelName;
+      data.versionId = null;
+    }
+
+    // Sólo vinieron IDs nulos: se comporta como PATCH vacío (no-op 200).
+    if (Object.keys(data).length === 0) {
+      return existing;
+    }
+
+    return this.repository.update(command.id, data);
   }
 }

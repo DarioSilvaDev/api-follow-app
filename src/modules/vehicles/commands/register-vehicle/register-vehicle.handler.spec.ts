@@ -18,6 +18,7 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037) + Gap 1 (D-12
   let repositoryMock: {
     findByLicensePlate: jest.Mock;
     create: jest.Mock;
+    createPersonalRegistration: jest.Mock;
     createDealershipRegistration: jest.Mock;
   };
   let eventEmitterMock: { emit: jest.Mock };
@@ -64,6 +65,7 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037) + Gap 1 (D-12
     repositoryMock = {
       findByLicensePlate: jest.fn(),
       create: jest.fn(),
+      createPersonalRegistration: jest.fn(),
       createDealershipRegistration: jest.fn(),
     };
     eventEmitterMock = { emit: jest.fn() };
@@ -147,9 +149,7 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037) + Gap 1 (D-12
 
     await handler.execute(cmd);
 
-    expect(
-      repositoryMock.createDealershipRegistration,
-    ).toHaveBeenCalledWith(
+    expect(repositoryMock.createDealershipRegistration).toHaveBeenCalledWith(
       expect.objectContaining({ vin: '1HGCM82633A004352' }),
     );
   });
@@ -219,18 +219,50 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037) + Gap 1 (D-12
     expect(result).toEqual(created);
   });
 
-  it('rejects initialMileage on a PERSONAL registration with 400 (D-07)', async () => {
+  it('records the optional owner-declared mileage on a PERSONAL registration (D-206)', async () => {
+    repositoryMock.findByLicensePlate.mockResolvedValue(null);
+    const created = { id: 'v1', licensePlate: 'ABC123' };
+    repositoryMock.createPersonalRegistration.mockResolvedValue(created);
+
     const cmd = new RegisterVehicleCommand(
       { ...baseDto, initialMileage: 10 },
       'user-1',
       personalCtx,
     );
+    const result = await handler.execute(cmd);
 
-    await expect(handler.execute(cmd)).rejects.toBeInstanceOf(
-      BadRequestException,
+    expect(repositoryMock.findByLicensePlate).toHaveBeenCalledWith('ABC123');
+    expect(repositoryMock.createPersonalRegistration).toHaveBeenCalledWith(
+      expect.objectContaining({
+        licensePlate: 'ABC123',
+        ownerId: 'user-1',
+        initialMileage: 10,
+      }),
     );
-    expect(repositoryMock.findByLicensePlate).not.toHaveBeenCalled();
+    // La rama sin kilometraje no se usa.
     expect(repositoryMock.create).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).toHaveBeenCalledWith(
+      'vehicle.registered',
+      expect.any(VehicleRegisteredEvent),
+    );
+    expect(result).toEqual(created);
+  });
+
+  it('keeps the plain create path on PERSONAL when no mileage is provided (D-206)', async () => {
+    repositoryMock.findByLicensePlate.mockResolvedValue(null);
+    repositoryMock.create.mockResolvedValue({
+      id: 'v1',
+      licensePlate: 'ABC123',
+    });
+
+    await handler.execute(
+      new RegisterVehicleCommand(baseDto, 'user-1', personalCtx),
+    );
+
+    expect(repositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: 'user-1' }),
+    );
+    expect(repositoryMock.createPersonalRegistration).not.toHaveBeenCalled();
   });
 
   // ────────────────────────────────────────────────────────────
@@ -370,6 +402,7 @@ describe('RegisterVehicleHandler — F-010 (D-035 / D-036 / D-037) + Gap 1 (D-12
     );
     expect(repositoryMock.findByLicensePlate).not.toHaveBeenCalled();
     expect(repositoryMock.create).not.toHaveBeenCalled();
+    expect(repositoryMock.createPersonalRegistration).not.toHaveBeenCalled();
     expect(repositoryMock.createDealershipRegistration).not.toHaveBeenCalled();
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });

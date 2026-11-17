@@ -7,20 +7,25 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { VEHICLE_REPOSITORY } from '../../tokens';
-import type { VehicleRepository } from '../../repositories/vehicle.repository';
+import type {
+  RegisterVehiclePayload,
+  VehicleRepository,
+} from '../../repositories/vehicle.repository';
 import { VehicleRegisteredEvent } from '../../events/vehicle-registered.event';
 import { RegisterVehicleCommand } from './register-vehicle.command';
 import { RegisterVehicleDto } from '../../dto/register-vehicle.dto';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DealershipContext } from '../../../../common/context/interfaces/current-context.interface';
 import { normalizeVin } from '../../../../common/validation/vin';
+import { resolveCatalogBrandModel } from '../../utils/vehicle-catalog-pair';
 
 /**
  * RegisterVehicleHandler — alta de vehículo (F-010), extendido por Gap 1
  * (D-128) para el stock propio de una concesionaria.
  *
  * El contexto activo decide la rama:
- * - PERSONAL   → alta clásica con owner (VehicleOwnership type=owner).
+ * - PERSONAL   → alta clásica con owner (VehicleOwnership type=owner) y
+ *   kilometraje actual OPCIONAL declarado por el propietario (D-206).
  * - DEALERSHIP → alta de stock propio: exige `initialMileage` y el permiso
  *   `dealership.vehicle.create`; crea en una transacción el Vehicle, el
  *   ownership company y el kilometraje inicial auditado (ver repositorio).
@@ -57,33 +62,88 @@ export class RegisterVehicleHandler {
       );
     }
 
+    // MVP sin versiones: `brandId`/`modelId` se resuelven en el catálogo y se
+    // persisten como texto (`brandName`/`modelName`), con `versionId = null`.
+    // Sin par de catálogo, los tres quedan null (opcional, D-038).
+    const vehiclePayload = await this.prepareVehicleData(dto);
+    console.log(
+      '🚀 ~ RegisterVehicleHandler ~ execute ~ vehiclePayload:',
+      vehiclePayload,
+    );
+
     if (ctx.type === 'DEALERSHIP') {
-      return this.registerFromDealership(dto, command.userId, licensePlate, ctx);
-    }
-
-    return this.registerFromPersonal(dto, command.userId, licensePlate);
-  }
-
-  /** Alta clásica: el usuario autenticado queda como owner del vehículo. */
-  private async registerFromPersonal(
-    dto: RegisterVehicleDto,
-    userId: string,
-    licensePlate: string,
-  ) {
-    // D-07: el kilometraje inicial es exclusivo del alta por concesionaria.
-    if (dto.initialMileage !== undefined) {
-      throw new BadRequestException(
-        'El kilometraje inicial solo aplica al alta de vehículos por concesionaria',
+      return this.registerFromDealership(
+        vehiclePayload,
+        command.userId,
+        licensePlate,
+        ctx,
       );
     }
 
+    return this.registerFromPersonal(
+      vehiclePayload,
+      command.userId,
+      licensePlate,
+    );
+  }
+
+  /**
+   * Resuelve el par marca/modelo del catálogo (ambos o ninguno) y prepara el
+   * payload que consume el repositorio: sin `brandId`/`modelId`, con los
+   * nombres resueltos y `versionId = null` (los vehículos nuevos no usan
+   * versión; los legacy la conservan y no pasan por acá).
+   */
+  private async prepareVehicleData(
+    dto: RegisterVehicleDto,
+  ): Promise<RegisterVehiclePayload> {
+    const catalog = await resolveCatalogBrandModel(this.prisma, dto);
+    console.log(
+      '🚀 ~ RegisterVehicleHandler ~ prepareVehicleData ~ catalog:',
+      catalog,
+    );
+    return {
+      // ...stripCatalogPair(dto),
+      ...dto,
+      brandName: catalog?.brandName ?? null,
+      modelName: catalog?.modelName ?? null,
+      versionId: null,
+    };
+  }
+
+  /**
+   * Alta clásica: el usuario autenticado queda como owner del vehículo.
+   *
+   * D-206: el propietario puede declarar el kilometraje actual del vehículo al
+   * darlo de alta (es SU vehículo y conoce el dato). Es opcional; cuando viaja
+   * se persiste como la primera lectura del odómetro (source=owner, D-146) en
+   * la misma transacción que el vehículo y el ownership.
+   */
+  private async registerFromPersonal(
+    vehiclePayload: RegisterVehiclePayload,
+    userId: string,
+    licensePlate: string,
+  ) {
+    console.log(
+      '🚀 ~ RegisterVehicleHandler ~ registerFromPersonal ~ vehiclePayload:',
+      vehiclePayload,
+    );
     await this.assertPlateAvailable(licensePlate);
 
-    const vehicle = await this.repository.create({
-      ...dto,
-      licensePlate,
-      ownerId: userId,
-    });
+    const { initialMileage } = vehiclePayload;
+
+    const vehicle =
+      initialMileage !== undefined
+        ? await this.repository.createPersonalRegistration({
+            ...vehiclePayload,
+            licensePlate,
+            ownerId: userId,
+            initialMileage,
+          })
+        : await this.repository.create({
+            ...vehiclePayload,
+            licensePlate,
+            ownerId: userId,
+          });
 
     this.emitRegistered(vehicle, userId);
     return vehicle;
@@ -95,12 +155,12 @@ export class RegisterVehicleHandler {
    * exige el kilometraje inicial.
    */
   private async registerFromDealership(
-    dto: RegisterVehicleDto,
+    vehiclePayload: RegisterVehiclePayload,
     userId: string,
     licensePlate: string,
     ctx: DealershipContext,
   ) {
-    const { initialMileage } = dto;
+    const { initialMileage } = vehiclePayload;
     if (
       initialMileage === undefined ||
       !Number.isInteger(initialMileage) ||
@@ -115,7 +175,7 @@ export class RegisterVehicleHandler {
     await this.assertPlateAvailable(licensePlate);
 
     const vehicle = await this.repository.createDealershipRegistration({
-      ...dto,
+      ...vehiclePayload,
       licensePlate,
       dealershipId: ctx.dealershipId,
       dealershipMemberId: ctx.memberId,

@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { resolveVehicleDisplayName } from '../../../common/vehicles/vehicle-display-name';
 import { WorkshopDashboardResponseDto } from '../dto/workshop-response.dto';
 import { getWorkshopDayRange } from '../utils/timezone';
 
@@ -159,10 +160,8 @@ export class WorkshopStatsHandler {
       });
     }
 
-    const formatVehicleName = (v: any): string => {
-      if (!v?.version?.model?.brand) return 'Vehículo';
-      return `${v.version.model.brand.name} ${v.version.model.name}`;
-    };
+    const formatVehicleName = (v: any): string =>
+      resolveVehicleDisplayName(v) || 'Vehículo';
 
     const agenda = todayAppointments.map((appt) => ({
       id: appt.id,

@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleTransferQrExpiredEvent } from '../../events/vehicle-transfer-qr-expired.event';
 import { PreviewTransferQrCommand } from './preview-transfer-qr.command';
+import { resolveVehicleDisplayName } from '../../../../common/vehicles/vehicle-display-name';
 
 /**
  * PreviewTransferQrHandler — preview del QR de transferencia.
@@ -82,9 +83,7 @@ export class PreviewTransferQrHandler {
       throw new ConflictException('Este QR ya fue utilizado');
     }
 
-    const vehicleName = qr.vehicle.version
-      ? `${qr.vehicle.version.model.brand.name} ${qr.vehicle.version.model.name} ${qr.vehicle.version.name}`
-      : qr.vehicle.licensePlate;
+    const vehicleName = resolveVehicleDisplayName(qr.vehicle);
 
     // M1 (RB-08): cuando el origen es organizacional NO se expone fromUser
     // (PII de empleados); el emisor pasa a ser fromDealership (sin PII).

@@ -27,8 +27,8 @@ export class VehicleAdminResponseDto {
       manufactureYear: vehicle.manufactureYear,
       modelYear: vehicle.modelYear,
       color: vehicle.color,
-      brand: vehicle.version?.model?.brand?.name ?? null,
-      model: vehicle.version?.model?.name ?? null,
+      brand: vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
+      model: vehicle.version?.model?.name ?? vehicle.modelName ?? null,
       version: vehicle.version?.name ?? null,
       ownerName: currentOwner
         ? `${currentOwner.firstName} ${currentOwner.lastName}`
