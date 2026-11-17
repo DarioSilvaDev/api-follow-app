@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleAccessService } from '../../../../common/authorization/vehicle-access.service';
+import { formatDateOnly } from '../../../../common/dates/date-only';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 import type { CurrentContext } from '../../../../common/context/interfaces/current-context.interface';
@@ -51,6 +52,9 @@ export class GetCareEpisodeHandler {
         status: true,
         source: true,
         verification: true,
+        rejectedAt: true,
+        rejectedByMemberId: true,
+        rejectionReason: true,
         title: true,
         serviceDate: true,
         workshopId: true,
@@ -108,6 +112,19 @@ export class GetCareEpisodeHandler {
       user,
       ctx,
     );
+
+    // Titularidad vigente (D-TL-VC-9 regla 2 / §2.6): habilita al panel de
+    // reclamos del taller a mostrar el aviso sin ofrecer el CTA. Mismo
+    // predicado que `CreateClaimInviteHandler` (primario activo, no co_owner).
+    const activeOwner = await this.prisma.vehicleOwnership.findFirst({
+      where: {
+        vehicleId: episode.vehicleId,
+        endsAt: null,
+        type: { not: 'co_owner' },
+      },
+      select: { id: true },
+    });
+    const hasActiveOwner = activeOwner !== null;
 
     const attachments = await this.prisma.careEpisodeAttachment.findMany({
       where: { careEpisodeId },
@@ -175,12 +192,19 @@ export class GetCareEpisodeHandler {
           episode.vehicle.modelName ??
           null,
         manufactureYear: episode.vehicle.manufactureYear,
+        hasActiveOwner,
       },
       status: episode.status,
       source: episode.source,
       verification: episode.verification,
+      // RF-9: el rechazo (y su motivo) se ve SOLO en el detalle.
+      rejectedAt: episode.rejectedAt ?? null,
+      rejectedByMemberId: episode.rejectedByMemberId ?? null,
+      rejectionReason: episode.rejectionReason ?? null,
       title: episode.title ?? null,
-      serviceDate: episode.serviceDate ?? null,
+      // D-TZ-4: fecha calendario → `YYYY-MM-DD` (no ISO). El resto de
+      // timestamps del mismo payload sigue siendo instante.
+      serviceDate: formatDateOnly(episode.serviceDate),
       workshopId: episode.workshopId ?? null,
       workshopName: episode.workshopName ?? episode.workshop?.name ?? null,
       mileageIn: episode.mileageIn ?? null,

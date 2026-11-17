@@ -58,12 +58,36 @@ export interface CareEpisodeDetailResponse {
     brand: string | null;
     model: string | null;
     manufactureYear: number | null;
+    /**
+     * Titularidad vigente (D-TL-VC-9 regla 2 / §2.6 del copy de reclamos):
+     * `true` si el vehículo tiene un `VehicleOwnership` primario activo
+     * (`endsAt: null`, `type <> 'co_owner'` — misma semántica que
+     * `CreateClaimInviteHandler`).
+     *
+     * Aditivo y sin PII: NO identifica al titular, sólo habilita al panel del
+     * taller a mostrar "Este vehículo ya tiene titular; no se envió
+     * invitación" ANTES de ofrecer el CTA de generar link (hoy el aviso sólo
+     * aparecía al recibir el 409 `active_owner`).
+     */
+    hasActiveOwner: boolean;
   };
   status: CareEpisodeStatus;
   source: CareEpisodeSource;
   verification: CareEpisodeVerification;
+  /**
+   * Rechazo del taller (RF-9 / D-202): SOLO en el detalle del episodio —
+   * el listado/historial no expone el motivo (no cambia su contrato).
+   * Todos nullables: solo existen cuando `verification === 'rejected'`.
+   */
+  rejectedAt: Date | null;
+  rejectedByMemberId: string | null;
+  rejectionReason: string | null;
   title: string | null;
-  serviceDate: Date | null;
+  /**
+   * Fecha calendario del servicio en el wire: `YYYY-MM-DD` (D-TZ-1/D-TZ-4).
+   * NO es un instante — `checkedInAt`/`createdAt` del mismo payload sí lo son.
+   */
+  serviceDate: string | null;
   workshopId: string | null;
   workshopName: string | null;
   mileageIn: number | null;

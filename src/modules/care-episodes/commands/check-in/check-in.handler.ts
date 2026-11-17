@@ -3,23 +3,41 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
-import type { VehicleContactStatus } from '@prisma/client';
+import type {
+  CareEpisodeAttachment,
+  VehicleContactStatus,
+} from '@prisma/client';
+import { v4 as uuid } from 'uuid';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { buildE164, maskPhone } from '../../../../common/phone/phone.util';
+import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 import { envs } from '../../../../config/envs';
 import { VehicleRegisteredEvent } from '../../../vehicles/events/vehicle-registered.event';
 import { CareEpisodeCreatedEvent } from '../../events/care-episode-created.event';
-import { MAX_CHECK_IN_SERVICE_TYPES } from '../../dto/check-in.dto';
+import { CareEpisodeAttachmentItem } from '../../dto/care-episode-detail-response.dto';
+import {
+  MAX_CHECK_IN_FILES,
+  MAX_CHECK_IN_SERVICE_TYPES,
+} from '../../dto/check-in.dto';
 import { CheckInCommand } from './check-in.command';
 
 interface PreparedVehicleData {
   versionId: string | null;
   brandName: string | null;
   modelName: string | null;
+}
+
+interface UploadedEvidence {
+  key: string;
+  originalname: string;
+  mimetype: string;
+  size: number;
 }
 
 export interface CheckInData {
@@ -34,6 +52,9 @@ export interface CheckInData {
     status: VehicleContactStatus;
     phoneMasked: string | null;
   };
+  /** Evidencia `before` creada junto al episodio (D-163 / D-170). */
+  attachments: CareEpisodeAttachmentItem[];
+  attachmentCount: number;
 }
 
 export interface CheckInResult {
@@ -50,18 +71,32 @@ export interface CheckInResult {
  * Reglas clave:
  * - La identidad (workshop/member/user) viene del contexto WORKSHOP.
  * - El odómetro de ingreso es obligatorio: valor **o** excepción "no legible"
- *   con motivo (nunca ambos, nunca ninguno).
+ *   con motivo (nunca ambos, nunca ninguno). En la excepción, la foto del
+ *   tablero es obligatoria (D-163).
  * - Placa existente → se reutiliza (nunca 409 por placa). Placa de un vehículo
  *   soft-deleted → 409 explícito, no se resucita.
  * - VIN ajeno o distinto del registrado → 409.
  * - Carrera de dos check-ins con la misma placa nueva: se captura el P2002 de
  *   `license_plate`, se re-lee el vehículo y se continúa con el episodio.
+ *
+ * Foto del tablero (D-163, ruta DUAL como POST /owner):
+ *   1. Validaciones (incluida la foto obligatoria) ANTES de tocar storage.
+ *   2. `episodeId` se genera aquí: las keys nacen bajo
+ *      `care-episodes/<episodeId>/<uuid>.webp`.
+ *   3. Upload de la foto (máx. 1) → fallo de storage = 503 (el episodio no
+ *      existe todavía; el reintento del usuario es válido).
+ *   4. Episodio + adjunto (`phase='before'`) en UNA transacción (nested create).
+ *   5. COMPENSACIÓN: si la transacción falla tras el upload → se borra el blob
+ *      (best-effort, log) y se re-lanza el error.
  */
 @Injectable()
 export class CheckInHandler {
+  private readonly logger = new Logger(CheckInHandler.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly storage: StorageR2Service,
   ) {}
 
   async execute(command: CheckInCommand): Promise<CheckInResult> {
@@ -114,6 +149,21 @@ export class CheckInHandler {
       }
     }
 
+    // ── Foto del tablero (D-163 / D-170) ──
+    // La foto es obligatoria cuando el odómetro no se puede leer; cuando sí se
+    // lee, se admite 1 foto `before` opcional (recomendada, nunca bloqueante).
+    const evidenceFiles = command.files ?? [];
+    if (evidenceFiles.length > MAX_CHECK_IN_FILES) {
+      throw new BadRequestException(
+        `Máximo ${MAX_CHECK_IN_FILES} foto por check-in`,
+      );
+    }
+    if (unreadable && evidenceFiles.length === 0) {
+      throw new BadRequestException(
+        'Adjuntá una foto del tablero cuando el odómetro no se puede leer',
+      );
+    }
+
     // ── Tipos de atención: máximo 3 filas (catálogo + "Otro") ──
     const serviceTypeIds = Array.from(new Set(dto.serviceTypeIds ?? []));
     const customServiceLabel = dto.customServiceLabel?.trim() || null;
@@ -143,43 +193,26 @@ export class CheckInHandler {
     const licensePlate = dto.licensePlate.trim().toUpperCase();
     const workshopName = branch.workshop?.name ?? null;
 
+    // El id nace ANTES de subir para que las keys de storage queden bajo la
+    // carpeta del episodio (mismo patrón que POST /owner, S6).
+    const episodeId = uuid();
+    const uploaded: UploadedEvidence[] = [];
+
     let result: CheckInData;
     try {
-      result = await this.prisma.$transaction((tx) =>
-        this.persist(tx, command, prepared, workshopName, licensePlate),
+      await this.uploadEvidence(evidenceFiles, episodeId, uploaded);
+      result = await this.persistWithRaceRetry(
+        command,
+        prepared,
+        workshopName,
+        licensePlate,
+        episodeId,
+        uploaded,
       );
     } catch (error) {
-      const target = this.uniqueTarget(error);
-
-      // Carrera: otro check-in creó la misma placa entre el findUnique y el
-      // create. El P2002 revirtió la transacción completa → se re-lee el
-      // vehículo ya confirmado y se crea sólo el episodio.
-      if (target.some((t) => t === 'license_plate' || t === 'licensePlate')) {
-        const existing = await this.prisma.vehicle.findUnique({
-          where: { licensePlate },
-          select: { id: true },
-        });
-        if (existing) {
-          result = await this.prisma.$transaction((tx) =>
-            this.persist(
-              tx,
-              command,
-              prepared,
-              workshopName,
-              licensePlate,
-              existing.id,
-            ),
-          );
-        } else {
-          throw error;
-        }
-      } else if (target.includes('vin')) {
-        throw new ConflictException(
-          'VIN ya registrado en otro vehículo',
-        );
-      } else {
-        throw error;
-      }
+      // Compensación: si algo falló después de subir, no dejar blobs huérfanos.
+      await this.compensateUploads(uploaded);
+      throw error;
     }
 
     // ── Eventos post-commit (nunca antes de confirmar la persistencia) ──
@@ -208,6 +241,127 @@ export class CheckInHandler {
   }
 
   /**
+   * Sube la evidencia `before` del check-in (máx. 1, D-163). Un fallo del
+   * storage externo no es culpa del archivo del usuario: 503 (mismo criterio
+   * que S4/C-8), nunca 400. El episodio aún no existe, así que el reintento
+   * del usuario es seguro.
+   */
+  private async uploadEvidence(
+    files: Express.Multer.File[],
+    episodeId: string,
+    uploaded: UploadedEvidence[],
+  ): Promise<void> {
+    for (const file of files) {
+      let stored: { key: string; url: string };
+      try {
+        stored = await this.storage.upload(file, `care-episodes/${episodeId}`);
+      } catch (err) {
+        this.logger.error(
+          `[storage-upload] episodeId=${episodeId} mime=${file.mimetype} ` +
+            `sizeBytes=${file.size}: ${(err as Error).message}`,
+        );
+        throw new ServiceUnavailableException(
+          'No se pudo subir la foto; intentá nuevamente',
+        );
+      }
+      uploaded.push({
+        key: stored.key,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      });
+    }
+  }
+
+  /**
+   * Persiste con reintento ante la carrera de placa (P2002): si otro check-in
+   * creó el vehículo entre el `findUnique` y el `create`, la transacción se
+   * revirtió completa y se re-lee el vehículo para crear sólo el episodio.
+   * El `episodeId` y la evidencia ya subida se reutilizan en el reintento.
+   */
+  private async persistWithRaceRetry(
+    command: CheckInCommand,
+    prepared: PreparedVehicleData,
+    workshopName: string | null,
+    licensePlate: string,
+    episodeId: string,
+    uploaded: UploadedEvidence[],
+  ): Promise<CheckInData> {
+    try {
+      return await this.prisma.$transaction((tx) =>
+        this.persist(
+          tx,
+          command,
+          prepared,
+          workshopName,
+          licensePlate,
+          episodeId,
+          uploaded,
+        ),
+      );
+    } catch (error) {
+      const target = this.uniqueTarget(error);
+      if (target.some((t) => t === 'license_plate' || t === 'licensePlate')) {
+        const existing = await this.prisma.vehicle.findUnique({
+          where: { licensePlate },
+          select: { id: true },
+        });
+        if (!existing) {
+          throw error;
+        }
+        return this.prisma.$transaction((tx) =>
+          this.persist(
+            tx,
+            command,
+            prepared,
+            workshopName,
+            licensePlate,
+            episodeId,
+            uploaded,
+            existing.id,
+          ),
+        );
+      }
+      if (target.includes('vin')) {
+        throw new ConflictException('VIN ya registrado en otro vehículo');
+      }
+      throw error;
+    }
+  }
+
+  /** Borra (best-effort) los blobs subidos si la persistencia falló. */
+  private async compensateUploads(uploaded: UploadedEvidence[]): Promise<void> {
+    for (const evidence of uploaded) {
+      try {
+        await this.storage.delete(evidence.key);
+      } catch (cleanupErr) {
+        this.logger.error(
+          `Cleanup failed for blob ${evidence.key}: ${(cleanupErr as Error).message}`,
+        );
+      }
+    }
+  }
+
+  /** Proyección de adjunto consistente con el detalle (S1). */
+  private toAttachmentItem(
+    a: CareEpisodeAttachment,
+  ): CareEpisodeAttachmentItem {
+    return {
+      id: a.id,
+      key: a.key,
+      originalName: a.originalName,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      caption: a.caption,
+      phase: a.phase,
+      uploadedByMemberId: a.uploadedByMemberId,
+      uploadedByUserId: a.uploadedByUserId,
+      removed: a.removedAt !== null,
+      createdAt: a.createdAt,
+    };
+  }
+
+  /**
    * Resuelve marca/modelo/versión del vehículo a crear. Catálogo y texto libre
    * son excluyentes; la versión (si viene) gana y aporta marca + modelo.
    */
@@ -215,12 +369,7 @@ export class CheckInHandler {
     dto: CheckInCommand['dto'],
   ): Promise<PreparedVehicleData> {
     if (dto.versionId) {
-      if (
-        dto.brandId ||
-        dto.modelId ||
-        dto.brandName ||
-        dto.modelName
-      ) {
+      if (dto.brandId || dto.modelId || dto.brandName || dto.modelName) {
         throw new BadRequestException(
           'Enviá la versión o marca/modelo, no ambos',
         );
@@ -248,10 +397,14 @@ export class CheckInHandler {
     }
 
     if (dto.brandId && dto.brandName) {
-      throw new BadRequestException('Enviá marca del catálogo o texto libre, no ambas');
+      throw new BadRequestException(
+        'Enviá marca del catálogo o texto libre, no ambas',
+      );
     }
     if (dto.modelId && dto.modelName) {
-      throw new BadRequestException('Enviá modelo del catálogo o texto libre, no ambos');
+      throw new BadRequestException(
+        'Enviá modelo del catálogo o texto libre, no ambos',
+      );
     }
 
     let brandName = dto.brandName?.trim() || null;
@@ -293,9 +446,9 @@ export class CheckInHandler {
   }
 
   /**
-   * Persiste vehículo (si hace falta) + atención + tipos + contacto en la
-   * transacción abierta por `execute`. `existingVehicleId` se usa en el
-   * reintento por carrera de placa para no volver a crear el vehículo.
+   * Persiste vehículo (si hace falta) + atención + tipos + contacto + evidencia
+   * `before` en la transacción abierta por `execute`. `existingVehicleId` se usa
+   * en el reintento por carrera de placa para no volver a crear el vehículo.
    */
   private async persist(
     tx: Prisma.TransactionClient,
@@ -303,6 +456,8 @@ export class CheckInHandler {
     prepared: PreparedVehicleData,
     workshopName: string | null,
     licensePlate: string,
+    episodeId: string,
+    uploaded: UploadedEvidence[],
     existingVehicleId?: string,
   ): Promise<CheckInData> {
     const { dto, workshopId, memberId } = command;
@@ -358,9 +513,7 @@ export class CheckInHandler {
 
     // El VIN del vehículo existente es inmutable desde el check-in.
     if (vin && vehicle.vin && vehicle.vin !== vin) {
-      throw new ConflictException(
-        'VIN no coincide con el vehículo registrado',
-      );
+      throw new ConflictException('VIN no coincide con el vehículo registrado');
     }
 
     const unreadable = dto.mileageInUnreadable === true;
@@ -376,6 +529,7 @@ export class CheckInHandler {
 
     const careEpisode = await tx.careEpisode.create({
       data: {
+        id: episodeId,
         vehicleId: vehicle.id,
         workshopId,
         branchId: dto.branchId,
@@ -386,7 +540,7 @@ export class CheckInHandler {
         mileageIn: unreadable ? null : dto.mileageIn,
         mileageInUnreadable: unreadable,
         mileageInUnreadableReason: unreadable
-          ? dto.mileageInUnreadableReason?.trim() ?? null
+          ? (dto.mileageInUnreadableReason?.trim() ?? null)
           : null,
         customerComplaint: dto.customerComplaint ?? null,
         customerNotes: dto.customerNotes ?? null,
@@ -395,6 +549,24 @@ export class CheckInHandler {
         ...(serviceTypes.length > 0
           ? { serviceTypes: { create: serviceTypes } }
           : {}),
+        // Evidencia `before` en la MISMA transacción (nested create, S6).
+        // Identity SIEMPRE desde el contexto, jamás del body.
+        ...(uploaded.length > 0
+          ? {
+              attachments: {
+                create: uploaded.map((evidence) => ({
+                  key: evidence.key,
+                  originalName: evidence.originalname.slice(0, 255),
+                  mimeType: evidence.mimetype,
+                  sizeBytes: evidence.size,
+                  caption: null,
+                  phase: 'before' as const,
+                  uploadedByMemberId: memberId,
+                  uploadedByUserId: null,
+                })),
+              },
+            }
+          : {}),
       },
       select: {
         id: true,
@@ -402,6 +574,7 @@ export class CheckInHandler {
         mileageIn: true,
         checkedInAt: true,
         vehicleId: true,
+        attachments: true,
       },
     });
 
@@ -421,6 +594,8 @@ export class CheckInHandler {
       checkedInAt: careEpisode.checkedInAt ?? new Date(),
       vehicleCreated,
       ownerContact,
+      attachments: careEpisode.attachments.map((a) => this.toAttachmentItem(a)),
+      attachmentCount: careEpisode.attachments.length,
     };
   }
 

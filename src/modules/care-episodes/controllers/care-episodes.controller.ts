@@ -26,7 +26,7 @@ import { PermissionsGuard } from '../../../common/guards/permissions.guard';
 import { WorkshopOnlyGuard } from '../../../common/guards/workshop-only.guard';
 import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { JwtAuthGuard } from '../../auth/strategies/jwt-auth.guard';
-import { CheckInDto } from '../dto/check-in.dto';
+import { CheckInDto, MAX_CHECK_IN_FILES } from '../dto/check-in.dto';
 import { CloseCareEpisodeDto } from '../dto/close-care-episode.dto';
 import { CreateCareEpisodeDto } from '../dto/create-care-episode.dto';
 import {
@@ -45,6 +45,9 @@ import { CreateOwnerCareEpisodeCommand } from '../commands/create-owner-care-epi
 import { CreateOwnerCareEpisodeHandler } from '../commands/create-owner-care-episode/create-owner-care-episode.handler';
 import { VerifyCareEpisodeCommand } from '../commands/verify-care-episode/verify-care-episode.command';
 import { VerifyCareEpisodeHandler } from '../commands/verify-care-episode/verify-care-episode.handler';
+import { RejectCareEpisodeDto } from '../dto/reject-care-episode.dto';
+import { RejectCareEpisodeCommand } from '../commands/reject-care-episode/reject-care-episode.command';
+import { RejectCareEpisodeHandler } from '../commands/reject-care-episode/reject-care-episode.handler';
 import { AttachCareEpisodeAttachmentsCommand } from '../commands/attach-care-episode-attachments/attach-care-episode-attachments.command';
 import { AttachCareEpisodeAttachmentsHandler } from '../commands/attach-care-episode-attachments/attach-care-episode-attachments.handler';
 import { RemoveCareEpisodeAttachmentCommand } from '../commands/remove-care-episode-attachment/remove-care-episode-attachment.command';
@@ -82,6 +85,7 @@ export class CareEpisodesController {
     private readonly listCareEpisodesHandler: ListCareEpisodesHandler,
     private readonly listVerificationsHandler: ListVerificationsHandler,
     private readonly verifyCareEpisodeHandler: VerifyCareEpisodeHandler,
+    private readonly rejectCareEpisodeHandler: RejectCareEpisodeHandler,
     private readonly getCareEpisodeHandler: GetCareEpisodeHandler,
     private readonly attachCareEpisodeAttachmentsHandler: AttachCareEpisodeAttachmentsHandler,
     private readonly removeCareEpisodeAttachmentHandler: RemoveCareEpisodeAttachmentHandler,
@@ -119,12 +123,29 @@ export class CareEpisodesController {
   // en una transacción. Mismo permiso que el alta existente (no se crea uno
   // nuevo para el ingreso). Ruta estática declarada antes de los POST
   // dinámicos (:id/verify, :id/attachments) por la regla F-012.
+  //
+  // Ruta DUAL (D-163, mismo patrón que POST /owner):
+  //   - application/json → flujo histórico intacto.
+  //   - multipart/form-data → mismos campos DTO como texto + campo `files`
+  //     (máx. 1 foto del tablero, obligatoria en la excepción "no legible").
+  // FilesInterceptor ignora requests no-multipart (multer solo parsea
+  // multipart), por lo que los clientes JSON existentes no cambian.
 
   @Post('check-in')
   @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
   @Permissions('care-episode.create')
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_CHECK_IN_FILES, {
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+        files: MAX_CHECK_IN_FILES,
+      },
+      fileFilter: evidenceFileFilter,
+    }),
+  )
   async checkIn(
     @Body() dto: CheckInDto,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
     @ActiveContext() ctx: CurrentContext,
     @CurrentUser() user: AuthenticatedUser,
   ) {
@@ -136,7 +157,7 @@ export class CareEpisodesController {
     }
 
     return this.checkInHandler.execute(
-      new CheckInCommand(dto, ctx.workshopId, ctx.memberId, user.id),
+      new CheckInCommand(dto, ctx.workshopId, ctx.memberId, user.id, files),
     );
   }
 
@@ -232,8 +253,10 @@ export class CareEpisodesController {
   // mantiene por higiene y consistencia documental con el módulo.
   // WorkshopOnlyGuard ANTES de PermissionsGuard (anti-bypass D-024 A2,
   // patrón verbatim de POST /, POST :id/verify y POST :id/attachments).
-  // Query params: page (default 1) / limit (default 20, clamp 1..100) — el
-  // saneo y los clamps viven en el handler (D-TL-F023-4).
+  // Query params: page (default 1) / limit (default 20, clamp 1..100) /
+  // q (patente, D-F023-1a — único filtro) — el saneo y los clamps viven en
+  // el handler (D-TL-F023-4). `q` ausente, <2 caracteres tras trim o no-string
+  // (?q=a&q=b) → se comporta como sin `q` (NO 400).
 
   @Get()
   @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
@@ -242,6 +265,7 @@ export class CareEpisodesController {
     @ActiveContext() ctx: CurrentContext,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
   ) {
     if (ctx.type !== 'WORKSHOP') {
       // Unreachable: WorkshopOnlyGuard already rejects non-WORKSHOP contexts.
@@ -253,6 +277,7 @@ export class CareEpisodesController {
       workshopId: ctx.workshopId,
       page: page !== undefined ? Number(page) : undefined,
       limit: limit !== undefined ? Number(limit) : undefined,
+      q,
     });
   }
 
@@ -261,8 +286,9 @@ export class CareEpisodesController {
   // ──────────────────────────────────────────────────────────
   // Foot-gun (F-012): la ruta estática `GET verifications` se declara ANTES de
   // que F-021/F-022 agregue `GET :id` (Express matchea por orden de registro:
-  // si `:id` llegara antes, capturaría `verifications` como id). Hoy el único
-  // `:id` es POST :id/verify (2 segmentos → no colisiona).
+  // si `:id` llegara antes, capturaría `verifications` como id). Hoy los
+  // `:id` son POST :id/verify, POST :id/reject, POST :id/close y
+  // POST :id/attachments (2 segmentos → no colisionan con las estáticas).
 
   @Post(':id/verify')
   @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
@@ -273,6 +299,38 @@ export class CareEpisodesController {
     }
     return this.verifyCareEpisodeHandler.execute(
       new VerifyCareEpisodeCommand(id, ctx.workshopId, ctx.memberId),
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // POST /api/care-episodes/:id/reject — Rechazo del registro (RF-9)
+  // ──────────────────────────────────────────────────────────
+  // Mismos guards/permiso que :id/verify (D-203): WorkshopOnlyGuard ANTES de
+  // PermissionsGuard (anti-bypass D-024 A2) y permiso REUTILIZADO
+  // `care-episode.verify` (D-067) — cero cambios de seed. `@HttpCode(200)`
+  // explícito: el default de POST es 201 y el rechazo responde 200 (estado
+  // actual, idempotente). Sin throttle nuevo (one-shot, patrón de verify).
+
+  @Post(':id/reject')
+  @UseGuards(WorkshopOnlyGuard, PermissionsGuard)
+  @Permissions('care-episode.verify')
+  @HttpCode(HttpStatus.OK)
+  async reject(
+    @Param('id') id: string,
+    @Body() dto: RejectCareEpisodeDto,
+    @ActiveContext() ctx: CurrentContext,
+  ) {
+    if (ctx.type !== 'WORKSHOP') {
+      // Unreachable: WorkshopOnlyGuard already rejects non-WORKSHOP contexts.
+      throw new ForbiddenException('Requires a WORKSHOP context');
+    }
+    return this.rejectCareEpisodeHandler.execute(
+      new RejectCareEpisodeCommand(
+        id,
+        dto.reason ?? null,
+        ctx.workshopId,
+        ctx.memberId,
+      ),
     );
   }
 
@@ -317,12 +375,7 @@ export class CareEpisodesController {
     @ActiveContext() ctx: CurrentContext,
     @Query('signed') signed?: string,
   ) {
-    return this.getCareEpisodeHandler.execute(
-      id,
-      user,
-      ctx,
-      signed === 'true',
-    );
+    return this.getCareEpisodeHandler.execute(id, user, ctx, signed === 'true');
   }
 
   // ──────────────────────────────────────────────────────────

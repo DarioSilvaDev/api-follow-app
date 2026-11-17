@@ -194,4 +194,29 @@ describe('VerifyCareEpisodeHandler — RF-5 workshop confirms owner record', () 
     );
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });
+
+  // ──────────────────────────────────────────────────────
+  // Rechazo terminal (RF-9 / D-205): verify sobre rejected → 409
+  // ──────────────────────────────────────────────────────
+
+  it('409 when the record was REJECTED (antes caía en el 404 defensivo)', async () => {
+    prismaMock.careEpisode.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.careEpisode.findUnique.mockResolvedValue({
+      id: careEpisodeId,
+      vehicleId: 'v-1',
+      workshopId,
+      source: 'owner',
+      verification: 'rejected',
+      rejectedByMemberId: memberId,
+      rejectedAt: new Date('2026-11-10T12:00:00.000Z'),
+      rejectionReason: 'Motivo',
+      verifiedByMemberId: null,
+      verifiedAt: null,
+    });
+
+    await expect(handler.execute(makeCommand())).rejects.toThrow(
+      ConflictException,
+    );
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
 });

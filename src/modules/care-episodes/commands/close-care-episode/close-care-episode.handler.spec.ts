@@ -30,11 +30,17 @@ describe('CloseCareEpisodeHandler — B-3 cierre de atención', () => {
   const workshopId = 'w1';
   const memberId = 'member-1';
   const closedAt = new Date('2026-11-03T12:00:00.000Z');
+  const resumen = 'Cambio de aceite y filtro; sin novedades mecánicas';
 
   function makeDto(
     overrides: Partial<CloseCareEpisodeDto> = {},
   ): CloseCareEpisodeDto {
-    return { mileageOut: 45500, serviceTypeIds: ['st-1'], ...overrides };
+    return {
+      mileageOut: 45500,
+      serviceTypeIds: ['st-1'],
+      closeNotes: resumen,
+      ...overrides,
+    };
   }
 
   function makeCommand(overrides: Partial<CloseCareEpisodeDto> = {}) {
@@ -128,7 +134,7 @@ describe('CloseCareEpisodeHandler — B-3 cierre de atención', () => {
         mileageOut: 45500,
         mileageOutUnreadable: false,
         mileageOutUnreadableReason: null,
-        closeNotes: null,
+        closeNotes: resumen,
         serviceTypes: {
           create: [{ serviceTypeId: 'st-1', customLabel: null }],
         },
@@ -154,16 +160,35 @@ describe('CloseCareEpisodeHandler — B-3 cierre de atención', () => {
     );
   });
 
-  it('persiste closeNotes recortado (motivo "tablero reemplazado")', async () => {
+  it('persiste closeNotes recortado (diagnóstico + motivo "tablero reemplazado")', async () => {
     await handler.execute(
-      makeCommand({ closeNotes: '  tablero reemplazado  ' }),
+      makeCommand({ closeNotes: '  Diagnóstico escáner: tablero reemplazado  ' }),
     );
 
     expect(prismaMock.careEpisode.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ closeNotes: 'tablero reemplazado' }),
+        data: expect.objectContaining({
+          closeNotes: 'Diagnóstico escáner: tablero reemplazado',
+        }),
       }),
     );
+  });
+
+  it('rechaza el cierre sin diagnóstico/resumen (D-207) sin persistir ni emitir', async () => {
+    await expect(
+      handler.execute(makeCommand({ closeNotes: undefined as unknown as string })),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prismaMock.careEpisode.update).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un resumen más corto que el mínimo de 10 caracteres', async () => {
+    await expect(
+      handler.execute(makeCommand({ closeNotes: 'aceite' })),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(prismaMock.careEpisode.update).not.toHaveBeenCalled();
   });
 
   it('no agrega tipos cuando el episodio ya los tiene y no se envían', async () => {

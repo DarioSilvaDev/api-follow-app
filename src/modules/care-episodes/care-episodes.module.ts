@@ -6,6 +6,8 @@ import { CheckInHandler } from './commands/check-in/check-in.handler';
 import { CloseCareEpisodeHandler } from './commands/close-care-episode/close-care-episode.handler';
 import { CreateOwnerCareEpisodeHandler } from './commands/create-owner-care-episode/create-owner-care-episode.handler';
 import { VerifyCareEpisodeHandler } from './commands/verify-care-episode/verify-care-episode.handler';
+import { RejectCareEpisodeHandler } from './commands/reject-care-episode/reject-care-episode.handler';
+import { CareEpisodeRejectedEmailListener } from './listeners/care-episode-rejected-email.listener';
 import { AttachCareEpisodeAttachmentsHandler } from './commands/attach-care-episode-attachments/attach-care-episode-attachments.handler';
 import { RemoveCareEpisodeAttachmentHandler } from './commands/remove-care-episode-attachment/remove-care-episode-attachment.handler';
 import { LookupVehicleHandler } from './queries/lookup-vehicle/lookup-vehicle.handler';
@@ -25,6 +27,8 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     CloseCareEpisodeHandler,
     CreateOwnerCareEpisodeHandler,
     VerifyCareEpisodeHandler,
+    RejectCareEpisodeHandler,
+    CareEpisodeRejectedEmailListener,
     AttachCareEpisodeAttachmentsHandler,
     RemoveCareEpisodeAttachmentHandler,
     LookupVehicleHandler,

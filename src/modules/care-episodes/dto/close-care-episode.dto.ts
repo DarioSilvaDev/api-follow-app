@@ -20,6 +20,10 @@ import { MAX_CHECK_IN_SERVICE_TYPES } from './check-in.dto';
  * motivo); la regla XOR y la exigencia de foto `after` en la excepción viven
  * en el handler (class-validator no las expresa limpiamente).
  *
+ * `closeNotes` es OBLIGATORIO: diagnóstico / resumen de lo que se hizo en el
+ * taller (decisión del fundador 2026-11-17, D-207). También sirve para
+ * registrar excepciones (ej. "tablero reemplazado", D-TL-B4).
+ *
  * `serviceTypeIds`/`customServiceLabel` son ADITIVOS sobre los tipos que el
  * episodio ya tenga (los del check-in no se reescriben — ADR-005). El handler
  * deduplica y valida que el total final quede entre 1 y 3.
@@ -55,10 +59,13 @@ export class CloseCareEpisodeDto {
   @MaxLength(120)
   customServiceLabel?: string;
 
-  /** Motivo de excepción (ej. "tablero reemplazado") — D-TL-B4. */
-  @IsOptional()
+  /**
+   * Diagnóstico / resumen obligatorio de la atención (D-207).
+   * También registra excepciones (ej. "tablero reemplazado" — D-TL-B4).
+   */
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @MinLength(10)
   @MaxLength(1000)
-  closeNotes?: string;
+  closeNotes!: string;
 }

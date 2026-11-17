@@ -1,11 +1,11 @@
 import {
   ArrayMaxSize,
   IsArray,
-  IsDateString,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -32,7 +32,17 @@ export class CreateOwnerCareEpisodeDto {
   @MaxLength(120)
   title!: string;
 
-  @IsDateString()
+  /**
+   * Fecha calendario del servicio (D-TZ-1/D-TZ-3): SOLO `YYYY-MM-DD`.
+   *
+   * La validación ISO genérica que había antes aceptaba también
+   * `2026-11-11T00:00:00Z` y `2026-11-11T00:00:00` (sin offset → interpretado
+   * en la TZ del servidor: comportamiento no determinista). El round-trip
+   * (febrero 30, año < 100) lo valida el handler con `isDateOnly`.
+   */
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'serviceDate must be in YYYY-MM-DD format',
+  })
   serviceDate!: string;
 
   @IsOptional()

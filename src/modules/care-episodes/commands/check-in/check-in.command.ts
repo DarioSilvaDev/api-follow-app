@@ -14,6 +14,12 @@ export class CheckInCommand extends BaseCommand {
     public readonly workshopId: string,
     public readonly memberId: string,
     public readonly userId: string,
+    /**
+     * Foto del tablero (D-163). Presente SOLO cuando el request fue
+     * multipart/form-data con campo `files`; JSON → undefined y el contrato
+     * histórico queda intacto.
+     */
+    public readonly files?: Express.Multer.File[],
   ) {
     super();
   }

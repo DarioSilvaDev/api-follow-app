@@ -9,6 +9,11 @@ import { v4 as uuid } from 'uuid';
 import type { CareEpisode, CareEpisodeAttachment } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { VehicleAccessService } from '../../../../common/authorization/vehicle-access.service';
+import {
+  formatDateOnly,
+  isDateOnly,
+  parseDateOnly,
+} from '../../../../common/dates/date-only';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import type { CurrentContext } from '../../../../common/context/interfaces/current-context.interface';
 import { CareEpisodeAttachmentItem } from '../../dto/care-episode-detail-response.dto';
@@ -80,11 +85,14 @@ export class CreateOwnerCareEpisodeHandler {
       notes,
     } = dto;
 
-    // ── serviceDate: requerido y no futura (fin de día UTC actual) ──
-    const serviceDateValue = new Date(serviceDate);
-    if (Number.isNaN(serviceDateValue.getTime())) {
-      throw new BadRequestException('serviceDate must be a valid date');
+    // ── serviceDate: fecha calendario `YYYY-MM-DD`, no futura (fin de día UTC
+    //    actual). D-TZ-1/D-TZ-3: parseo explícito a medianoche UTC — el
+    //    constructor genérico de Date aceptaba date-times sin offset
+    //    (interpretados en la TZ del servidor → no determinista). ──
+    if (!isDateOnly(serviceDate)) {
+      throw new BadRequestException('serviceDate must be in YYYY-MM-DD format');
     }
+    const serviceDateValue = parseDateOnly(serviceDate);
     const endOfUtcDay = new Date();
     endOfUtcDay.setUTCHours(23, 59, 59, 999);
     if (serviceDateValue.getTime() > endOfUtcDay.getTime()) {
@@ -231,9 +239,12 @@ export class CreateOwnerCareEpisodeHandler {
 
     // ── Response: contrato histórico INTACTO (el raw del episodio) + adjuntos
     //    en la misma forma `CareEpisodeAttachmentItem` del detalle (S1),
-    //    ADITIVO para que el frontend pueda confirmar la evidencia creada. ──
+    //    ADITIVO para que el frontend pueda confirmar la evidencia creada.
+    //    B-TZ-4: `serviceDate` es fecha calendario → `YYYY-MM-DD` (el spread la
+    //    reescribe explícitamente; el resto de timestamps sigue siendo instante). ──
     return {
       ...careEpisode,
+      serviceDate: formatDateOnly(careEpisode.serviceDate),
       attachments: careEpisode.attachments.map((a) => this.toAttachmentItem(a)),
       attachmentCount: careEpisode.attachments.length,
     };

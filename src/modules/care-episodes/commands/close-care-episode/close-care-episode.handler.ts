@@ -46,7 +46,8 @@ interface LockedEpisodeRow {
  * - `mileageOut < máximo histórico` → NO bloquea; se devuelve
  *   `mileageOutlier: true`.
  * - Tipos de atención: aditivos sobre los del check-in; el total final debe
- *   quedar entre 1 y 3. `closeNotes` persiste el motivo de excepción
+ *   quedar entre 1 y 3. `closeNotes` es OBLIGATORIO: diagnóstico / resumen de
+ *   lo que se hizo (D-207) y, cuando aplica, el motivo de excepción
  *   (ej. "tablero reemplazado", D-TL-B4).
  * - El evento `care-episode.closed` se emite SÓLO después del commit.
  */
@@ -120,7 +121,15 @@ export class CloseCareEpisodeHandler {
     // ── 3. Tipos de atención: aditivos, total final 1..3 ──
     const incoming = await this.resolveServiceTypes(careEpisodeId, dto);
 
-    const closeNotes = dto.closeNotes?.trim() || null;
+    // El resumen es obligatorio (D-207). El DTO ya valida 10..1000 chars en
+    // HTTP; se rechequea acá para que llamadas directas al handler (tests,
+    // otros command handlers) no persistan un cierre sin información.
+    const closeNotes = dto.closeNotes?.trim();
+    if (!closeNotes || closeNotes.length < 10) {
+      throw new BadRequestException(
+        'Indicá el diagnóstico o resumen de la atención (mínimo 10 caracteres)',
+      );
+    }
 
     // ── 4. Transacción: lock + re-chequeo + update ──
     const result = await this.prisma.$transaction(async (tx) => {

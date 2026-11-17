@@ -1,10 +1,16 @@
+// uuid@14 es ESM-only; se mockea antes de importar (el handler genera el
+// episodeId y transita StorageR2Service) — patrón de POST /owner (S6).
+jest.mock('uuid', () => ({ v4: () => 'test-episode-uuid' }));
+
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
+import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { CheckInDto } from '../../dto/check-in.dto';
 import { CheckInCommand } from './check-in.command';
@@ -12,6 +18,7 @@ import { CheckInHandler } from './check-in.handler';
 
 describe('CheckInHandler — B-2 check-in unificado', () => {
   let handler: CheckInHandler;
+  let storageMock: { upload: jest.Mock; delete: jest.Mock };
   let prismaMock: {
     workshopBranch: { findUnique: jest.Mock };
     serviceType: { findMany: jest.Mock };
@@ -33,7 +40,22 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
   const memberId = 'member-1';
   const userId = 'user-1';
   const branchId = 'branch-1';
+  const episodeId = 'test-episode-uuid';
+  const attachmentKey = `care-episodes/${episodeId}/foto.webp`;
   const checkedInAt = new Date('2026-11-03T10:00:00.000Z');
+
+  const makeFile = (
+    overrides: Partial<Express.Multer.File> = {},
+  ): Express.Multer.File =>
+    ({
+      fieldname: 'files',
+      originalname: 'odometro.jpg',
+      encoding: '7bit',
+      mimetype: 'image/jpeg',
+      size: 1234,
+      buffer: Buffer.from('evidence'),
+      ...overrides,
+    }) as Express.Multer.File;
 
   const p2002 = (target: string[]) =>
     new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -51,12 +73,16 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
     };
   }
 
-  function makeCommand(overrides: Partial<CheckInDto> = {}) {
+  function makeCommand(
+    overrides: Partial<CheckInDto> = {},
+    files?: Express.Multer.File[],
+  ) {
     return new CheckInCommand(
       makeDto(overrides),
       workshopId,
       memberId,
       userId,
+      files,
     );
   }
 
@@ -79,9 +105,16 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
       ),
     };
     eventEmitterMock = { emit: jest.fn() };
+    storageMock = {
+      upload: jest
+        .fn()
+        .mockResolvedValue({ key: attachmentKey, url: attachmentKey }),
+      delete: jest.fn().mockResolvedValue(undefined),
+    };
     handler = new CheckInHandler(
       prismaMock as any,
       eventEmitterMock as unknown as EventEmitter2,
+      storageMock as unknown as StorageR2Service,
     );
 
     // Defaults del happy path (cada test los ajusta si hace falta).
@@ -103,6 +136,7 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
       mileageIn: 45000,
       checkedInAt,
       vehicleId: 'v1',
+      attachments: [],
     });
     prismaMock.vehicleOwnerContact.findFirst.mockResolvedValue(null);
     prismaMock.vehicleOwnerContact.updateMany.mockResolvedValue({ count: 0 });
@@ -126,6 +160,8 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
         checkedInAt,
         vehicleCreated: true,
         ownerContact: { status: 'unavailable', phoneMasked: null },
+        attachments: [],
+        attachmentCount: 0,
       },
     });
 
@@ -223,24 +259,78 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
     );
   });
 
-  it('registra odómetro "no legible" con motivo y sin valor', async () => {
-    await handler.execute(
-      makeCommand({
-        mileageIn: undefined,
-        mileageInUnreadable: true,
-        mileageInUnreadableReason: 'Tablero roto',
-      }),
+  it('registra odómetro "no legible" con motivo y foto del tablero', async () => {
+    const file = makeFile();
+    const createdAt = new Date('2026-11-03T10:00:00.000Z');
+    prismaMock.careEpisode.create.mockResolvedValue({
+      id: episodeId,
+      status: 'open',
+      mileageIn: null,
+      checkedInAt,
+      vehicleId: 'v1',
+      attachments: [
+        {
+          id: 'att-1',
+          key: attachmentKey,
+          originalName: 'odometro.jpg',
+          mimeType: 'image/jpeg',
+          sizeBytes: 1234,
+          caption: null,
+          phase: 'before',
+          uploadedByMemberId: memberId,
+          uploadedByUserId: null,
+          removedAt: null,
+          createdAt,
+        },
+      ],
+    });
+
+    const result = await handler.execute(
+      makeCommand(
+        {
+          mileageIn: undefined,
+          mileageInUnreadable: true,
+          mileageInUnreadableReason: 'Tablero roto',
+        },
+        [file],
+      ),
     );
 
+    expect(storageMock.upload).toHaveBeenCalledWith(
+      file,
+      `care-episodes/${episodeId}`,
+    );
     expect(prismaMock.careEpisode.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          id: episodeId,
           mileageIn: null,
           mileageInUnreadable: true,
           mileageInUnreadableReason: 'Tablero roto',
+          attachments: {
+            create: [
+              expect.objectContaining({
+                key: attachmentKey,
+                phase: 'before',
+                uploadedByMemberId: memberId,
+                uploadedByUserId: null,
+              }),
+            ],
+          },
         }),
+        select: expect.objectContaining({ attachments: true }),
       }),
     );
+    expect(result.data.attachmentCount).toBe(1);
+    expect(result.data.attachments[0]).toEqual(
+      expect.objectContaining({
+        id: 'att-1',
+        phase: 'before',
+        removed: false,
+      }),
+    );
+    // Persistió el episodio: la compensación no borra el blob.
+    expect(storageMock.delete).not.toHaveBeenCalled();
   });
 
   it('persiste tipos de atención del catálogo + texto libre "Otro"', async () => {
@@ -409,10 +499,81 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
 
   it('rechaza 400 si el motivo viene sin marcar "no legible"', async () => {
     await expect(
+      handler.execute(makeCommand({ mileageInUnreadableReason: 'No se ve' })),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rechaza 400 si el odómetro es ilegible y no viene la foto (D-163)', async () => {
+    await expect(
       handler.execute(
-        makeCommand({ mileageInUnreadableReason: 'No se ve' }),
+        makeCommand({
+          mileageIn: undefined,
+          mileageInUnreadable: true,
+          mileageInUnreadableReason: 'Tablero roto',
+        }),
       ),
     ).rejects.toThrow(BadRequestException);
+
+    expect(storageMock.upload).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rechaza 400 si llega más de una foto', async () => {
+    await expect(
+      handler.execute(
+        makeCommand({}, [makeFile(), makeFile({ originalname: 'otra.jpg' })]),
+      ),
+    ).rejects.toThrow(/Máximo 1 foto/);
+    expect(storageMock.upload).not.toHaveBeenCalled();
+  });
+
+  it('acepta 1 foto opcional cuando el odómetro sí se lee (D-170)', async () => {
+    const file = makeFile();
+
+    await handler.execute(makeCommand({}, [file]));
+
+    expect(storageMock.upload).toHaveBeenCalledWith(
+      file,
+      `care-episodes/${episodeId}`,
+    );
+    expect(prismaMock.careEpisode.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          attachments: {
+            create: [
+              expect.objectContaining({
+                key: attachmentKey,
+                phase: 'before',
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('responde 503 (no 400) si el storage falla y no persiste nada', async () => {
+    storageMock.upload.mockRejectedValue(new Error('s3 down'));
+
+    await expect(
+      handler.execute(makeCommand({}, [makeFile()])),
+    ).rejects.toThrow(ServiceUnavailableException);
+
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
+  });
+
+  it('compensa el blob si la persistencia falla después del upload', async () => {
+    prismaMock.careEpisode.create.mockRejectedValue(
+      new Error('db unavailable'),
+    );
+
+    await expect(
+      handler.execute(makeCommand({}, [makeFile()])),
+    ).rejects.toThrow('db unavailable');
+
+    expect(storageMock.delete).toHaveBeenCalledWith(attachmentKey);
+    expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });
 
   it('rechaza 400 si más de 3 tipos de atención en total', async () => {
@@ -436,17 +597,13 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
 
   it('rechaza 400 si brandId y brandName vienen juntos', async () => {
     await expect(
-      handler.execute(
-        makeCommand({ brandId: 'brand-1', brandName: 'Toyota' }),
-      ),
+      handler.execute(makeCommand({ brandId: 'brand-1', brandName: 'Toyota' })),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('rechaza 400 si versionId viene con marca/modelo', async () => {
     await expect(
-      handler.execute(
-        makeCommand({ versionId: 'ver-1', brandName: 'Toyota' }),
-      ),
+      handler.execute(makeCommand({ versionId: 'ver-1', brandName: 'Toyota' })),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -516,6 +673,7 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
       mileageIn: 45000,
       checkedInAt,
       vehicleId: 'v-race',
+      attachments: [],
     });
 
     const result = await handler.execute(makeCommand());

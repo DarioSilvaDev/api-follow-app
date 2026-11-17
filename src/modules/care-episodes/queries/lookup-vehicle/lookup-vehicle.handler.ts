@@ -51,8 +51,7 @@ export class LookupVehicleHandler {
     return {
       id: vehicle.id,
       licensePlate: vehicle.licensePlate,
-      brand:
-        vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
+      brand: vehicle.version?.model?.brand?.name ?? vehicle.brandName ?? null,
       model: vehicle.version?.model?.name ?? vehicle.modelName ?? null,
       version: vehicle.version?.name ?? null,
       manufactureYear: vehicle.manufactureYear,

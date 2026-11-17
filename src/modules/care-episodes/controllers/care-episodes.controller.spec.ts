@@ -2,7 +2,11 @@
 // handlers → StorageR2Service) — patrón consistente con vehicles.controller.spec.ts.
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
-import { GUARDS_METADATA, INTERCEPTORS_METADATA } from '@nestjs/common/constants';
+import {
+  GUARDS_METADATA,
+  HTTP_CODE_METADATA,
+  INTERCEPTORS_METADATA,
+} from '@nestjs/common/constants';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { CareEpisodesController } from './care-episodes.controller';
 import { PERMISSIONS_KEY } from '../../../common/decorators/permissions.decorator';
@@ -156,6 +160,30 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
   });
 
   // ──────────────────────────────────────────────────────
+  // POST :id/reject (RF-9 — rechazo del registro del propietario)
+  // ──────────────────────────────────────────────────────
+
+  it('POST reject REUSES @Permissions(care-episode.verify) (D-067, sin cambios de seed)', () => {
+    expect(permissionsFor('reject')).toEqual(['care-episode.verify']);
+  });
+
+  it('POST reject carries WorkshopOnlyGuard BEFORE PermissionsGuard (no super_admin bypass from PERSONAL)', () => {
+    const guards = methodGuards('reject');
+    expect(guards).toContain(PermissionsGuard);
+    expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
+      guards.indexOf(PermissionsGuard),
+    );
+  });
+
+  it('POST reject is explicitly @HttpCode(200) (el default de POST sería 201)', () => {
+    const target = (
+      CareEpisodesController.prototype as unknown as Record<string, unknown>
+    )['reject'] as object | undefined;
+    expect(target).toBeDefined();
+    expect(Reflect.getMetadata(HTTP_CODE_METADATA, target as object)).toBe(200);
+  });
+
+  // ──────────────────────────────────────────────────────
   // POST :id/close (B-3 — cierre de atención)
   // ──────────────────────────────────────────────────────
 
@@ -230,6 +258,19 @@ describe('CareEpisodesController — F-020 guard matrix', () => {
     expect(guards.indexOf(WorkshopOnlyGuard)).toBeLessThan(
       guards.indexOf(PermissionsGuard),
     );
+  });
+
+  it('POST check-in is decorated with a multipart interceptor (D-163 dual route: FilesInterceptor), sin tocar guards/permissions', () => {
+    const target = (
+      CareEpisodesController.prototype as Record<string, unknown>
+    )['checkIn'] as object | undefined;
+    const interceptors = target
+      ? ((Reflect.getMetadata(INTERCEPTORS_METADATA, target) ??
+          []) as unknown[])
+      : [];
+    // El interceptor acepta JSON (multer ignora no-multipart) y agrega el
+    // parseo multipart del campo `files` (foto del tablero, D-163).
+    expect(interceptors.length).toBeGreaterThan(0);
   });
 
   // ──────────────────────────────────────────────────────

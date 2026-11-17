@@ -5,6 +5,7 @@ jest.mock('uuid', () => ({ v4: () => 'test-episode-uuid' }));
 
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { formatDateOnly } from '../../../../common/dates/date-only';
 import { NotFoundException } from '../../../../common/exceptions/not-found.exception';
 import { VehicleAccessService } from '../../../../common/authorization/vehicle-access.service';
 import { CreateOwnerCareEpisodeHandler } from './create-owner-care-episode.handler';
@@ -36,10 +37,12 @@ describe('CreateOwnerCareEpisodeHandler — RF-1 owner records a service', () =>
 
   function makeDto(overrides: Partial<CreateOwnerCareEpisodeDto> = {}) {
     // Sin workshopName por defecto: el XOR se prueba explícitamente en cada caso.
+    // serviceDate es fecha calendario (`YYYY-MM-DD`, D-TZ-1/D-TZ-3): un ISO
+    // completo es 400 antes de llegar al handler.
     const dto: CreateOwnerCareEpisodeDto = {
       vehicleId,
       title: 'Cambio de aceite',
-      serviceDate: '2026-09-10T10:00:00.000Z',
+      serviceDate: '2026-09-10',
       ...overrides,
     };
     return dto;
@@ -145,36 +148,97 @@ describe('CreateOwnerCareEpisodeHandler — RF-1 owner records a service', () =>
   });
 
   // ──────────────────────────────────────────────────────
-  // serviceDate
+  // serviceDate — fecha calendario (D-TZ-1/D-TZ-3)
   // ──────────────────────────────────────────────────────
 
   it('rejects 400 when serviceDate is in the future', async () => {
-    const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // Fecha calendario del día siguiente en UTC (siempre > fin del día UTC actual).
+    const tomorrowUtc = formatDateOnly(
+      new Date(Date.now() + 24 * 60 * 60 * 1000),
+    ) as string;
     await expect(
-      handler.execute(makeCommand({ serviceDate: future }), personalCtx),
+      handler.execute(makeCommand({ serviceDate: tomorrowUtc }), personalCtx),
     ).rejects.toThrow(BadRequestException);
     expect(prismaMock.careEpisode.create).not.toHaveBeenCalled();
   });
 
-  it('accepts a serviceDate set to the end of the current UTC day (same-day boundary)', async () => {
+  it.each([
+    ['2026-09-10T10:00:00.000Z', 'date-time ISO con Z'],
+    ['2026-09-10T10:00:00', 'date-time ISO sin offset'],
+    ['10/09/2026', 'formato local'],
+    ['2026-02-30', 'fecha inexistente (round-trip)'],
+    ['0026-09-10', 'año no representable'],
+  ])(
+    'rejects 400 when serviceDate is not a calendar date: %s (%s)',
+    async (serviceDate) => {
+      await expect(
+        handler.execute(makeCommand({ serviceDate }), personalCtx),
+      ).rejects.toThrow(BadRequestException);
+      expect(prismaMock.careEpisode.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('persists a YYYY-MM-DD serviceDate as UTC midnight (sin corrimiento de TZ)', async () => {
     prismaMock.vehicle.findUnique.mockResolvedValue({ id: vehicleId });
     accessMock.assertOwnership.mockResolvedValue(undefined);
-    prismaMock.careEpisode.create.mockResolvedValue(
-      makeEpisode({ id: 'ce-1' }),
-    );
+    prismaMock.careEpisode.create.mockResolvedValue(makeEpisode({ id: 'ce-1' }));
 
-    const endOfUtcDay = new Date();
-    endOfUtcDay.setUTCHours(23, 59, 59, 999);
     await handler.execute(
-      makeCommand({
-        serviceDate: endOfUtcDay.toISOString(),
-        workshopName: 'Taller Don Pepe',
-      }),
+      makeCommand({ serviceDate: '2026-11-11', workshopName: 'Taller Don Pepe' }),
       personalCtx,
     );
 
-    expect(prismaMock.careEpisode.create).toHaveBeenCalled();
+    const data = prismaMock.careEpisode.create.mock.calls[0][0].data;
+    expect(data.serviceDate).toEqual(new Date('2026-11-11T00:00:00.000Z'));
+    expect(data.serviceDate.toISOString()).toBe('2026-11-11T00:00:00.000Z');
+  });
+
+  it('accepts a serviceDate for the current UTC calendar day (same-day boundary)', async () => {
+    prismaMock.vehicle.findUnique.mockResolvedValue({ id: vehicleId });
+    accessMock.assertOwnership.mockResolvedValue(undefined);
+    prismaMock.careEpisode.create.mockResolvedValue(makeEpisode({ id: 'ce-1' }));
+
+    const todayUtc = formatDateOnly(new Date()) as string;
+    await handler.execute(
+      makeCommand({ serviceDate: todayUtc, workshopName: 'Taller Don Pepe' }),
+      personalCtx,
+    );
+
+    expect(prismaMock.careEpisode.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        serviceDate: new Date(`${todayUtc}T00:00:00.000Z`),
+      }),
+      include: { attachments: true },
+    });
     expect(eventEmitterMock.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('response shape (B-TZ-4): serviceDate es YYYY-MM-DD y checkedInAt/createdAt siguen siendo instantes ISO', async () => {
+    prismaMock.vehicle.findUnique.mockResolvedValue({ id: vehicleId });
+    accessMock.assertOwnership.mockResolvedValue(undefined);
+    prismaMock.careEpisode.create.mockResolvedValue(
+      makeEpisode({
+        id: 'ce-1',
+        serviceDate: new Date('2026-09-10T00:00:00.000Z'),
+        checkedInAt: new Date('2026-09-10T09:00:00.000Z'),
+        createdAt: new Date('2026-09-10T09:00:00.000Z'),
+      }),
+    );
+
+    const result = await handler.execute(
+      makeCommand({ workshopName: 'Taller Don Pepe' }),
+      personalCtx,
+    );
+
+    // Mismo payload, dos semánticas: fecha calendario vs instante.
+    const json = JSON.parse(JSON.stringify(result));
+    expect(json.serviceDate).toBe('2026-09-10');
+    expect(json.serviceDate).toHaveLength(10);
+    expect(json.serviceDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(json.checkedInAt).toContain('T');
+    expect(json.checkedInAt.endsWith('Z')).toBe(true);
+    expect(json.createdAt).toContain('T');
+    expect(json.createdAt.endsWith('Z')).toBe(true);
   });
 
   // ──────────────────────────────────────────────────────

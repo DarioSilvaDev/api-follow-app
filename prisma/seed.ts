@@ -890,6 +890,9 @@ const systemWorkshopRolePermissions: Record<string, string[]> = {
     'history.view',
     'appointment.update',
     'appointment.cancel',
+    // care episodes (check-out / close — decisión 2026-11-17: cualquier
+    // miembro activo del taller puede cerrar una atención)
+    'care-episode.close',
   ],
 };
 
@@ -4980,7 +4983,8 @@ async function seedServiceTypes() {
 }
 
 /**
- * Permiso `care-episode.close` (B-1): dueño y mecánico pueden cerrar atenciones.
+ * Permiso `care-episode.close` (B-1): cualquier miembro del taller (dueño,
+ * mecánico y empleado) puede cerrar atenciones — decisión 2026-11-17.
  * Autocontenido para que el seed del catálogo no dependa de `seedPermissions()`.
  */
 async function seedCareEpisodeClosePermission() {
@@ -4997,7 +5001,10 @@ async function seedCareEpisodeClosePermission() {
   });
 
   const roles = await prisma.workshopRole.findMany({
-    where: { isSystem: true, code: { in: ['owner', 'mechanic'] } },
+    where: {
+      isSystem: true,
+      code: { in: ['owner', 'mechanic', 'employee'] },
+    },
   });
   for (const role of roles) {
     await prisma.workshopRolePermission.upsert({

@@ -21,6 +21,7 @@ import { VerifyCareEpisodeCommand } from './verify-care-episode.command';
  *   - source='workshop'  → 403 (ya es confiable por origen)
  *   - ya verified por ESTE taller → 200 idempotente (estado actual)
  *   - ya verified por OTRO taller → 409
+ *   - ya rejected (D-202/RF-9)    → 409 (el rechazo es terminal, D-205)
  *
  * La verificación NUNCA cambia el `source` (D-063).
  */
@@ -135,6 +136,14 @@ export class VerifyCareEpisodeHandler {
       throw new ConflictException(
         'Care episode was already verified by another workshop',
       );
+    }
+
+    // Rechazo terminal (RF-9 / D-205): un registro rechazado no admite
+    // verificación posterior (ni siquiera por el mismo taller que lo rechazó).
+    // ANTES del fallback 404 defensivo: `rejected` es un estado conocido y
+    // responder 404 ahí sería semánticamente incorrecto.
+    if (existing.verification === 'rejected') {
+      throw new ConflictException('Care episode was rejected by the workshop');
     }
 
     // Defensivo: un episodio owner + unverified de este taller habría matcheado

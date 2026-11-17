@@ -196,11 +196,12 @@ describe('RemoveCareEpisodeAttachmentHandler — S5 audited void', () => {
   });
 
   // ──────────────────────────────────────────────────────
-  // GATE 1 — FROZEN (verified / cancelled), sin super_admin
+  // GATE 1 — FROZEN (verified / rejected / cancelled), sin super_admin
   // ──────────────────────────────────────────────────────
 
   it.each([
     ['verification verified', { verification: 'verified' }],
+    ['verification rejected (D-202)', { verification: 'rejected' }],
     ['status cancelled', { status: 'cancelled' }],
   ])('409 cuando el episodio es %s (ni uploader ni dueño pueden)', async (_name, ep) => {
     prismaMock.careEpisodeAttachment.findFirst.mockResolvedValue(

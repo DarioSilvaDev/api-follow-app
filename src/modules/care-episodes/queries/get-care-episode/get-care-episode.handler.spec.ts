@@ -106,6 +106,9 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
     };
     accessMock = { assertOwnershipOrSharedAccess: jest.fn() };
     storageMock = { getSignedUrl: jest.fn() };
+    // Default: vehículo sin titular. Cada test que necesite titularidad lo
+    // sobreescribe (mismo mock que usa `resolveProjection` en PERSONAL).
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
     handler = new GetCareEpisodeHandler(
       prismaMock as any,
       accessMock as unknown as VehicleAccessService,
@@ -123,6 +126,56 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
     await expect(
       handler.execute(careEpisodeId, user, personalCtx, false),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  // ──────────────────────────────────────────────────────
+  // Rechazo (RF-9 / D-202): campos SOLO en el detalle
+  // ──────────────────────────────────────────────────────
+
+  it('expone rejectedAt/rejectedByMemberId/rejectionReason cuando el registro está rechazado', async () => {
+    const rejectedAt = new Date('2026-11-13T12:00:00.000Z');
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({
+        source: 'owner',
+        verification: 'rejected',
+        rejectedAt,
+        rejectedByMemberId: 'm-9',
+        rejectionReason: 'No coincide el kilometraje',
+      }),
+    );
+    accessMock.assertOwnershipOrSharedAccess.mockResolvedValue(undefined);
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'o-1' });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(
+      careEpisodeId,
+      user,
+      personalCtx,
+      false,
+    );
+
+    expect(result.verification).toBe('rejected');
+    expect(result.rejectedAt).toEqual(rejectedAt);
+    expect(result.rejectedByMemberId).toBe('m-9');
+    expect(result.rejectionReason).toBe('No coincide el kilometraje');
+  });
+
+  it('campos de rechazo null en un episodio no rechazado', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(baseEpisode());
+    accessMock.assertOwnershipOrSharedAccess.mockResolvedValue(undefined);
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'o-1' });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(
+      careEpisodeId,
+      user,
+      personalCtx,
+      false,
+    );
+
+    expect(result.rejectedAt).toBeNull();
+    expect(result.rejectedByMemberId).toBeNull();
+    expect(result.rejectionReason).toBeNull();
   });
 
   // ──────────────────────────────────────────────────────
@@ -213,6 +266,57 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
   });
 
   // ──────────────────────────────────────────────────────
+  // serviceDate — fecha calendario (B-TZ-5 / D-TZ-4)
+  // ──────────────────────────────────────────────────────
+
+  it('expone serviceDate como YYYY-MM-DD y conserva checkedInAt/createdAt como instantes ISO', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(baseEpisode());
+    accessMock.assertOwnershipOrSharedAccess.mockResolvedValue(undefined);
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'o-1' });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, personalCtx, false);
+
+    // Mismo payload, dos semánticas: fecha calendario vs instante.
+    const json = JSON.parse(JSON.stringify(result));
+    expect(json.serviceDate).toBe('2026-09-10');
+    expect(json.serviceDate).toHaveLength(10);
+    expect(json.serviceDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(json.checkedInAt).toContain('T');
+    expect(json.checkedInAt.endsWith('Z')).toBe(true);
+    expect(json.createdAt).toContain('T');
+    expect(json.createdAt.endsWith('Z')).toBe(true);
+  });
+
+  it('serviceDate null (episodio de taller sin fecha calendario) → null', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({ serviceDate: null }),
+    );
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(result.serviceDate).toBeNull();
+  });
+
+  it('serviceDate corrupta en DB (Invalid Date) → null, no 500', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({ serviceDate: new Date(NaN) }),
+    );
+    accessMock.assertOwnershipOrSharedAccess.mockResolvedValue(undefined);
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'o-1' });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, personalCtx, false);
+
+    expect(result.serviceDate).toBeNull();
+  });
+
+  // ──────────────────────────────────────────────────────
   // Cierre (B-3): egreso, notas y tipos prellenables
   // ──────────────────────────────────────────────────────
 
@@ -284,6 +388,60 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
     expect(result.mileageOut).toBeNull();
     expect(result.mileageOutUnreadable).toBe(true);
     expect(result.mileageOutUnreadableReason).toBe('Tablero sin funcionar');
+  });
+
+  // ──────────────────────────────────────────────────────
+  // Titularidad vigente (D-TL-VC-9 regla 2 / §2.6 reclamos)
+  // ──────────────────────────────────────────────────────
+
+  it('vehículo con titular activo → vehicle.hasActiveOwner = true (caso verificación de episodio owner)', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(
+      baseEpisode({ source: 'owner' }),
+    );
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue({ id: 'o-1' });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(result.vehicle.hasActiveOwner).toBe(true);
+  });
+
+  it('vehículo sin titular (alta desde taller) → vehicle.hasActiveOwner = false', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(baseEpisode());
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.vehicleOwnership.findFirst.mockResolvedValue(null);
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    const result = await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(result.vehicle.hasActiveOwner).toBe(false);
+  });
+
+  it('hasActiveOwner usa el mismo predicado que el alta de invite (primario activo, excluye co_owner)', async () => {
+    prismaMock.careEpisode.findUnique.mockResolvedValue(baseEpisode());
+    prismaMock.workshopMember.findUnique.mockResolvedValue({
+      workshopId,
+      status: 'active',
+    });
+    prismaMock.careEpisodeAttachment.findMany.mockResolvedValue([]);
+
+    await handler.execute(careEpisodeId, user, workshopCtx, false);
+
+    expect(prismaMock.vehicleOwnership.findFirst).toHaveBeenCalledWith({
+      where: {
+        vehicleId,
+        endsAt: null,
+        type: { not: 'co_owner' },
+      },
+      select: { id: true },
+    });
   });
 
   // ──────────────────────────────────────────────────────

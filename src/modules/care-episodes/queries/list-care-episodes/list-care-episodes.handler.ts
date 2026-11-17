@@ -3,14 +3,17 @@ import type {
   CareEpisodeSource,
   CareEpisodeStatus,
   CareEpisodeVerification,
+  Prisma,
 } from '@prisma/client';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
 import { PrismaService } from '../../../../common/database/prisma.service';
+import { formatDateOnly } from '../../../../common/dates/date-only';
 
 export interface ListCareEpisodesQuery {
   workshopId: string;
   page?: number;
   limit?: number;
+  q?: string;
 }
 
 /**
@@ -28,8 +31,18 @@ export interface CareEpisodeListItem {
   status: CareEpisodeStatus;
   source: CareEpisodeSource;
   verification: CareEpisodeVerification;
-  /** Fecha canónica D-070 (serviceDate ?? checkedInAt ?? createdAt). Siempre ISO no-null. */
+  /**
+   * Fecha canónica D-070 (serviceDate ?? checkedInAt ?? createdAt). Siempre ISO
+   * no-null: es la clave de orden del listado y NO cambia (D-TZ-4).
+   */
   canonicalDate: string;
+  /**
+   * Fecha calendario para MOSTRAR (`YYYY-MM-DD`), derivada de `serviceDate`.
+   * `null` si y solo si `serviceDate` es `null` (aditivo, no reemplaza a
+   * `canonicalDate`). No usar "episodio de taller" como sinónimo: el seed tiene
+   * episodios workshop con `serviceDate`.
+   */
+  canonicalDateOnly: string | null;
   mileageIn: number | null;
   vehicle: {
     licensePlate: string;
@@ -50,12 +63,20 @@ export interface CareEpisodeListMeta {
 /**
  * ListCareEpisodesHandler — Listado paginado de atenciones del taller (F-023).
  *
- * Workshop-scoped (workshopId del contexto WORKSHOP, RF-1), sin filtros
- * (D-F023-1), orden canónico D-070 desc (RF-2) + paginación page-based
- * con DEFAULT_PAGE_SIZE = 20 (D-F023-3 / D-TL-F023-3).
+ * Workshop-scoped (workshopId del contexto WORKSHOP, RF-1), orden canónico
+ * D-070 desc (RF-2) + paginación page-based con DEFAULT_PAGE_SIZE = 20
+ * (D-F023-3 / D-TL-F023-3).
+ *
+ * Único filtro (D-F023-1a, enmienda de D-F023-1): búsqueda por patente vía
+ * `q` — normalización idéntica a list-vehicles (D-044): trim, mínimo 2
+ * caracteres tras trim (si no, se comporta como sin `q`), slice(0, 20) por
+ * `licensePlate @db.VarChar(20)`, `contains` case-insensitive. Ignora case
+ * pero NO separadores. Sin otros filtros.
  *
  * Estrategia en dos fases (D-TL-F023-3):
- *   1. count + query ligera (4 columnas escalares, sin joins) del taller.
+ *   1. count + query ligera (4 columnas escalares, sin select de joins) del
+ *      taller — con `q` activo, filtrada por patente vía nested filter a
+ *      `vehicle` (D-F023-1a).
  *   2. sort JS del coalesce D-070 → slice de la página → fetch detallado
  *      (con join de catálogo) SOLO de los ids de la página → reordenar.
  *
@@ -67,7 +88,7 @@ export interface CareEpisodeListMeta {
 export class ListCareEpisodesHandler {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute({ workshopId, page, limit }: ListCareEpisodesQuery) {
+  async execute({ workshopId, page, limit, q: rawQParam }: ListCareEpisodesQuery) {
     const safePage =
       typeof page === 'number' && Number.isFinite(page)
         ? Math.max(1, Math.trunc(page))
@@ -77,12 +98,28 @@ export class ListCareEpisodesHandler {
         ? Math.min(Math.max(1, Math.trunc(limit)), MAX_PAGE_SIZE)
         : DEFAULT_PAGE_SIZE;
 
+    // D-F023-1a (enmienda de D-F023-1): búsqueda por patente — mismo contrato
+    // exacto que list-vehicles (D-044). Guard `typeof`: `?q=a&q=b` llega como
+    // array y `.trim()` explotaría. Mínimo 2 caracteres tras trim; con menos,
+    // se comporta como sin `q` (NO 400). slice(0, 20) alinea con
+    // `licensePlate @db.VarChar(20)`.
+    const rawQ = typeof rawQParam === 'string' ? rawQParam : '';
+    const q = rawQ.trim().length >= 2 ? rawQ.trim().slice(0, 20) : '';
+    const where: Prisma.CareEpisodeWhereInput = q
+      ? {
+          workshopId,
+          vehicle: { licensePlate: { contains: q, mode: 'insensitive' } },
+        }
+      : { workshopId };
+
     // Fase 1 — total + filas ligeras (mismo patrón Promise.all que
-    // list-vehicles: ambas consultas son independientes).
+    // list-vehicles: ambas consultas son independientes). Con `q` activo el
+    // `where` incluye un nested filter a `vehicle` (to-one) — el filtro va
+    // ANTES del sort D-070 para que `total`/`totalPages` sean consistentes.
     const [total, lightRows] = await Promise.all([
-      this.prisma.careEpisode.count({ where: { workshopId } }),
+      this.prisma.careEpisode.count({ where }),
       this.prisma.careEpisode.findMany({
-        where: { workshopId },
+        where,
         select: {
           id: true,
           serviceDate: true,
@@ -163,6 +200,7 @@ export class ListCareEpisodesHandler {
         source: episode.source,
         verification: episode.verification,
         canonicalDate: this.canonicalDate(episode).toISOString(),
+        canonicalDateOnly: formatDateOnly(episode.serviceDate),
         mileageIn: episode.mileageIn,
         vehicle: {
           licensePlate: episode.vehicle.licensePlate,

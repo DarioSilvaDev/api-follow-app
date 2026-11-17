@@ -27,7 +27,8 @@ import { RemoveCareEpisodeAttachmentCommand } from './remove-care-episode-attach
  * Algoritmo ordenado (precedencia: frozen > reason > uploader identity):
  *   GATE 0 — super_admin: permite con auditoría; removedBy según contexto;
  *            removedReason opcional (INFO). Salta al resto de gates.
- *   GATE 1 — FROZEN: verified || cancelled → 409 (todo actor excepto super_admin).
+ *   GATE 1 — FROZEN: verification !== 'unverified' (verified | rejected) o
+ *            cancelled → 409 (todo actor excepto super_admin).
  *   GATE 2 — identidad:
  *     a. uploader self-removal (contexto exacto USER o MEMBER) → OK sin razón
  *        (removedReason forzado a null).
@@ -123,7 +124,12 @@ export class RemoveCareEpisodeAttachmentHandler {
     }
 
     // ── GATE 1: FROZEN ──
-    if (episode.verification === 'verified' || episode.status === 'cancelled') {
+    // verification !== 'unverified' → verified O rejected (D-202) congelan la
+    // evidencia: un registro rechazado no se edita ni se borra (D-205).
+    if (
+      episode.verification !== 'unverified' ||
+      episode.status === 'cancelled'
+    ) {
       throw new ConflictException(
         'Episodio cerrado; no se pueden eliminar evidencias',
       );
