@@ -13,6 +13,7 @@ import { ListUsersHandler } from './queries/list-users/list-users.handler';
 import { SearchUsersHandler } from './queries/search-users/search-users.handler';
 import { GetMyAliasHandler } from './queries/get-my-alias/get-my-alias.handler';
 import { UpdateMyAliasHandler } from './commands/update-my-alias/update-my-alias.handler';
+import { UpdateMyProfileHandler } from './commands/update-my-profile/update-my-profile.handler';
 import { SendWelcomeEmailListener } from './listeners/send-welcome-email.listener';
 import { CreateDefaultSettingsListener } from './listeners/create-default-settings.listener';
 import { UserWizardValidationHandler } from './queries/wizard-validation/wizard-validation.handler';
@@ -39,6 +40,7 @@ import { envs } from '../../config/envs';
     SearchUsersHandler,
     GetMyAliasHandler,
     UpdateMyAliasHandler,
+    UpdateMyProfileHandler,
     SendWelcomeEmailListener,
     CreateDefaultSettingsListener,
     UserWizardValidationHandler,

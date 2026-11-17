@@ -4,6 +4,9 @@ import { UpdateUserDto } from '../dto/update-user.dto';
 
 export type CreateUserData = Omit<CreateUserDto, 'password'> & {
   passwordHash: string;
+  /** Split de display del celular (D-173). `''` = no informado. */
+  phoneAreaCode?: string;
+  phoneNationalNumber?: string;
 };
 
 export interface UserRepository {

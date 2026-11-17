@@ -27,6 +27,9 @@ import type { AuthenticatedUser } from '../../../common/types/auth.types';
 import { GetMyAliasHandler } from '../queries/get-my-alias/get-my-alias.handler';
 import { UpdateMyAliasHandler } from '../commands/update-my-alias/update-my-alias.handler';
 import { UpdateMyAliasDto } from '../dto/update-my-alias.dto';
+import { UpdateMyProfileDto } from '../dto/update-my-profile.dto';
+import { UpdateMyProfileCommand } from '../commands/update-my-profile/update-my-profile.command';
+import { UpdateMyProfileHandler } from '../commands/update-my-profile/update-my-profile.handler';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -40,6 +43,7 @@ export class UsersController {
     private readonly searchUsersHandler: SearchUsersHandler,
     private readonly getMyAliasHandler: GetMyAliasHandler,
     private readonly updateMyAliasHandler: UpdateMyAliasHandler,
+    private readonly updateMyProfileHandler: UpdateMyProfileHandler,
   ) {}
 
   @Post()
@@ -69,6 +73,18 @@ export class UsersController {
   @Get('me/alias')
   async getMyAlias(@CurrentUser() user: AuthenticatedUser) {
     return this.getMyAliasHandler.execute(user.id);
+  }
+
+  // Self-service (PATCH /users/me): editar mis datos personales
+  // (firstName, lastName, celular). Ruta estática "me" ANTES de ':id'.
+  @Patch('me')
+  async updateMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateMyProfileDto,
+  ) {
+    return this.updateMyProfileHandler.execute(
+      new UpdateMyProfileCommand(user.id, dto),
+    );
   }
 
   @Patch('me/alias')
