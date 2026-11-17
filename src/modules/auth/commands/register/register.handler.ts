@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  BadRequestException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { v4 as uuid } from 'uuid';
 import * as bcrypt from 'bcrypt';
@@ -8,6 +13,7 @@ import { PrismaService } from '../../../../common/database/prisma.service';
 import type { MailSendResult } from '../../../../common/mail/mail.types';
 import { envs } from '../../../../config/envs';
 import { UserResponseDto } from '../../../users/dto/user-response.dto';
+import { buildE164, isValidPair } from '../../../../common/phone/phone.util';
 import { RegisterResponseDto } from '../../dto/register-response.dto';
 import { UserRegisteredEvent } from '../../events/user-registered.event';
 import { EmailVerificationSentEvent } from '../../events/email-verification-sent.event';
@@ -34,10 +40,41 @@ export class RegisterHandler {
       throw new ConflictException('Ya existe una cuenta con este email');
     }
 
+    // D-173: celular obligatorio en el alta por ValidationPipe (presencia) —
+    // acá se valida el par (ambos ≥ 2 dígitos) y se persiste E.164 + display.
+    const phoneAreaCode = (command.dto.phone?.areaCode ?? '').replace(/\D/g, '');
+    const phoneNationalNumber = (command.dto.phone?.nationalNumber ?? '').replace(
+      /\D/g,
+      '',
+    );
+    if (!isValidPair({ areaCode: phoneAreaCode, nationalNumber: phoneNationalNumber })) {
+      throw new BadRequestException(
+        'Ingresá un celular válido (código de área y número)',
+      );
+    }
+    const phoneE164 = buildE164({
+      areaCode: phoneAreaCode,
+      nationalNumber: phoneNationalNumber,
+      countryCode: envs.DEFAULT_PHONE_COUNTRY_CODE,
+    });
+    if (!phoneE164) {
+      throw new BadRequestException(
+        'Ingresá un celular válido (código de área y número)',
+      );
+    }
+
     const { password, ...rest } = command.dto;
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const user = await this.userRepository.create({ ...rest, passwordHash });
+    const user = await this.userRepository.create({
+      email: rest.email,
+      firstName: rest.firstName,
+      lastName: rest.lastName,
+      phone: phoneE164,
+      phoneAreaCode,
+      phoneNationalNumber,
+      passwordHash,
+    });
 
     const verificationToken = uuid();
     const expiresAt = new Date();

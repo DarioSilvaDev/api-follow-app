@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RegisterHandler } from './register.handler';
 import { RegisterCommand } from './register.command';
@@ -9,6 +9,7 @@ import { EmailVerificationSentEvent } from '../../events/email-verification-sent
 jest.mock('../../../../config/envs', () => ({
   envs: {
     VERIFICATION_TOKEN_EXPIRY_HOURS: 24,
+    DEFAULT_PHONE_COUNTRY_CODE: '+54',
   },
 }));
 
@@ -35,6 +36,7 @@ describe('RegisterHandler', () => {
       password: 'Secret1!',
       firstName: 'Ana',
       lastName: 'Pérez',
+      phone: { areaCode: '341', nationalNumber: '3750611' },
     });
 
   beforeEach(() => {
@@ -67,7 +69,9 @@ describe('RegisterHandler', () => {
     email,
     firstName: 'Ana',
     lastName: 'Pérez',
-    phone: null,
+    phone: '+543413750611',
+    phoneAreaCode: '341',
+    phoneNationalNumber: '3750611',
     avatarUrl: null,
     language: 'es',
     status: 'pending',
@@ -114,6 +118,44 @@ describe('RegisterHandler', () => {
     expect(eventEmitterMock.emit).not.toHaveBeenCalled();
   });
 
+  it('D-173: rejects an invalid phone pair (400) and does not create the user', async () => {
+    userRepositoryMock.findByEmail.mockResolvedValue(null);
+
+    const invalid = new RegisterCommand({
+      email: 'bad-phone@example.com',
+      password: 'Secret1!',
+      firstName: 'Ana',
+      lastName: 'Pérez',
+      phone: { areaCode: '3', nationalNumber: '' },
+    });
+
+    await expect(handler.execute(invalid)).rejects.toThrow(BadRequestException);
+    expect(userRepositoryMock.create).not.toHaveBeenCalled();
+  });
+
+  it('D-173: normalizes formatting (spaces/dashes) before persisting E.164', async () => {
+    userRepositoryMock.findByEmail.mockResolvedValue(null);
+    userRepositoryMock.create.mockResolvedValue(pendingUser());
+
+    const messy = new RegisterCommand({
+      email: 'messy@example.com',
+      password: 'Secret1!',
+      firstName: 'Ana',
+      lastName: 'Pérez',
+      phone: { areaCode: ' 341-', nationalNumber: '375 06 11' },
+    });
+
+    await handler.execute(messy);
+
+    expect(userRepositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: '+543413750611',
+        phoneAreaCode: '341',
+        phoneNationalNumber: '3750611',
+      }),
+    );
+  });
+
   it('creates the user, stores a verification token and emits registration events', async () => {
     userRepositoryMock.findByEmail.mockResolvedValue(null);
     const createdUser = pendingUser();
@@ -126,6 +168,9 @@ describe('RegisterHandler', () => {
         email: 'new@example.com',
         firstName: 'Ana',
         lastName: 'Pérez',
+        phone: '+543413750611',
+        phoneAreaCode: '341',
+        phoneNationalNumber: '3750611',
         passwordHash: expect.any(String),
       }),
     );
