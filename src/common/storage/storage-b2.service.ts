@@ -104,11 +104,3 @@
 //     if (!this.client) {
 //       throw new BadRequestException('B2 Storage not configured');
 //     }
-
-//     const command = new GetObjectCommand({
-//       Bucket: this.bucket,
-//       Key: key,
-//     });
-//     return getSignedUrl(this.client, command, { expiresIn });
-//   }
-// }
