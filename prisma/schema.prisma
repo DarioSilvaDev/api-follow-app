@@ -14,6 +14,8 @@ model User {
   lastName                       String                  @map("last_name") @db.VarChar(100)
   email                          String                  @unique @db.VarChar(255)
   phone                          String?                 @db.VarChar(30)
+  phoneAreaCode                  String                  @default("") @map("phone_area_code") @db.VarChar(6)
+  phoneNationalNumber            String                  @default("") @map("phone_national_number") @db.VarChar(12)
   avatarUrl                      String?                 @map("avatar_url")
   language                       String                  @default("es") @db.VarChar(10)
   timezone                       String                  @default("America/Argentina/Buenos_Aires") @db.VarChar(60)
@@ -297,6 +299,7 @@ model WorkshopMember {
   uploadedCareEpisodeAttachments CareEpisodeAttachment[] @relation("CareEpisodeAttachmentUploadedByMember")
   createdCareEpisodes            CareEpisode[]
   verifiedCareEpisodes           CareEpisode[]           @relation("VerifiedCareEpisodes")
+  rejectedCareEpisodes           CareEpisode[]           @relation("RejectedCareEpisodes")
   closedCareEpisodes             CareEpisode[]           @relation("ClosedCareEpisodes")
   recordedOwnerContacts          VehicleOwnerContact[]   @relation("OwnerContactsRecorded")
   performedServiceRecords        ServiceRecord[]
@@ -1005,6 +1008,9 @@ model CareEpisode {
   verification               CareEpisodeVerification  @default(unverified)
   verifiedAt                 DateTime?                @map("verified_at") @db.Timestamptz(6)
   verifiedByMemberId         String?                  @map("verified_by_member_id") @db.Uuid
+  rejectedAt                 DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  rejectedByMemberId         String?                  @map("rejected_by_member_id") @db.Uuid
+  rejectionReason            String?                  @map("rejection_reason") @db.VarChar(500)
   closedByMemberId           String?                  @map("closed_by_member_id") @db.Uuid
   workshopName               String?                  @map("workshop_name") @db.VarChar(150)
   attachments                CareEpisodeAttachment[]
@@ -1014,6 +1020,7 @@ model CareEpisode {
   createdByUser              User?                    @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   vehicle                    Vehicle                  @relation(fields: [vehicleId], references: [id])
   verifiedByMember           WorkshopMember?          @relation("VerifiedCareEpisodes", fields: [verifiedByMemberId], references: [id], onDelete: Restrict)
+  rejectedByMember           WorkshopMember?          @relation("RejectedCareEpisodes", fields: [rejectedByMemberId], references: [id], onDelete: Restrict)
   closedByMember             WorkshopMember?          @relation("ClosedCareEpisodes", fields: [closedByMemberId], references: [id], onDelete: Restrict)
   workshop                   Workshop?                @relation(fields: [workshopId], references: [id], onDelete: Restrict)
   estimates                  Estimate[]
@@ -1391,6 +1398,7 @@ enum CareEpisodeSource {
 enum CareEpisodeVerification {
   unverified
   verified
+  rejected
 }
 
 enum CareEpisodeAttachmentPhase {
