@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { WorkshopsController } from './controllers/workshops.controller';
 import { PublicWorkshopController } from './controllers/public.controller';
 import { WorkshopSearchController } from './controllers/search.controller';
+import { WorkshopCatalogController } from './controllers/catalog.controller';
 import { WizardController } from './controllers/wizard.controller';
 import { AuthorizationModule } from '../../common/authorization.module';
 import { UpdateWorkshopHandler } from './commands/update-workshop/update-workshop.handler';
@@ -23,6 +24,7 @@ import {
   ListPublicSpecialtiesHandler,
 } from './queries/list-specialties/list-specialties.handler';
 import { SearchWorkshopsHandler } from './queries/search-workshops/search-workshops.handler';
+import { ListWorkshopCatalogHandler } from './queries/list-workshop-catalog/list-workshop-catalog.handler';
 import { CreateRoleHandler } from './commands/create-role/create-role.handler';
 import { UpdateRoleHandler } from './commands/update-role/update-role.handler';
 import { DeleteRoleHandler } from './commands/delete-role/delete-role.handler';
@@ -43,6 +45,7 @@ import { envs } from '../../config/envs';
   ],
   controllers: [
     WorkshopSearchController,
+    WorkshopCatalogController,
     WizardController,
     WorkshopsController,
     PublicWorkshopController,
@@ -64,6 +67,7 @@ import { envs } from '../../config/envs';
     ListWorkshopSpecialtiesHandler,
     ListPublicSpecialtiesHandler,
     SearchWorkshopsHandler,
+    ListWorkshopCatalogHandler,
     CreateRoleHandler,
     UpdateRoleHandler,
     DeleteRoleHandler,

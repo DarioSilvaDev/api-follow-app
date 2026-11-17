@@ -94,5 +94,7 @@ export const WORKSHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
     'history.view',
     'appointment.update',
     'appointment.cancel',
+    // D-208 (2026-11-17): cualquier miembro activo del taller puede cerrar.
+    'care-episode.close',
   ],
 };
