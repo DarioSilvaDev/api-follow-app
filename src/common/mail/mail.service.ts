@@ -106,6 +106,21 @@ export interface VehicleClaimWorkshopNotificationParams {
   alreadyOwner?: boolean;
 }
 
+/** D-203/D-204: datos dinámicos del aviso al propietario por rechazo. */
+export interface CareEpisodeRejectedEmailParams {
+  vehicleId: string;
+  careEpisodeId: string;
+  /** Título del registro del propietario (requerido en RF-1, null-safe igual). */
+  title: string | null;
+  /** Fecha calendario `YYYY-MM-DD` del servicio, o null. */
+  serviceDate: string | null;
+  licensePlate: string;
+  /** Taller responsable (`CareEpisode.workshop.name`). */
+  workshopName: string | null;
+  /** Motivo del taller — VISIBLE para el propietario (decisión del usuario). */
+  rejectionReason: string | null;
+}
+
 @Injectable()
 export class MailService {
   private resendClient: Resend | null = null;
@@ -1144,6 +1159,75 @@ export class MailService {
         <p>${greeting}</p>
         <p>El taller revocó el reclamo del vehículo ${plate}. El historial ya no figura a tu nombre.</p>
         <p>Si creés que es un error, contactá al taller donde hiciste la última atención.</p>
+      `,
+      },
+      context,
+    );
+  }
+
+  /**
+   * D-203/D-204: aviso al propietario de que el taller responsable RECHAZÓ su
+   * registro (`source=owner`, RF-9). Copy es-AR voseo; asunto termina en
+   * ` - Autentia`; el MOTIVO viaja solo si existe (decisión del usuario:
+   * visible para el propietario, atribuido al taller). El mail NUNCA transporta
+   * tokens ni datos de sesión; el CTA linkea al detalle del registro en el
+   * historial del vehículo.
+   */
+  async sendCareEpisodeRejectedEmail(
+    to: string,
+    firstName: string | null,
+    params: CareEpisodeRejectedEmailParams,
+    context?: MailContext,
+  ): Promise<MailSendResult> {
+    const plate = this.escapeHtml(params.licensePlate);
+    const title = this.escapeHtml(params.title?.trim() || 'un registro');
+    const workshop = this.escapeHtml(params.workshopName?.trim() || '');
+    const rawName = firstName?.trim();
+    const greeting = rawName ? `Hola ${this.escapeHtml(rawName)},` : 'Hola,';
+    const base = (envs.FRONTEND_URL || 'http://localhost:3000').replace(
+      /\/+$/,
+      '',
+    );
+    const recordUrl = `${base}/vehicles/${params.vehicleId}/servicios/${params.careEpisodeId}`;
+    const reason = params.rejectionReason?.trim();
+
+    const paragraphs: string[] = [];
+    if (params.serviceDate && workshop) {
+      paragraphs.push(
+        `El taller ${workshop} rechazó tu registro «${title}» (${this.escapeHtml(params.serviceDate)}) del vehículo ${plate}.`,
+      );
+    } else if (params.serviceDate) {
+      paragraphs.push(
+        `El taller responsable rechazó tu registro «${title}» (${this.escapeHtml(params.serviceDate)}) del vehículo ${plate}.`,
+      );
+    } else if (workshop) {
+      paragraphs.push(
+        `El taller ${workshop} rechazó tu registro «${title}» del vehículo ${plate}.`,
+      );
+    } else {
+      paragraphs.push(
+        `El taller responsable rechazó tu registro «${title}» del vehículo ${plate}.`,
+      );
+    }
+
+    if (reason) {
+      paragraphs.push(`Motivo del rechazo: ${this.escapeHtml(reason)}`);
+    }
+
+    paragraphs.push(
+      'El registro permanece en el historial de tu vehículo, marcado como rechazado.',
+    );
+
+    return this.send(
+      MAIL_TEMPLATES.CARE_EPISODE_REJECTED,
+      {
+        to,
+        subject: `Rechazaron tu registro «${this.headerSafe(params.title?.trim() || 'un registro')}» - Autentia`,
+        html: `
+        <h2>Tu registro fue rechazado</h2>
+        <p>${greeting}</p>
+        ${paragraphs.map((p) => `<p>${p}</p>`).join('\n        ')}
+        <p><a href="${recordUrl}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;">Ver el registro</a></p>
       `,
       },
       context,

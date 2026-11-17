@@ -800,4 +800,90 @@ describe('MailService', () => {
       expect(html).not.toContain('/servicios/');
     });
   });
+
+  describe('D-203/D-204: aviso al propietario por rechazo de registro', () => {
+    const baseParams = {
+      vehicleId: 'vehicle-1',
+      careEpisodeId: 'episode-1',
+      title: 'Cambio de aceite + 2 neumáticos',
+      serviceDate: '2026-06-15',
+      licensePlate: 'AB123CD',
+      workshopName: 'Lubricentro Central',
+      rejectionReason: 'No coincide el kilometraje',
+    };
+
+    it('con motivo: asunto, taller, fecha, patente, motivo y link al detalle del registro', async () => {
+      await service.sendCareEpisodeRejectedEmail(
+        'owner@test.com',
+        'Pedro',
+        baseParams,
+      );
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.to).toBe('owner@test.com');
+      expect(payload.subject).toBe(
+        'Rechazaron tu registro «Cambio de aceite + 2 neumáticos» - Autentia',
+      );
+      expect(payload.html).toContain(
+        'El taller Lubricentro Central rechazó tu registro «Cambio de aceite + 2 neumáticos» (2026-06-15) del vehículo AB123CD.',
+      );
+      expect(payload.html).toContain(
+        'Motivo del rechazo: No coincide el kilometraje',
+      );
+      expect(payload.html).toContain(
+        'https://app.followapp.test/vehicles/vehicle-1/servicios/episode-1',
+      );
+    });
+
+    it('sin motivo: omite la línea de motivo pero conserva el resto del aviso', async () => {
+      await service.sendCareEpisodeRejectedEmail('owner@test.com', 'Pedro', {
+        ...baseParams,
+        rejectionReason: null,
+      });
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain('rechazó tu registro');
+      expect(html).not.toContain('Motivo del rechazo');
+    });
+
+    it('sin taller en la app cae en el copy genérico "taller responsable"', async () => {
+      await service.sendCareEpisodeRejectedEmail('owner@test.com', 'Pedro', {
+        ...baseParams,
+        workshopName: null,
+      });
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain(
+        'El taller responsable rechazó tu registro «Cambio de aceite + 2 neumáticos» (2026-06-15) del vehículo AB123CD.',
+      );
+      expect(html).not.toContain('El taller  rechazó');
+    });
+
+    it('escapa título y motivo (son input del taller/propietario)', async () => {
+      await service.sendCareEpisodeRejectedEmail('owner@test.com', 'Pedro', {
+        ...baseParams,
+        title: '<script>alert(1)</script>',
+        rejectionReason: '<img src=x onerror=alert(1)>',
+      });
+
+      const payload = sendMock.mock.calls[0][0];
+      expect(payload.html).not.toContain('<script>');
+      expect(payload.html).not.toContain('<img');
+      expect(payload.html).toContain('&lt;script&gt;');
+      // El asunto es texto plano (no HTML): solo se le saca CR/LF.
+      expect(payload.subject).not.toContain('\r');
+      expect(payload.subject).not.toContain('\n');
+    });
+
+    it('sin nombre saluda "Hola,"', async () => {
+      await service.sendCareEpisodeRejectedEmail(
+        'owner@test.com',
+        null,
+        baseParams,
+      );
+
+      const html = sendMock.mock.calls[0][0].html;
+      expect(html).toContain('<p>Hola,</p>');
+    });
+  });
 });

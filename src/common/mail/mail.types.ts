@@ -41,6 +41,9 @@ export const MAIL_TEMPLATES = {
   VEHICLE_CLAIM_WORKSHOP_NOTIFICATION: 'vehicle_claim_workshop_notification',
   VEHICLE_CLAIM_BLOCKED_OWNER: 'vehicle_claim_blocked_owner',
   VEHICLE_CLAIM_RESULT: 'vehicle_claim_result',
+  // D-203/D-204: aviso al propietario de que el taller rechazó su registro
+  // (`source=owner`). Nuevo canal email (sin push/in-app en el MVP).
+  CARE_EPISODE_REJECTED: 'care_episode_rejected',
 } as const;
 
 export type MailTemplate = (typeof MAIL_TEMPLATES)[keyof typeof MAIL_TEMPLATES];
