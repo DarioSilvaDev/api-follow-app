@@ -7,6 +7,8 @@
 > **Módulo en paralelo (dado, NO rediseñado aquí):** `docs/designs/vehicle-claim-technical-design.md` (reclamo de vehículo). Solo se define el punto de conexión: **generación del link SOLO en el primer cierre efectivo del vehículo** (§6.3, Decisión C / D-172, coordinación resuelta 2026-10-31).
 > **Código afectado:** `prisma/schema.prisma` + migración, `prisma/seed.ts` (permiso + catálogos), `src/modules/vehicles/commands/register-vehicle/*`, `src/modules/care-episodes/*`, `src/common/authorization/vehicle-access.service.ts`, `src/modules/workshops/dto/wizard-claim.dto.ts` + `wizard-claim` handler, frontend `web-follow-app` (`atenciones/nueva`, detalle de atención, wizard de taller).
 
+> **Actualización 2026-11-17 (decisiones del fundador, D-207 / D-208):** (1) `closeNotes` pasa a ser **obligatorio** (10–1000 chars): el cierre debe registrar diagnóstico / resumen de lo que se hizo; se reutiliza la columna existente, sin migración. (2) `care-episode.close` se otorga también a `employee`: **cualquier miembro activo del taller** puede cerrar. (3) La edición/corrección posterior sigue siendo post-MVP (D-176 se mantiene) y `cancelled` se difiere. Donde este documento diga lo contrario, prevalece esta nota.
+
 ---
 
 ## 1. Problema
@@ -81,7 +83,7 @@ Se listan explícitamente en lugar de escribir por encima. **Las enmiendas de C-
 | Endpoint (propuesta) | Guards (orden) | Permiso |
 |---|---|---|
 | `POST /api/care-episodes/check-in` | `JwtAuthGuard` + `ContextGuard` (clase) → `WorkshopOnlyGuard` + `PermissionsGuard` (método, **WorkshopOnly antes**) | `care-episode.create` (**existente**, owner+mechanic — sin permiso nuevo: el alta del vehículo es efecto del mismo acto) |
-| `POST /api/care-episodes/:id/close` | igual que arriba | `care-episode.close` (**nuevo**, owner+mechanic; requiere seed) |
+| `POST /api/care-episodes/:id/close` | igual que arriba | `care-episode.close` (owner + mechanic + **employee** desde 2026-11-17, D-208; requiere seed) |
 | `GET /api/care-episodes/lookup?plate=` (existente) | `WorkshopOnlyGuard` + `ThrottlerGuard` (`@Throttle` 30/60s) | sin permiso granular (membership validada por resolver) |
 | `POST /api/care-episodes/:id/attachments` (existente) | igual que check-in | `care-episode.attach` (existente) |
 | `GET /api/care-episodes/:id` (existente) | clase `Jwt`+`Context`; autorización **en handler** (proyección por actor) | sin `@Permissions` |
@@ -239,7 +241,7 @@ open ──close──▶ delivered        (única transición nueva implementad
 
 - **Quién:** solo un miembro activo del **taller dueño del episodio** (`workshopId` del contexto), con permiso `care-episode.close`. El propietario nunca; otro taller nunca.
 - **Cuándo:** solo desde `open`. Si ya está `delivered`/`cancelled` → **409** ("La atención ya fue cerrada"). Sin reapertura en MVP (§12, OA-10).
-- **Qué exige:** odómetro de egreso (valor **o** excepción completa) + ≥1 tipo de atención.
+- **Qué exige:** odómetro de egreso (valor **o** excepción completa) + ≥1 tipo de atención + **`closeNotes` obligatorio** (diagnóstico / resumen de 10 a 1000 caracteres, D-207).
 - **Qué queda inmutable después:** el episodio no admite adjuntos posteriores (409 existente) ni edición (no existe endpoint); el historial se considera cerrado (ADR-005: la historia se agrega, no se reescribe).
 - **Auditoría:** `closedAt` + `updatedAt`; el autoría ya queda en `createdByMemberId`. La auditoría de "quién cerró" es detalle de diseño técnico (hoy no hay columna de cierre por miembro — §7.3.6).
 
@@ -394,7 +396,7 @@ model CareEpisodeServiceType {
 
 #### 7.3.6 Permiso nuevo (seed)
 
-- `care-episode.close` (module/resource/action `care-episode`/`care-episode`/`close`) → roles **owner + mechanic** (misma matriz que `care-episode.create`). **Sin cambios** en `employee`.
+- `care-episode.close` (module/resource/action `care-episode`/`care-episode`/`close`) → roles **owner + mechanic + employee** (D-208, 2026-11-17: cualquier miembro activo del taller puede cerrar). `care-episode.create` sigue en owner + mechanic.
 
 ### 7.4 Qué NO se toca (explícito)
 
@@ -409,16 +411,16 @@ model CareEpisodeServiceType {
 - **RF-1 — Ingreso unificado (D-158).** Un solo endpoint resuelve la placa: existe → reutiliza; no existe → crea `Vehicle` + `CareEpisode` + contacto en **una transacción** (sin estados intermedios: no puede quedar un vehículo sin atención ni una atención sin vehículo).
 - **RF-2 — Placa.** Normalización `trim().toUpperCase()` en cliente y servidor (D-037/D-042). Placa repetida en el check-in → **reutilizar, nunca 409** (C-9). La rama de "no existe" solo se activa con un 404 **confirmado** del lookup (un error de red no habilita crear).
 - **RF-3 — VIN.** Opcional (D-036). **Bloqueo único:** si el VIN informado ya pertenece a **otro** vehículo → 409 "El VIN ya está registrado en otro vehículo"; si el vehículo reutilizado tiene VIN distinto del informado → 409 "El VIN no coincide con el vehículo registrado". VIN ausente → sin bloqueo. (Placa nunca bloquea; VIN incompatible bloquea.)
-- **RF-4 — Datos mínimos del vehículo nuevo.** Placa (obligatoria) + marca + modelo + celular (**opcional** desde 2026-11-01, OA-03: si no se informa → `status=unavailable`, sin canal de reclamo). **No** se pide versión, año, color ni número de motor en el mostrador. VIN opcional con nota de trazabilidad. **Buena práctica del piloto (no requisito):** si el propietario está en el mostrador, **capturar el VIN fotografiando el parabrisas** — más vehículos quedan con verificación fuerte en el reclamo (últimos 4 del VIN, F-2/D-180) y la revisión manual se evita. El check-in **no** bloquea ni condiciona nada sin VIN.
+- **RF-4 — Datos mínimos del vehículo nuevo.** Placa (obligatoria) + marca + modelo + celular (**opcional** desde 2026-11-01, OA-03: si no se informa → `status=unavailable`, sin canal de reclamo). **No** se pide versión, año, color ni número de motor en el mostrador. VIN opcional con nota de trazabilidad. **Buena práctica del piloto (no requisito):** si el propietario está en el mostrador, **capturar el VIN fotografiando el parabrisas** — más vehículos quedan con verificación fuerte en el reclamo (últimos 4 del VIN, F-2/D-208) y la revisión manual se evita. El check-in **no** bloquea ni condiciona nada sin VIN.
 - **RF-5 — Marca/modelo.** Selects desde el catálogo existente (`/vehicle-brands`, `/vehicle-models`) con opciones finales **"Otra marca"** / **"Otro modelo"** que habilitan texto libre (obligatorio si se elige). Guardado en `brandName`/`modelName` (§7.3.1). Nunca un enum por taller.
 - **RF-6 — Celular del propietario (enmienda 2026-11-01, OA-03 → D-173).** **Opcional en el alta**: no se exige en el mostrador (~90% de los casos el taller ya conoce el contacto del propietario); si no se informa (con o sin la excepción explícita **"No disponible"**) persiste `status=unavailable` ("sin canal de reclamo") y **no se frena el mostrador**. UI: **dos inputs separados** — código de área + número — validados **en par, sin longitud fija** (ej. `336 4687486`, `11 22681000`); **país fijo en configuración** (`DEFAULT_PHONE_COUNTRY_CODE`, default `+54`; sin selector de país en MVP). Persistencia: **E.164 canónico en columna única** (fuente de verdad para el `wa.me`, que se arma **solo** desde el E.164, nunca desde el formato local) + los dos campos de display. No autentica, no crea cuenta, no habilita login, no es identidad. Quien está en el mostrador declara el canal vigente: si el vehículo ya tenía contacto, se muestra **enmascarado** y puede actualizarse (quién y cuándo queda en la fila de contacto).
 - **RF-7 — Odómetro obligatorio.** Ingreso (check-in) y egreso (cierre), enteros ≥ 0. Excepción "no legible" ⇒ flag + motivo (≥3 caracteres) + **foto del tablero** obligatoria (`phase=before` en ingreso, `phase=after` en egreso).
 - **RF-8 — Odómetro regresivo (D-164, confirmado 2026-10-31).** Si la lectura es **menor al máximo histórico del vehículo** → el backend responde con un código de aviso + la referencia; la UI muestra **modal de confirmación** (con la referencia visible) y al aceptar reenvía con confirmación explícita. **Nunca bloquea.** Excepción **"tablero reemplazado"** (opción del mismo modal): la lectura se persiste marcada como excepción y **reinicia la base de comparación** a partir de ese punto (la excepción es una marca auditable sobre la historia del vehículo, no solo del endpoint — mecánica: §13-9).
 - **RF-9 — Tipos de atención.** Catálogo **global** `ServiceType` filtrado por las especialidades del taller del contexto — **unión** de sus especialidades (sin especialidades → catálogo completo + aviso de onboarding). Relación tipo↔especialidad **M:N** vía `ServiceTypeSpecialty` (**D-174, OA-04 confirmado 2026-11-01**: un tipo puede pertenecer a varias especialidades, ej. "Diagnóstico por escáner" en mecánica y electricidad). Relación episodio↔tipo **M:N**, **máximo 3** por episodio, más opción **"Otro"** con texto libre obligatorio. **Obligatoriedad: al cierre ≥1; al ingreso opcional** (D-166, confirmado 2026-10-31).
 - **RF-10 — Aislamiento entre talleres.** Escritura: cada taller solo escribe en **sus** episodios (y en la creación de vehículos vía su propio check-in). Lectura: un taller con ≥1 atención sobre el vehículo puede ver el historial del vehículo y el detalle de episodios de **otros** talleres en **proyección resumida** = resumen + adjuntos, **incluyendo `customerComplaint` y `customerNotes`** (OA-09 → **D-175**, enmienda de D-168: "todo salvo `internalNotes`"); lo único oculto es **`internalNotes`** y la PII del propietario (email/nombre/teléfono — consistente con D-F023-2/D-072). **Nunca** escritura sobre episodios ajenos.
-- **RF-11 — Permisos.** `care-episode.create` (check-in), `care-episode.close` (nuevo), `care-episode.attach` (fotos), `care-episode.list`/`verify` (existentes). Guard order: `WorkshopOnlyGuard` **antes** de `PermissionsGuard` (anti-bypass D-024 A2). En contexto PERSONAL → 403; `employee` → 403; miembro inactivo → 403.
+- **RF-11 — Permisos.** `care-episode.create` (check-in), `care-episode.close`, `care-episode.attach` (fotos), `care-episode.list`/`verify`. Guard order: `WorkshopOnlyGuard` **antes** de `PermissionsGuard` (anti-bypass D-024 A2). En contexto PERSONAL → 403; miembro inactivo → 403. **`employee` puede cerrar** (D-208); sigue sin `create`/`attach`/`list`/`verify`.
 - **RF-12 — Fotos.** Opcionales para no frenar el mostrador; la UI **recomienda 1 en `before`** (copy de ayuda, no bloqueo — OA-05 **confirmada 2026-11-01**, D-177). Única foto obligatoria: la del odómetro ilegible. Fases `before/work/after` ya existen. Las fotos de egreso se suben **antes** de cerrar (C-8).
-- **RF-13 — Cierre.** Solo el taller dueño, solo desde `open`, exige egreso + tipos; transacción primero, eventos después; el fallo del consumidor de notificación **no** revierte ni retrasa el cierre.
+- **RF-13 — Cierre.** Solo el taller dueño, solo desde `open`, exige egreso + tipos + **resumen/diagnóstico obligatorio** (`closeNotes`, D-207); transacción primero, eventos después; el fallo del consumidor de notificación **no** revierte ni retrasa el cierre.
 - **RF-14 — Especialidad en onboarding.** El wizard del taller pasa a exigir ≥1 especialidad; los talleres ya activos sin especialidad se manejan con el fallback de RF-9 (§12, OA-07).
 - **RF-15 — Concurrencia.** Dos miembros (o dos talleres) ingresando la misma placa al mismo tiempo: el `@unique(licensePlate)` es la red final; ante P2002 el handler **reintenta como reutilización** (lee el vehículo creado por el otro y continúa con el episodio), no devuelve 500 ni 409.
 
@@ -453,7 +455,8 @@ model CareEpisodeServiceType {
 4. Dado un check-in con odómetro informado, entonces `mileageIn` queda persistido y la excepción `mileageInUnreadable` permanece `false`.
 5. Dado un check-in con marca fuera del catálogo elegida como "Otra marca", entonces el vehículo se guarda con `brandName` en texto libre y el lookup lo devuelve (fallback `version → brandName`).
 6. Dado un check-in con celular informado (área + número), entonces se persiste un registro de contacto **activo** `available` con `phoneE164` canónico (país de `DEFAULT_PHONE_COUNTRY_CODE`) y los dos campos de display (`phoneAreaCode`/`phoneNationalNumber`).
-7. Dado un miembro con una atención abierta, cuando completa odómetro de egreso y al menos un tipo de atención y presiona "Cerrar atención", entonces `POST /api/care-episodes/:id/close` responde 200 con `status=delivered`, `closedAt` seteado, `mileageOut` persistido y los tipos asociados.
+7. Dado un miembro con una atención abierta, cuando completa odómetro de egreso, al menos un tipo de atención y el diagnóstico/resumen obligatorio, y presiona "Cerrar atención", entonces `POST /api/care-episodes/:id/close` responde 200 con `status=delivered`, `closedAt` seteado, `mileageOut` persistido, los tipos asociados y `closeNotes` con el resumen.
+7b. Dado un cierre sin `closeNotes` (o con menos de 10 caracteres), entonces responde 400 y la atención sigue `open`.
 8. Dado el cierre exitoso de un vehículo **sin invite vigente y sin reclamo previo**, entonces se emite `care-episode.closed` con `{ careEpisodeId, vehicleId, workshopId }` **después** de la persistencia, y el consumidor del módulo de reclamo genera el invite (o queda registrado el fallo de reintento) **sin** que el estado del episodio dependa de ese resultado.
 9. Dado el episodio cerrado, entonces aparece con badge "Entregado" en `/atenciones` (F-023) y en el timeline del propietario (2-3) sin regresiones de orden (D-070) ni de PII.
 10. Dado un taller con ≥1 atención sobre un vehículo, cuando abre el historial del vehículo en contexto WORKSHOP, entonces ve todos los episodios (incluidos los de otros talleres) en modo lectura.
@@ -461,7 +464,7 @@ model CareEpisodeServiceType {
 ### Permisos y contexto
 
 11. Dado un miembro en contexto PERSONAL (sin headers), cuando intenta check-in o cierre, entonces responde 403 (WorkshopOnlyGuard, antes del bypass de super_admin).
-12. Dado un miembro con rol `employee`, cuando intenta check-in o cierre, entonces responde 403 PERMISSION_DENIED.
+12. Dado un miembro con rol `employee`, cuando intenta check-in, entonces responde 403 PERMISSION_DENIED; **cuando intenta cerrar una atención de su taller, entonces responde 200** (D-208).
 13. Dado un miembro activo del taller A, cuando intenta cerrar un episodio del taller B, entonces responde 403/404 controlado y **no** se modifica el episodio.
 14. Dado un miembro sin `care-episode.close` (rol/custom sin asignar), cuando intenta cerrar, entonces responde 403 PERMISSION_DENIED.
 
@@ -492,7 +495,7 @@ model CareEpisodeServiceType {
 
 32. `npm run build` (backend) sin errores y `npm run db:generate` consistente con la migración.
 33. Suites existentes de backend y frontend **sin regresiones** (en verde) **+** los **3 tests críticos** de OA-11 (D-178): (a) guard de transición de estado (`updateMany` de episodio e invite: un estado mal salido = vehículo reclamado dos veces), (b) atomicidad del check-in (`Vehicle` + `CareEpisode` en la misma transacción: fallo = vehículo huérfano), (c) test de contrato del GET pre-verificación del módulo de reclamos (no expone datos antes de verificar; control de seguridad).
-34. Seed actualizado: permiso `care-episode.close` (owner+mechanic) + catálogo `service_types` con la **lista aprobada del 2026-11-01 (§7.3.4)** + filas `service_type_specialties` (los 2 tipos multi-especialidad con 2 filas cada uno).
+34. Seed actualizado: permiso `care-episode.close` (owner+mechanic+employee, D-208) + catálogo `service_types` con la **lista aprobada del 2026-11-01 (§7.3.4)** + filas `service_type_specialties` (los 2 tipos multi-especialidad con 2 filas cada uno).
 35. Ninguna respuesta de este flujo expone `internalNotes` a talleres ajenos ni email/nombre/teléfono del propietario (select explícito, patrón Security Review #13); `customerComplaint` y `customerNotes` **sí** forman parte de la proyección multi-taller (D-175).
 36. Dado un vehículo cuyo primer cierre ya generó invite de reclamo (o que ya fue reclamado), cuando se cierra una segunda atención, entonces el cierre responde 200 `delivered` y el consumidor de reclamo **no** genera un invite nuevo (D-172; omisión sin error, coherente con el índice único parcial del diseño de reclamos).
 
@@ -591,3 +594,27 @@ El PM define **qué** y **por qué**; el Tech Lead define **cómo**. Para diseñ
 ---
 
 *Fin de la especificación — lista para análisis técnico del Tech Lead y confirmación de las decisiones abiertas del fundador.*
+
+---
+
+## Anexo � Convenci�n de tel�fono alternativo en notas internas (MVP)
+
+Decisi�n: el tel�fono de quien trae el veh�culo (tercero) se registra en
+CareEpisode.internalNotes (nota interna del taller), NO en customerNotes
+(visibles a otros talleres con relaci�n ? fuga de PII) ni como campo
+estructurado (complejidad prematura sin consumidor).
+
+Convenci�n de texto sugerida para que el frontend pueda detectar/prefill:
+Tel. alternativo: <n�mero>.
+
+UI (frontend):
+- Placeholder sugerido: "Notas internas del taller� Ej.: Tel. alternativo: 11 2233 4455, entrega a las 18 hs."
+- El aviso "Solo las ve tu taller" debe resaltarse (badge/chip o texto en
+  negrita + �cono de candado) para reforzar la frontera de privacidad (RF-10).
+
+Seguridad: no loguear el n�mero en claro (Pino) ni incluirlo en eventos
+(care-episode.created no lleva PII). El m�dulo de reclamo sigue usando
+�nicamente VehicleOwnerContact.phoneE164 (contacto del propietario).
+
+Disparador para migrar a campo estructurado: cuando exista una feature que
+opere sobre ese n�mero (notificaci�n, b�squeda, click-to-call).

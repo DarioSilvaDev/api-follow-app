@@ -35,9 +35,18 @@ La vista es la cara de lectura del lado del taller del mismo concepto que el tim
 
 ### D-F023-1 — Sin filtros en el MVP
 
+> **Enmendada por D-F023-1a (2026-11-17):** se agrega un único filtro `q` (patente). Ver abajo. El resto de D-F023-1 sigue vigente (sin filtros por estado, vehículo o rango de fechas).
+
 - El listado no lleva filtros (ni por estado, ni por vehículo, ni por rango de fechas).
 - Justificación: sobrealcance (AGENTS.md §6); scope ya estrecho (un taller activo), volumen inicial bajo, orden desc resuelve "ver recientes".
 - Candidato futuro (no MVP): filtro por estado (Abierto/Entregado/Cancelado).
+
+### D-F023-1a — Único filtro: búsqueda por patente (enmienda, 2026-11-17)
+
+- El listado acepta `q` (patente) en `GET /care-episodes`. Normalización idéntica a `list-vehicles` (D-044): trim; menos de 2 caracteres tras trim → se comporta como sin `q` (NO 400); `slice(0, 20)` (`licensePlate @db.VarChar(20)`); `contains` case-**insensitive**; ignora case pero **no** separadores.
+- `meta.total`/`totalPages` reflejan el total **filtrado**; la fase 1 (count + filas ligeras) va filtrada por patente vía nested filter a `vehicle`, antes del sort D-070 — totales y orden consistentes.
+- Sin otros filtros; sin cambios de permisos (`care-episode.list`) ni de seed.
+- Justificación: la patente es el identificador natural en mostrador (teléfono/recepción); replicar el patrón ya conocido de `/vehicles` minimiza curva de aprendizaje. Confirma enmienda el usuario (PO) el 2026-11-17.
 
 ### D-F023-2 — Sin nombre del propietario por fila (solo placa)
 
@@ -104,8 +113,9 @@ Clic en una card → /vehicles/{vehicleId}/servicios/{servicioId} (detalle exist
 - `status=cancelled` → sufijo " (cancelada)".
 
 ### RF-4: Campos por fila (contrato mínimo de producto)
-- **Incluidos:** `id`, `vehicleId` (requerido para el deep-link), `title`, `status`, `source`, `verification`, fecha canónica, `mileageIn` (si existe), vehículo: `licensePlate` + catálogo (marca, modelo, año).
+- **Incluidos:** `id`, `vehicleId` (requerido para el deep-link), `title`, `status`, `source`, `verification`, fecha canónica (instante ISO, clave de orden D-070) + `canonicalDateOnly` (**aditivo** desde Plan 05: fecha calendario `YYYY-MM-DD` derivada de `serviceDate`; `null` sii `serviceDate` es `null`), `mileageIn` (si existe), vehículo: `licensePlate` + catálogo (marca, modelo, año).
 - **Excluidos (PII / información interna):** nombre/email del propietario, `internalNotes`, `customerComplaint`, `customerNotes`, y cualquier otro campo no listado arriba. El backend usa `select` explícito (patrón defensa en profundidad de 2-3 / Security Review #13).
+- **Semántica de fecha (Plan 05):** `canonicalDate` es un **instante** (se formatea en hora local); `canonicalDateOnly` es una **fecha calendario** (se formatea en UTC). El front elige por `canonicalDateOnly != null`, nunca truncando el instante.
 
 ### RF-5: Estados en UI (copy existente, reutilizado)
 - `open` → badge "Abierto" (info); `delivered` → "Entregado" (success); `cancelled` → "Cancelado" (destructive). Textos ya implementados en el detalle (`servicios/[servicioId]`).
@@ -139,7 +149,7 @@ Clic en una card → /vehicles/{vehicleId}/servicios/{servicioId} (detalle exist
 - Copy y estados según §7.
 
 ### Fuera
-- Filtros (D-F023-1), nombre del propietario por fila (D-F023-2), quick-action en dashboard (D-F023-4).
+- Filtros por estado/vehículo/fecha (D-F023-1); **única excepción: búsqueda por patente `q` (D-F023-1a, 2026-11-17)**. Nombre del propietario por fila (D-F023-2), quick-action en dashboard (D-F023-4).
 - Edición/cancelación de episodios (D-075, iteración candidate 2-5).
 - Listado "vehículos del taller" (D-019, F-043 futuro).
 - Integración de service records / work orders / estimates (F-021/F-022+).
@@ -157,8 +167,10 @@ Clic en una card → /vehicles/{vehicleId}/servicios/{servicioId} (detalle exist
 - [ ] Dado un episodio `source=owner`, entonces lleva badge de origen ("Registrado por el propietario" o "Verificado") y **no** ofrece acción "Confirmar".
 - [ ] Dado un episodio `source=workshop` con `title=null`, entonces su título es "Atención de taller" (RF-3).
 - [ ] Dado que el payload del listado, entonces **no** contiene nombre/email del propietario, `internalNotes` ni `customerComplaint` (RF-4).
+- [ ] Dado un episodio con `serviceDate`, entonces la fecha de la card es la **fecha calendario** (11/11/2026) también en zonas UTC-3, y `canonicalDateOnly` viaja como `YYYY-MM-DD`; con `serviceDate` null, `canonicalDateOnly` es null y la card usa el instante canónico en hora local (sin regresión).
 - [ ] Dado que el usuario no tiene contexto WORKSHOP, entonces la entrada "Atenciones" no aparece en el nav.
 - [ ] Dado que hay más episodios que el page size, entonces se muestran total y controles Anterior/Siguiente (si totalPages > 1).
+- [ ] Dado que el usuario escribe ≥2 caracteres de una patente (D-F023-1a), entonces el listado se filtra por patente (`contains` case-insensitive), la paginación refleja el total filtrado y hay empty state "No se encontraron atenciones con esa patente" con acción "Limpiar búsqueda".
 - [ ] Regresión: "Nueva atención", "Verificaciones", timeline del vehículo y detalle de atención siguen funcionando; el highlight de nav no marca "Atenciones" activa dentro de sus subrutas.
 
 ### Build / Calidad
@@ -198,7 +210,7 @@ Clic en una card → /vehicles/{vehicleId}/servicios/{servicioId} (detalle exist
 
 ## DECISIONES DE PRODUCTO (confirmadas 2026-10-18)
 
-1. **D-F023-1:** sin filtros en el MVP.
+1. **D-F023-1:** sin filtros en el MVP. **Enmendada por D-F023-1a (2026-11-17):** único filtro `q` (patente), normalización idéntica a list-vehicles (D-044) — ver §4.
 2. **D-F023-2:** sin nombre del propietario por fila (solo placa + catálogo).
 3. **D-F023-3:** paginación mínima page-based, page size ~20.
 4. **D-F023-4:** sin quick-action en el dashboard; acceso por nav "Atenciones" (solo contexto WORKSHOP).

@@ -245,18 +245,33 @@ SELECT count(*) FROM service_type_specialties;      -- 16
   serviceTypeIds?: string[];         // 0..3
   customServiceLabel?: string;       // "Otro"
   ownerPhone?: { areaCode?: string; nationalNumber?: string } | null;
+  files?: File;                      // multipart: foto del tablero (máx. 1, D-163)
 }
 ```
+
+**Ruta DUAL (D-163, mismo patrón que `POST /owner`):** `application/json`
+mantiene el contrato histórico; `multipart/form-data` envía los mismos campos
+como texto + `files` (1 foto, JPG/PNG/WebP/AVIF, ≤5MB). En multipart:
+
+- `mileageInUnreadable` viaja como `"true"`/`"false"` (los transforms del DTO
+  evitan el foot-gun `Boolean('false') === true`).
+- `serviceTypeIds` viaja como campo repetido o JSON serializado.
+- `ownerPhone` viaja como JSON serializado (multipart no anida objetos).
 
 **Response 201:**
 
 ```json
 { "data": { "careEpisodeId": "uuid", "vehicleId": "uuid", "licensePlate": "ABC123",
             "status": "open", "mileageIn": 45000, "checkedInAt": "…",
-            "vehicleCreated": true, "ownerContact": { "status": "available", "phoneMasked": "…2268" } } }
+            "vehicleCreated": true, "ownerContact": { "status": "available", "phoneMasked": "…2268" },
+            "attachments": [ { "id": "uuid", "phase": "before", "…": "…" } ],
+            "attachmentCount": 1 } }
 ```
 
-**Errores:** 400 (validación), 403 (branch de otro taller / contexto no WORKSHOP), 404 (branch inexistente), 409 (`VIN ya registrado en otro vehículo` / `VIN no coincide con el vehículo registrado`).
+**Errores:** 400 (validación; foto obligatoria si `mileageInUnreadable=true`),
+403 (branch de otro taller / contexto no WORKSHOP), 404 (branch inexistente),
+409 (`VIN ya registrado en otro vehículo` / `VIN no coincide con el vehículo registrado`),
+503 (storage caído al subir la foto: el episodio no se crea).
 
 ### 4.2 Handler y transacción
 
@@ -268,8 +283,11 @@ execute(command):
   2. validar branch ∈ workshopId del contexto          → 403
   3. validar tipos (≤3; XOR serviceTypeId/customLabel) → 400
   4. validar odómetro: (mileageIn) XOR (unreadable + reason) → 400
-     (la foto `before` se valida en el attach, no acá)
-  5. $transaction:
+     · si unreadable: foto obligatoria (files.length ≥ 1)   → 400 (D-163)
+     · si legible: 1 foto `before` opcional (D-170)
+  5. episodeId = uuid() (las keys nacen bajo care-episodes/<episodeId>/)
+     · upload de la foto (máx. 1) → fallo de storage = 503; nada persistido
+  6. $transaction:
      a. vehicle = findUnique({ licensePlate })
      b. si no existe → create({ licensePlate, brandName/modelName/versionId, vin })
         · si vin viene y ya existe en otro vehículo → 409 (P2002 sobre vin)
@@ -278,16 +296,21 @@ execute(command):
      c. si existe → si vin viene y difiere → 409
         · si vehicle.deletedAt !== null → 409 "El vehículo está dado de baja;
           contactá a soporte". No resucitar ni crear otro (licensePlate es @unique)
-     d. careEpisode = create({ vehicleId, workshopId, branchId, createdByMemberId,
-                               status:'open', checkedInAt: now, source:'workshop',
-                               mileageIn + flags, complaint/notes })
+     d. careEpisode = create({ id: episodeId, vehicleId, workshopId, branchId,
+                               createdByMemberId, status:'open', checkedInAt: now,
+                               source:'workshop', mileageIn + flags,
+                               complaint/notes,
+                               attachments: { create: [{ phase:'before', … }] } })
      e. serviceTypes: createMany (0..3), validando antes que existan y estén activos
      f. ownerContact: si viene teléfono → cerrar activo previo (isActive=false) + crear nuevo
         · el orden es obligatorio: primero el update, después el create
           (vehicle_owner_contacts_active_unique es inmediato, no deferrable)
         si no viene → si no hay activo, crear status='unavailable'
-  6. post-commit: emit 'care-episode.created' (evento existente, sin cambios de payload)
-  7. return response
+  7. COMPENSACIÓN: si el paso 6 falla tras el upload → borrar el blob
+     (best-effort, log) y re-lanzar el error
+  8. post-commit: emit 'care-episode.created' (payload sin cambios; la evidencia
+     viaja en la creación, no hay evento individual `attachment.added`)
+  9. return response (incluye attachments + attachmentCount)
 ```
 
 **Concurrencia y soft-delete (`D-TL-B2`, corrección 8 del review):**

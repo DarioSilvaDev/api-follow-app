@@ -2471,6 +2471,7 @@ Amendar parcialmente D-024 A2 para habilitar el journey **"el propietario regist
 ### D-066 — Taller responsable: XOR `workshopId` | `workshopName`
 
 - `workshopId` proviene de la búsqueda pública acotada `GET /api/workshops/search?q=` (sin membresía; PII mínima `{id, name, logoUrl?, city}`; sin taxId/email/branches); `workshopName` es texto libre ≤150. Ambos o ninguno → 400.
+  > **Enmienda (2026-11-13):** el taller que recibe un episodio en su cola ahora puede **rechazarlo** además de confirmarlo o ignorarlo → **D-202..D-205** (`POST /api/care-episodes/:id/reject`, RF-9). El registro no se borra ni se oculta.
 
 ### D-067 — Permiso `care-episode.verify` para owner + mechanic
 
@@ -5306,6 +5307,110 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 
 ---
 
+## D-202 — Rechazo de registros del propietario en el MVP (enum `rejected` + `POST /:id/reject`)
+
+**Fecha:** 2026-11-13 · **Estado:** ACCEPTED · **Tipo:** Product / Backend
+
+**Fuente:** decisión del usuario 2026-11-13; spec `docs/specs/owner-service-records-verification-flow.md` (RF-9, enmienda 2026-11-13).
+
+**Contexto:** D-066 y el diseño del PM fijaban que en el MVP el taller responsable "solo confirma o ignora" (sin rechazo). El usuario solicitó agregar el rechazo de los episodios `source=owner`.
+
+**Decisión:** se implementa **rechazo completo y terminal**: enum `CareEpisodeVerification` gana el valor **`rejected`** (migración aditiva con `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, sin backfill); nuevo endpoint **`POST /api/care-episodes/:id/reject`** con exactamente los mismos guards que verify (`JwtAuthGuard` + `ContextGuard` + **`WorkshopOnlyGuard` ANTES de `PermissionsGuard`** + `@Permissions('care-episode.verify')` — permiso D-067 **reutilizado, cero cambios de seed**) y `@HttpCode(200)`; campos nuevos `rejectedAt`, `rejectedByMemberId` (FK WorkshopMember, relación `RejectedCareEpisodes`) y `rejectionReason` (todos nullable/aditivos); evento `care-episode.rejected`. El registro **no se borra ni se oculta**: sale de la cola solo porque el filtro de RF-4 es exactamente `unverified` (sin cambios de backend). Amenda **D-066**.
+
+**Consecuencias:** migración `20261113120000_care_episode_rejected` (generada manualmente por drift preexistente en `20261013115218` — deuda documentada, usar `db:deploy`); matriz de verify ampliada (`rejected` → 409, antes caía en el 404 defensivo); el gate FROZEN de adjuntos cubre `rejected`; el detalle `GET /:id` expone los tres campos nuevos (el listado/historial **no** cambia contrato); **el UI/frontend de rechazo queda fuera de esta enmienda** (badge "Rechazado por {taller}", botón Rechazar + motivo).
+
+---
+
+## D-203 — Motivo de rechazo opcional visible para el propietario + notificación
+
+**Fecha:** 2026-11-13 · **Estado:** ACCEPTED · **Tipo:** Product / UX / Email
+
+**Fuente:** decisión del usuario 2026-11-13; spec RF-9.
+
+**Contexto:** al habilitar el rechazo, el usuario pidió que el propietario pueda **ver el motivo** y quede **notificado** (el diseño del PM no preveía motivo visible ni notificación).
+
+**Decisión:** `RejectCareEpisodeDto { reason?: string }` (`@IsOptional @IsString @MaxLength(500)` + trim; vacío tras el trim → `NULL`). El motivo es **opcional para el taller pero visible para el propietario**: se persiste en `rejectionReason`, se expone en `GET /:id` y se incluye en el **email de notificación cuando existe**. Para mitigar el riesgo de que el rechazo se use como "feedback loop" agresivo contra el propietario, se registra el listener **`CareEpisodeRejectedEmailListener`** (`@OnEvent('care-episode.rejected', { async: true })`, best-effort) que resuelve al **propietario vigente** (ownership sin `endsAt`, semántica D-155) y le envía el mail. Auditoría completa igual: `rejectedByMemberId`, `rejectedAt`, `rejectionReason`.
+
+**Consecuencias:** copy es-AR voseo aprobada en este registro (asunto `Rechazaron tu registro «{título}» - Autentia`); el segundo rechazo del mismo taller es 200 idempotente y **no** sobreescribe el motivo original; un fallo de mail jamás rompe el `POST` (try/catch interno del listener, patrón `CareEpisodeClosedListener`, `suppressErrors` por defecto).
+
+---
+
+## D-204 — EMAIL al propietario al rechazo (decisión del usuario 2026-11-13, enmienda al diseño del PM)
+
+**Fecha:** 2026-11-13 · **Estado:** ACCEPTED · **Tipo:** Product / Email
+
+**Fuente:** decisión del usuario 2026-11-13 — **enmienda directa** a la recomendación "sin notificación" del diseño del PM (el PM asumía que el propietario lo vería en el detalle del vehículo).
+
+**Decisión:** al emitirse `care-episode.rejected` se envía un **email al propietario** con el asunto **`Rechazaron tu registro «{título}» - Autentia`** y cuerpo con: taller responsable, fecha calendario del servicio, patente del vehículo y — **si existe** — el motivo del rechazo; CTA `Ver el registro` → `${FRONTEND_URL}/vehicles/{vehicleId}/servicios/{careEpisodeId}`. Destinatario = **propietario ACTUAL resuelto de BD**, nunca un id enviado en el evento (evita mail al titular histórico). Template nuevo `care_episode_rejected` (`CARE_EPISODE_REJECTED`) en `mail.service.ts` con `CareEpisodeRejectedEmailParams`. Sin tokens ni datos de sesión en el mail; asunto es texto plano (solo `headerSafe`, no html-escaping).
+
+**Consecuencias:** el envío vive en el listener de D-203 (best-effort `async: true`, in-process EventEmitter2 — sin retries/outbox, deuda aceptada igual que los demás mails de la plataforma); el email es la única superficie nueva de copy (sin cambios de frontend).
+
+---
+
+## D-205 — Rechazo terminal: sin reversión ni reenvío; verify sobre `rejected` → 409
+
+**Fecha:** 2026-11-13 · **Estado:** ACCEPTED · **Tipo:** Product / Backend
+
+**Fuente:** decisión del usuario 2026-11-13; spec RF-9.
+
+**Contexto:** con el rechazo habilitado había que definir qué pasa después: ¿el taller se arrepiente? ¿el propietario reintenta?
+
+**Decisión:** el rechazo es **terminal**: (a) **sin reversión** — el taller no puede volver el registro a `unverified`/`verified` (el único write es el one-shot); (b) **sin reenvío** — el propietario no puede resubmitir el mismo registro (si persiste, crea un **recurso nuevo** bajo el throttle existente 30/60s de `POST /owner`); (c) `POST /:id/verify` sobre un episodio `rejected` responde **409** (rechazo terminal — antes caía en el 404 defensivo final, semántica incorrecta; corregido en esta enmienda); (d) idempotencia: segundo rechazo del **mismo** taller → **200** con estado actual, motivo original preservado y **sin** segundo evento; `rejected` por **otro** taller → 409 (defensivo); (e) la evidencia queda **congelada**: `DELETE /:id/attachments/:attachmentId` → 409 con `verification !== 'unverified'` (mismo gate FROZEN que `verified`).
+
+**Consecuencias:** matriz de verify y de reject documentadas y testeada en ambos handlers; el propietario queda **sin "segunda oportunidad"** sobre el mismo registro — límite aceptado explícitamente (el registro rechazado permanece visible en su historial con el motivo); riesgo de "feedback loop" mitigado por D-203/D-204 (motivo visible + email), no por reversibilidad.
+
+---
+
+## D-206 - El alta PERSONAL acepta kilometraje actual opcional
+
+**Fecha:** 2026-11-15 · **Estado:** ACCEPTED · **Tipo:** Product / Backend / Contrato
+
+**Fuente:** pedido del usuario 2026-11-15. **Enmienda** a `docs/gap-1-0km-dealer-registration-design.md` §"En `PERSONAL` el campo se rechaza (comportamiento actual preservado)".
+
+**Contexto:** el alta personal (`POST /api/vehicles` en contexto `PERSONAL`) rechazaba `initialMileage` con 400. El propietario está cargando **su propio** vehículo y conoce (o puede consultar) el odómetro: es la única oportunidad gratuita de abrir la historia con una lectura real. Rechazarla obliga a un segundo paso (`POST /vehicles/:id/mileage`) que muchos usuarios nunca dan, y deja el tramo más importante de la historia sin registrar.
+
+**Decisión:** en `PERSONAL`, `initialMileage` pasa a ser **opcional**. Cuando viaja:
+
+- se persiste como `VehicleMileage` con `source = owner`, `recordedByUserId = actor`, `recordedAt = now`;
+- junto con `VehicleOwnership` (`type = owner`) y `VehicleAuditLog` (`action = mileage_recorded`, `previousValue = null`, `contextType = 'personal'`) en **una sola transacción** (`createPersonalRegistration`), mismo criterio atómico que el alta por concesionaria (D-128);
+- sin kilometraje, el alta sigue usando el `create` clásico (vehículo + ownership) sin lectura de odómetro.
+
+**Sin cambios:** en `DEALERSHIP` sigue siendo **obligatorio** (D-148) con `source = dealership`; el campo de contrato sigue llamándose `initialMileage` en ambos contextos; `PATCH /vehicles/:id` sigue **sin** aceptarlo (`UpdateVehicleDto` no lo declara — el kilometraje se corrige por `POST /vehicles/:id/mileage`, D-05/D-06).
+
+**Consecuencias:** no hay migración de esquema (`MileageSource.owner` y el audit log ya existen); la invariante de monotonía (D-141) no aplica en el alta porque es la primera lectura; el dato aparece en el timeline del vehículo como "Propietario". El frontend muestra el campo como **"Kilometraje actual (opcional)"** en PERSONAL (PROD-015 del registro de frontend) y mantiene "Kilometraje inicial" obligatorio en DEALERSHIP.
+
+**Deuda aceptada:** el alta personal no registra el lock `FOR UPDATE` que usa `RecordMileageHandler`; no hace falta porque el vehículo todavía no existe para ningún otro escritor (el `INSERT` es el primer acceso a esa fila).
+
+---
+
+## D-207 — Cierre de atención con diagnóstico / resumen obligatorio
+
+**Fecha:** 2026-11-17 · **Estado:** ACCEPTED · **Tipo:** Product / Backend / Contrato
+
+**Fuente:** decisión del fundador 2026-11-17; spec `docs/specs/workshop-checkin-flow.md` (actualización 2026-11-17, RF-13).
+
+**Contexto:** el cierre `open → delivered` (D-167) existía con `closeNotes` opcional, documentado solo como motivo de excepción (D-TL-B4). Una atención entregada podía quedar sin información sobre qué se hizo en el taller.
+
+**Decisión:** `closeNotes` pasa a ser **obligatorio** en `POST /api/care-episodes/:id/close`, con **10 a 1000 caracteres** (trim en servidor) y significado ampliado: **diagnóstico / resumen de lo que se hizo**, con el motivo de excepción como caso particular. Se **reutiliza la columna existente** `close_notes VARCHAR(1000)` — sin migración ni campo nuevo. La UI del panel del taller rotula el campo "Diagnóstico / resumen de la atención".
+
+**Consecuencias:** `CloseCareEpisodeDto` declara el campo como requerido con `@MinLength(10)`/`@MaxLength(1000)`; `CloseCareEpisodeHandler` revalida la presencia y el mínimo para llamadas directas. Sin resumen válido → 400 y la atención permanece `open`. El detalle ya expone `closeNotes` al taller y al propietario (D-175), sin cambios de contrato de lectura. La corrección posterior del resumen sigue siendo post-MVP (D-176).
+
+---
+
+## D-208 — Cualquier miembro del taller puede cerrar una atención
+
+**Fecha:** 2026-11-17 · **Estado:** ACCEPTED · **Tipo:** Product / Backend / Permisos
+
+**Fuente:** decisión del fundador 2026-11-17; spec `docs/specs/workshop-checkin-flow.md` (actualización 2026-11-17, RF-11).
+
+**Contexto:** el permiso `care-episode.close` se sembraba solo para los roles sistema `owner` y `mechanic` (misma matriz que `care-episode.create`), de modo que un `employee` recibía 403 al intentar cerrar.
+
+**Decisión:** el permiso `care-episode.close` se otorga también al rol sistema **`employee`**. En MVP, **cualquier miembro activo del taller dueño del episodio** puede cerrar, en contexto `WORKSHOP`, con `WorkshopOnlyGuard` antes de `PermissionsGuard` (D-024 A2). `care-episode.create`, `attach`, `list` y `verify` **no** cambian: siguen excluidos para `employee`.
+
+**Consecuencias:** cambio de datos en `prisma/seed.ts` (matriz de roles y `seedCareEpisodeClosePermission`); sin cambios de guards ni de endpoints. Roles **custom** de taller requieren asignación explícita del permiso (no cubiertos por el seed, igual que el resto de la matriz). La edición/corrección posterior (F-021) y el estado `cancelled` quedan fuera de este alcance.
+
+---
+
 ## Decisiones aún ABiertas (consolidadas 2026-11-01)
 
 > **Actualizada 2026-11-01:** **F-3, S-3 y F-10 RESUELTAS** (→ D-187, D-188, D-189); del lado del módulo de reclamos queda como **único bloqueante P-2** (contenido, PR-6).
@@ -5340,3 +5445,37 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 3. ~~**Premisa "cierre de atención inexistente"**~~ **RESUELTO:** el diseño ya remite a la fase C de este spec (B-4, D-167) como precondición de PR-7.
 4. **Fuente del contacto — RESUELTO en la fuente, ABIERTO en el alcance:** el diseño ya declara el registro activo `VehicleOwnerContact` (D-161) y su campo canónico `phoneE164` (D-173) como fuente de `ownerPhone`. El alcance del override `ownerPhone` sigue abierto (F-7).
 5. **C-5 (verificado, matiz correcto):** `VehicleOwnership.userId` es nullable **pero** el CHECK `vehicle_ownerships_owner_xor` exige `user_id XOR dealership_id NOT NULL` — no puede existir una fila sin persona ni concesionaria; el problema real sigue siendo titularidad + slot de D-155 (resuelto con D-161).
+
+---
+
+## Decisión — Teléfono alternativo de quien trae el vehículo (MVP)
+
+**Decisión:** usar CareEpisode.internalNotes (nota interna del taller) para
+registrar el teléfono del tercero que lleva el vehículo. No se agrega un campo
+estructurado en esta iteración.
+
+**Motivación:** el dato no tiene consumidor estructurado hoy (no hay
+notificación/búsqueda/click-to-call al traedor); internalNotes ya posee la
+frontera de privacidad correcta (workshop-only, oculto a otros talleres y al
+propietario por RF-10/D-175) y no requiere migración ni nuevas superficies de
+proyección. Evita complejidad prematura.
+
+**Convención de texto:** Tel. alternativo: <número>.
+
+**Reglas operativas:**
+- El número va en internalNotes, NUNCA en customerNotes (visibles a otros
+  talleres con relación → fuga de PII).
+- No loguear el número en claro (Pino) ni incluirlo en eventos.
+- El módulo de reclamo sigue usando únicamente
+  VehicleOwnerContact.phoneE164 (contacto del propietario).
+
+**UI:** placeholder sugerido "Notas internas del taller… Ej.: Tel. alternativo:
+11 2233 4455, entrega a las 18 hs." y resaltar el aviso "Solo las ve tu taller"
+(badge/chip o negrita + ícono de candado).
+
+**Disparador para migrar a campo estructurado:** cuando exista una feature que
+opere sobre ese número (notificación, búsqueda, click-to-call). En ese caso:
+columna nullable lternateContactPhone (E.164) en CareEpisode, misma
+proyección que internalNotes, enmascarado con maskPhone, validación con
+uildE164. Decisiones de producto pendientes: capturar también el nombre de
+quien trae el auto; política de retención/borrado de ese PII.

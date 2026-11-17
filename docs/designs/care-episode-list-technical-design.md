@@ -10,7 +10,7 @@
 
 ## 0. Resumen ejecutivo
 
-Feature de lectura del lado del taller: endpoint workshop-scoped + página `/atenciones` con cards paginadas. Sin filtros, sin PII del propietario, sin quick-action. Cierre del journey de lectura (crear → verificar → **ver**).
+Feature de lectura del lado del taller: endpoint workshop-scoped + página `/atenciones` con cards paginadas. Filtro único por patente `q` (D-F023-1a), sin PII del propietario, sin quick-action. Cierre del journey de lectura (crear → verificar → **ver**).
 
 1. **Backend:** `GET /api/care-episodes` (raíz) con `WorkshopOnlyGuard + PermissionsGuard('care-episode.list')`, `select` explícito PII-excluido, orden canónico D-070 (sort JS) + paginación page-based (limit 20).
 2. **Frontend:** página `/atenciones` (espejo de verificaciones), ítem "Atenciones" en `NAV_ITEMS_WORKSHOP`, fix de `isActive` para `/atenciones` exacto, tipos + función api.
@@ -62,13 +62,13 @@ Formato del proyecto. Cada decisión cierra un ítem de spec §10.
 
 **Decisión:** Orden canónico `serviceDate ?? checkedInAt ?? createdAt` **desc** implementado con **sort JS post-query** (patrón validado en iteración 2-3, `get-vehicle-history.handler.ts`), combinado con paginación page-based en dos fases:
 
-1. `count({ where: { workshopId } })` → `total`.
-2. `findMany({ where: { workshopId }, select: { id, serviceDate, checkedInAt, createdAt } })` → filas **ligeras** (4 columnas escalares, sin joins).
+1. `count({ where })` → `total` (`where` = `{ workshopId }`, o `{ workshopId, vehicle: { licensePlate: { contains: q, mode: 'insensitive' } } }` con `q` activo, D-F023-1a).
+2. `findMany({ where, select: { id, serviceDate, checkedInAt, createdAt } })` → filas **ligeras** (4 columnas escalares; con `q` se agrega nested filter to-one a `vehicle`).
 3. Sort JS D-070 (coalesce desc + tiebreak `createdAt` desc) sobre las filas ligeras — misma semántica exacta que el timeline.
 4. Slice `[(page-1)*limit, page*limit]` → ≤20 IDs de la página.
 5. `findMany({ where: { id: { in: ids } }, select: <select completo con join de catálogo> })` → detalles **solo de la página**.
 6. Reordenar los ≤20 detalles según la posición del sort (el `in` de Prisma no preserva orden): map `id → índice` y sort por él.
-7. Mapear a `CareEpisodeListItem` con `canonicalDate = serviceDate ?? checkedInAt ?? createdAt`.
+7. Mapear a `CareEpisodeListItem` con `canonicalDate = serviceDate ?? checkedInAt ?? createdAt` (instante ISO, clave de orden) y `canonicalDateOnly = formatDateOnly(serviceDate)` (fecha calendario `YYYY-MM-DD`, `null` sii `serviceDate` es `null` — Plan 05).
 
 **Justificación:**
 - **Prisma `orderBy` compuesto NO equivale al coalesce** (rechazado en 2-3): con `serviceDate` null e `checkedInAt` seteado, el orderBy compuesto los trataría distinto que el coalesce. El sort JS es la única realización hoy verificada del D-070 exacto.
@@ -102,6 +102,7 @@ Formato del proyecto. Cada decisión cierra un ítem de spec §10.
       "source": "workshop",
       "verification": "unverified",
       "canonicalDate": "2026-10-10T14:00:00.000Z",
+      "canonicalDateOnly": "2026-10-10",
       "mileageIn": 45230,
       "vehicle": {
         "licensePlate": "ABC123",
@@ -118,6 +119,7 @@ Formato del proyecto. Cada decisión cierra un ítem de spec §10.
       "source": "owner",
       "verification": "verified",
       "canonicalDate": "2026-09-28T09:30:00.000Z",
+      "canonicalDateOnly": null,
       "mileageIn": null,
       "vehicle": {
         "licensePlate": "ABC123",
@@ -132,10 +134,11 @@ Formato del proyecto. Cada decisión cierra un ítem de spec §10.
 ```
 
 **Notas de contrato:**
-- `canonicalDate` es **siempre** un ISO string no-null (`createdAt` es NOT NULL en el schema, es el último fallback del coalesce). El backend lo pre-computa para que el frontend no reimplemente D-070 en esta vista y para que el sort del backend y el dato mostrado sean coherentes por construcción.
+- `canonicalDate` es **siempre** un ISO string no-null (`createdAt` es NOT NULL en el schema, es el último fallback del coalesce). El backend lo pre-computa para que el frontend no reimplemente D-070 en esta vista y para que el sort del backend y el dato mostrado sean coherentes por construcción. **Es la clave de orden (instante): no cambia** con el Plan 05.
+- `canonicalDateOnly` es **aditivo** (Plan 05 / D-TZ-4 / B-TZ-7): la **fecha calendario** derivada de `serviceDate` en el wire, `YYYY-MM-DD`, **`null` si y solo si `serviceDate` es `null`**. No usar "episodio de taller" como sinónimo: el seed tiene episodios `workshop` con `serviceDate`. El front muestra `canonicalDateOnly` cuando no es null y, cuando es null, degrada a `formatDate(canonicalDate)` (instante en hora local, comportamiento previo).
 - `vehicle.version` **NO** se incluye: RF-4 es exhaustivo ("marca, modelo, año"); el `select` explícito excluye cualquier campo no listado (defensa en profundidad, patrón 2-3 / Security Review #13). La UI muestra "marca modelo · año".
 - `status`, `source`, `verification` viajan como los enums Prisma crudos; los labels ("Abierto", "Cancelado", "Registrado por el propietario", "Verificado") los resuelve el frontend (RF-5, copy existente).
-- Campos **excluidos** por contrato (PII / internos): nombre/email del propietario, `internalNotes`, `customerComplaint`, `customerNotes`, `workshopName`, `checkedInAt`/`serviceDate`/`createdAt` crudos (solo el canónico), y cualquier otro no listado.
+- Campos **excluidos** por contrato (PII / internos): nombre/email del propietario, `internalNotes`, `customerComplaint`, `customerNotes`, `workshopName`, `checkedInAt`/`serviceDate`/`createdAt` crudos (solo el canónico y el date-only derivado), y cualquier otro no listado.
 
 ---
 
@@ -223,8 +226,9 @@ const isActive = (href: string) => {
 |---|---|---|---|---|
 | `page` | number | `1` | `min 1` | `Math.max(1, page ?? 1)` |
 | `limit` | number | `20` (`DEFAULT_PAGE_SIZE`) | `1..100` (`MAX_PAGE_SIZE`) | `Math.min(Math.max(1, limit ?? 20), 100)` |
+| `q` | string | — | `slice(0, 20)` | Patente (D-F023-1a, enmienda de D-F023-1). trim; `<2` caracteres tras trim o no-string (`?q=a&q=b`) → se comporta como sin `q` (NO 400); `contains` + `mode: 'insensitive'` sobre `vehicle.licensePlate`. Ignora case pero no separadores. Se normaliza en el handler (D-TL-F023-4). `meta.total`/`totalPages` reflejan el total filtrado. |
 
-Sin otros params (D-F023-1: sin filtros).
+Otros params: ninguno. El único filtro es `q` (D-F023-1a: búsqueda por patente; el resto de D-F023-1 sigue vigente).
 
 ### 2.3 Select de Prisma
 
@@ -280,8 +284,9 @@ Sin joins a `ownerships`/`user` (D-F023-2: sin PII del propietario). Sin `intern
 Ver D-TL-F023-3 (§1). Resumen del flujo del handler:
 
 ```
-count(workshopId) → total
-findMany(light select, where workshopId) → N filas {id, serviceDate, checkedInAt, createdAt}
+where = q ? { workshopId, vehicle: { licensePlate: { contains: q, mode: 'insensitive' } } } : { workshopId }
+count(where) → total (filtrado si hay q, D-F023-1a)
+findMany(light select, where) → N filas {id, serviceDate, checkedInAt, createdAt}
 sort JS D-070 (coalesce desc, tiebreak createdAt desc)
 slice [(page-1)*limit, page*limit) → ≤20 ids
 findMany(full select, where id IN ids) → ≤20 detalles
@@ -307,6 +312,7 @@ return { data, meta: { total, page, limit, totalPages: ceil(total/limit) } }
 ### 2.6 Índices usados
 
 - `@@index([workshopId, createdAt])` (schema línea 998): cubre el filtro `where: { workshopId }` (prefijo del índice) tanto en el `count` como en el `findMany` ligero y el detallado. El **orden** es JS (no usa el índice); aceptable para el volumen inicial (D-TL-F023-3).
+- Con `q` activo (D-F023-1a): nested filter `vehicle.licensePlate contains` — to-one, sobre el scope `workshopId` ya indexado; el `LIKE '%…%'` no usa índice (mismo trade-off aceptado que vehicles; sin cambio de índice en esta iteración).
 
 ---
 

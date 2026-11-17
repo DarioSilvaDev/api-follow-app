@@ -4,6 +4,7 @@
 > **Fecha:** 2026-09-11
 > **Estado:** v2 — Aprobada por Tech Lead con ajustes #1–#9 (2026-09-11). Lista para implementación.
 > **Basado en:** P2-1..P2-6 (F-020), decisiones A-G confirmadas por usuario 2026-09-11, D-024 A2 (a amendar parcialmente vía D-062), D-060 (Trust diferido → retomado en modo discreto), ADR-005 T3/T4, D-020 A1, D-035
+> **Enmienda (2026-11-13):** se incorpora el **rechazo de registros del propietario** — D-202..D-205, RF-9, §5 journeys, §7 contrato, §8 alcance, §9 AC y §11 riesgos. Incluye el **email al propietario** (decisión del usuario 2026-11-13 que enmienda la recomendación "sin notificación" del diseño del PM).
 
 ---
 
@@ -47,8 +48,8 @@ Completar el journey **"el propietario registra un servicio histórico y el tall
 
 ### D-064 — Confianza como nivel discreto, no puntaje
 
-- `CareEpisodeVerification { unverified | verified }` (minúsculas, convención del repo). `verified` **implica** verificación por taller (solo talleres pueden verificar).
-- Mapping de UI **source-aware**: `source=workshop` → "Registrado por {taller}" ignorando `verification` (nunca mostrar "Registrado por el propietario" para episodios de taller); `source=owner` → "Registrado por el propietario" (si `unverified`) / "Verificado por {workshop}" (si `verified`).
+- `CareEpisodeVerification { unverified | verified | rejected }` (minúsculas, convención del repo; **`rejected` agregado por la enmienda 2026-11-13 / D-202**). `verified` **implica** verificación por taller (solo talleres pueden verificar); `rejected` **implica** rechazo por el taller responsable (solo ese taller, mismo guard que verify).
+- Mapping de UI **source-aware**: `source=workshop` → "Registrado por {taller}" ignorando `verification` (nunca mostrar "Registrado por el propietario" para episodios de taller); `source=owner` → "Registrado por el propietario" (si `unverified`) / "Verificado por {workshop}" (si `verified`) / **"Rechazado por {workshop}"** (si `rejected` — fila nueva, D-202).
 - Se descarta el puntaje numérico 4/10 (regla arbitraria sin datos para sostenerla). Escala 1-10 futura (si llega) se deriva de estos niveles.
 - El taller **no puede** verificar episodios `source=workshop` (ya son confiables por origen) ni episodios de otros talleres.
 
@@ -62,7 +63,8 @@ Completar el journey **"el propietario registra un servicio histórico y el tall
 - Al crear un episodio owner, el propietario indica el taller de una de dos formas, **mutuamente excluyentes**:
   - **En la app:** busca el taller por nombre (`GET /api/workshops/search?q=`) → `workshopId` (la cola de verificación de ese taller verá el episodio).
   - **Texto libre:** `workshopName` (el taller no está en la app; queda sin verificación posible hasta que se registre y reclame — fuera de alcance MVP).
-- Si elige taller de la app, ese taller lo ve en su cola de verificaciones y puede confirmar o ignorar. No hay "rechazo" en MVP (evita feedback loops; el propietario no pierde nada: su registro queda `unverified`).
+- Si elige taller de la app, ese taller lo ve en su cola de verificaciones y puede confirmar, **rechazar** o ignorar.
+  > **Enmienda (2026-11-13, D-066 → D-202..D-205):** se elimina la frase "No hay 'rechazo' en MVP". El taller ahora dispone de **rechazo completo y terminal**: `POST /api/care-episodes/:id/reject` (RF-9). El registro **no se borra ni se oculta** — sale de la cola solo (filtro `unverified`), queda marcado `rejected` con actor y fecha auditables, congelá su evidencia y notifica al propietario por email. El propietario **no** puede reenviar el registro rechazado (recurso nuevo con el throttle existente 30/60s) ni revertirlo (D-205).
 
 ### D-067 — Permiso nuevo `care-episode.verify` (owner + mechanic)
 
@@ -107,12 +109,40 @@ Episodio → verification=verified, verifiedByMemberId, verifiedAt
   Se emite care-episode.verified
 ```
 
+```
+Actor: Recepcionista del mismo taller (contexto WORKSHOP — Lubricentro Central)
+  ↓
+Reconoce que el registro NO corresponde a un trabajo suyo
+  (o el propietario adjuntó una comprobante que no coincide)
+  ↓
+POST /api/care-episodes/:id/reject  body { reason?: "No consta en nuestros registros" } → 200
+  ↓
+Episodio → verification=rejected, rejectedByMemberId, rejectedAt, rejectionReason
+  Sale de la cola de verificaciones (filtro unverified) — NO se borra ni se oculta
+  Se emite care-episode.rejected → email al propietario:
+  "Rechazaron tu registro «Cambio de aceite + 2 neumáticos» - Autentia"
+  (con taller, fecha, patente y — si existe — el motivo)
+```
+
 ### Flujo alternativo: episodio ajeno al taller
 ```
   → Miembro de taller intenta confirmar un episodio cuyo workshopId != contexto → 404 (no revelar existencia)
   → Intenta confirmar un episodio source=workshop → 403 (ya es confiable por origen)
   → Intenta confirmar uno ya verified por ESTE taller → 200 idempotente (devuelve estado actual)
   → Intenta confirmar uno ya verified por OTRO taller → 409
+  → Confirmar uno ya rejected → 409 (rechazo terminal, D-205)
+```
+
+### Flujo alternativo: rechazo (RF-9)
+```
+  → Rechazar un episodio unverified de SU taller → 200 (rejected + evento + email al propietario)
+  → Rechazar uno ya rejected por ESTE taller → 200 idempotente (estado actual; el motivo
+    original NO se sobreescribe; sin evento)
+  → Rechazar uno ya rejected por OTRO taller → 409 (defensivo)
+  → Rechazar uno ya verified → 409 (rechazo terminal)
+  → Rechazar source=workshop → 403; de OTRO taller → 404 (no revelar existencia)
+  → Rechazar con motivo vacío/ausente → 200 con rejectionReason = NULL
+  → Propietario intenta POST /:id/reject → 403 (WorkshopOnlyGuard, igual que verify)
 ```
 
 ### Flujo alternativo: contexto incorrecto
@@ -152,13 +182,14 @@ Episodio → verification=verified, verifiedByMemberId, verifiedAt
 ### RF-4: Cola de verificaciones del taller (contexto WORKSHOP)
 - `GET /api/care-episodes/verifications` (WorkshopOnly + `care-episode.verify`):
   - Episodios con `source='owner'`, `verification='unverified'`, `workshopId = ctx.workshopId`.
+    - **Enmienda (2026-11-13, D-202):** el filtro es exactamente `unverified`, por lo que los episodios **`rejected` quedan FUERA de la cola** sin cambios de backend (el rechazo es terminal y ya no espera decisión del taller).
   - Orden: `serviceDate` asc (más antiguos primero, prioridad de atención). **`limit` default 50, max 100** (anti-scraping interno).
   - Devuelve por episodio: `id`, `title`, `serviceDate`, `mileageIn?`, `notes?` + vehículo (`licensePlate`, `brand`, `model`, `version`, `manufactureYear` — join catálogo) + propietario (`firstName`, `lastName` — sin email, PII mínimo: el taller está confirmando trabajo de un cliente identificable por placa+nombre).
 
 ### RF-5: Confirmar verificación (contexto WORKSHOP)
 - `POST /api/care-episodes/:id/verify` (WorkshopOnly + `care-episode.verify`):
   - **Atomicidad (ajuste #6):** `updateMany({ where: { id, workshopId: ctx.workshopId, source: 'owner', verification: 'unverified' }, data: { verification: 'verified', verifiedByMemberId: ctx.memberId, verifiedAt: new Date() } })`.
-  - Si `count === 0` → re-leer y decidir: no existe → 404; `source='workshop'` → 403 (el taller conoce sus check-ins, ya confiables); ya `verified` por ESTE taller → 200 idempotente (devuelve estado); ya `verified` por OTRO taller → 409; `workshopId` de otro taller → **404** (no revelar existencia).
+  - Si `count === 0` → re-leer y decidir: no existe → 404; `source='workshop'` → 403 (el taller conoce sus check-ins, ya confiables); ya `verified` por ESTE taller → 200 idempotente (devuelve estado); ya `verified` por OTRO taller → 409; **ya `rejected` → 409 (rechazo terminal, D-205 — antes caía en el 404 defensivo final, semántica incorrecta; corregido en esta enmienda)**; `workshopId` de otro taller → **404** (no revelar existencia).
   - Emite `care-episode.verified` (payload: `{ careEpisodeId, vehicleId, workshopId, verifiedByMemberId, verifiedAt }`).
   - El propietario NO puede llamar este endpoint (WorkshopOnly).
   - Foot-gun registrado: la ruta estática `verifications` y `POST :id/verify` conviven hoy sin colisión (no existe `GET :id` ni `POST :id`); si en F-021/F-022 se agrega `:id`, declarar las rutas estáticas primero (patrón F-012).
@@ -175,8 +206,28 @@ Episodio → verification=verified, verifiedByMemberId, verifiedAt
 - **Botón "Registrar servicio"** en el detalle `/vehicles/[id]`: visible solo si `isVehicleOwner && activeContext?.type === 'PERSONAL'` (un owner con taller seleccionado ve el flujo taller).
 - **Página taller "Verificaciones"**: ruta nueva bajo el dashboard, link condicionado a `activeContext?.type === 'WORKSHOP'` (mismo patrón del link "Nueva atención"). Lista de la cola + badge "Pendiente de verificación" + detalle mínimo + botón "Confirmar" (con confirmación) + estados (éxito, 403/404/409).
 - La página "Nueva atención" existente (`/atenciones/nueva`) **NO se bifurca** — sigue siendo del taller (contexto WORKSHOP); el journey del propietario vive en su ruta propia bajo `/vehicles/[id]/servicios/nueva`.
-- Tipos frontend: `CareEpisodeSource ('workshop'|'owner')`, `CareEpisodeVerification ('unverified'|'verified')` (valores reales del enum, minúsculas), `WorkshopSearchResult`, `CareEpisodeVerificationItem`; funciones API nuevas (`searchWorkshops`, `getCareEpisodeVerifications`, `verifyCareEpisode`).
+- Tipos frontend: `CareEpisodeSource ('workshop'|'owner')`, `CareEpisodeVerification ('unverified'|'verified')` (valores reales del enum, minúsculas; **el backend agrega `'rejected'` en D-202 — el tipo y el UI de rechazo son frontend y quedan fuera de esta enmienda, ver §8**), `WorkshopSearchResult`, `CareEpisodeVerificationItem`; funciones API nuevas (`searchWorkshops`, `getCareEpisodeVerifications`, `verifyCareEpisode` [+ `rejectCareEpisode` cuando se implemente el UI]).
 - El inyector de contexto actual (auth/* excluido, logout reset) NO cambia.
+
+### RF-9: Rechazo del registro por el taller responsable (NUEVO — enmienda 2026-11-13, D-202..D-205)
+
+- **Ruta:** `POST /api/care-episodes/:id/reject` — **idéntica a verify en guards**: `JwtAuthGuard` + `ContextGuard` (clase) + **`WorkshopOnlyGuard` ANTES de `PermissionsGuard`** (método) + **`@Permissions('care-episode.verify')`** — **permiso D-067 REUTILIZADO, cero cambios de seed**. `@HttpCode(HttpStatus.OK)` **explícito** (200, no el 201 default de POST). **Sin throttle nuevo** (one-shot, patrón de `verify`).
+- **DTO:** `RejectCareEpisodeDto { reason?: string }` — `@IsOptional @IsString @MaxLength(500)` + trim (patrón de `CloseCareEpisodeDto`); string vacío tras el trim → `NULL`.
+- **Handler `RejectCareEpisodeHandler` (espejo de verify):** `updateMany` atómico `where: { id, workshopId: ctx.workshopId, source: 'owner', verification: 'unverified' }` → `data: { verification: 'rejected', rejectedByMemberId: ctx.memberId, rejectedAt: new Date(), rejectionReason: reason ?? null }`.
+- **Matriz (count === 0 → re-leer y decidir):**
+  | Estado actual | Respuesta |
+  |---|---|
+  | no existe | 404 |
+  | `workshopId` de otro taller | 404 (no revelar existencia) |
+  | `source='workshop'` | 403 (ya confiable por origen) |
+  | `unverified` de ESTE taller | **200** — `verification='rejected'`, `rejectedByMemberId`, `rejectedAt`, `rejectionReason` + emite evento |
+  | ya `rejected` por **ESTE** taller | **200 idempotente** — devuelve el estado actual; el **motivo original NO se sobreescribe**; sin evento |
+  | ya `rejected` por **OTRO** taller (defensivo) | 409 |
+  | ya `verified` (por este u otro taller) | 409 |
+- **Evento:** `care-episode.rejected` (`CareEpisodeRejectedEvent extends BaseEvent`), emitido **SOLO tras el commit exitoso**, payload `{ careEpisodeId, vehicleId, workshopId, rejectedByMemberId, rejectedAt, rejectionReason? }`.
+- **EMAIL al propietario (decisión del usuario 2026-11-13 — enmienda a la recomendación "sin notificación" del PM):** listener `CareEpisodeRejectedEmailListener` (`@OnEvent('care-episode.rejected', { async: true })`, **best-effort**: un fallo de mail jamás rompe el `POST` — D-109/D-119). Destinatario = **propietario ACTUAL** resuelto de BD (`vehicleOwnership` vigente, semántica D-155), nunca un id del evento. Copy es-AR voseo, asunto `Rechazaron tu registro «{título}» - Autentia`, cuerpo con taller, fecha calendario, patente y — **si existe — el MOTIVO (visible para el propietario, decisión del usuario)**; CTA al detalle del registro (`${FRONTEND_URL}/vehicles/{vehicleId}/servicios/{careEpisodeId}`). Sin tokens ni datos de sesión en el mail; template `care_episode_rejected`.
+- **Invariante:** el rechazo **NUNCA** cambia el `source` (D-063), **NO** borra ni oculta el registro (D-202), es **terminal** (sin reenvío del propietario ni reversión del taller — D-205) y **congela la evidencia**: `DELETE /:id/attachments/:attachmentId` responde 409 con `verification !== 'unverified'` (mismo gate FROZEN que `verified`).
+- **Detalle (`GET /:id`):** expone `rejectedAt`, `rejectedByMemberId` y `rejectionReason` (**solo en el detalle**; el listado/historial no cambian su contrato).
 
 ## 7. Contrato Backend (validado por TL — ajustes aplicados)
 
@@ -196,6 +247,10 @@ workshopName      String?   @map("workshop_name") @db.VarChar(150) // texto libr
 createdByUserId   String?   @map("created_by_user_id") @db.Uuid   // autor owner (auditoría)
 verifiedByMemberId String?  @map("verified_by_member_id") @db.Uuid // FK WorkshopMember
 verifiedAt        DateTime? @map("verified_at") @db.Timestamptz
+// RECHAZO (enmienda 2026-11-13, D-202) — aditivo
+rejectedAt        DateTime? @map("rejected_at") @db.Timestamptz
+rejectedByMemberId String?  @map("rejected_by_member_id") @db.Uuid // FK WorkshopMember
+rejectionReason   String?   @map("rejection_reason") @db.VarChar(500)
 
 // RELACIONES opcionales (obligatorio en Prisma al hacer NULLABLE las FKs) + back-relations:
 workshop          Workshop?       @relation(fields: [workshopId], references: [id], onDelete: Restrict)
@@ -203,11 +258,13 @@ branch            WorkshopBranch? @relation(fields: [branchId], references: [id]
 createdByMember   WorkshopMember? @relation(fields: [createdByMemberId], references: [id], onDelete: Restrict)
 createdByUser     User?           @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 verifiedByMember  WorkshopMember? @relation("VerifiedCareEpisodes", fields: [verifiedByMemberId], references: [id], onDelete: Restrict)
+rejectedByMember  WorkshopMember? @relation("RejectedCareEpisodes", fields: [rejectedByMemberId], references: [id], onDelete: Restrict)
 // En User: careEpisodesCreated CareEpisode[]
 // En WorkshopMember: verifiedCareEpisodes CareEpisode[] (relación "VerifiedCareEpisodes")
+//                     rejectedCareEpisodes CareEpisode[] (relación "RejectedCareEpisodes")
 
 enum CareEpisodeSource { workshop owner }
-enum CareEpisodeVerification { unverified verified }
+enum CareEpisodeVerification { unverified verified rejected }  // 'rejected' agregado por D-202 (aditivo, ADD VALUE IF NOT EXISTS)
 ```
 - Registros existentes (F-020, todos de taller): `source` default `workshop`, `verification` default `unverified` — backfill automático por default constante (metadata-only en PG), sin datos manuales.
 - Índices añadidos: `@@index([workshopId, source, verification])` (cola), `@@index([createdByUserId])` (auditoría propietario). Sin nombres custom (Prisma auto-genera).
@@ -221,8 +278,9 @@ enum CareEpisodeVerification { unverified verified }
 | `GET /api/workshops/search?q=` | PERSONAL o WORKSHOP | JwtAuth | Búsqueda pública acotada (RF-3) + Throttle 30/60s; controller nuevo ANTES de WorkshopsController |
 | `GET /api/care-episodes/verifications` | WORKSHOP | WorkshopOnly + `care-episode.verify` | Cola del taller (RF-4) |
 | `POST /api/care-episodes/:id/verify` | WORKSHOP | WorkshopOnly + `care-episode.verify` | Confirmar (RF-5, idempotente) |
+| `POST /api/care-episodes/:id/reject` | WORKSHOP | WorkshopOnly + `care-episode.verify` | **NUEVO (RF-9, D-202..D-205)** — rechazar (200 explícito, terminal, idempotente); permiso D-067 reutilizado, cero cambios de seed |
 
-- El evento `care-episode.created` se extiende con `source` (payload: `workshopId`/`createdByMemberId` pasan a nullables; + `createdByUserId?`). Nuevo evento `care-episode.verified` con `verifiedAt` (BaseEvent). Sin listeners nuevos (grep: no hay `@OnEvent('care-episode.*')`).
+- El evento `care-episode.created` se extiende con `source` (payload: `workshopId`/`createdByMemberId` pasan a nullables; + `createdByUserId?`). Nuevo evento `care-episode.verified` con `verifiedAt` (BaseEvent). **Enmienda D-202..D-205:** además, nuevo evento **`care-episode.rejected`** (`CareEpisodeRejectedEvent extends BaseEvent`) y **nuevo listener** `CareEpisodeRejectedEmailListener` (`@OnEvent('care-episode.rejected', { async: true })`, best-effort) que envía el email al propietario vigente — la línea original "Sin listeners nuevos (grep: no hay `@OnEvent('care-episode.*')`)" queda **derogada** por esta enmienda.
 - No se modifica ni un carácter del POST WORKSHOP actual ni de sus tests (la ruta `/owner` es un sub-ruteo adicional, precedente: `invitations/accept`, `lookup`, `transfers/incoming`).
 
 ### DTO (dos DTOs, uno por ruta — ajuste #6)
@@ -249,6 +307,7 @@ CreateOwnerCareEpisodeDto {
 - `POST /api/care-episodes/owner` (nuevo handler + DTO + evento extendido) — POST de taller INTACTO.
 - `GET /api/workshops/search?q=` (búsqueda pública acotada; controller nuevo antes de WorkshopsController).
 - `GET /api/care-episodes/verifications` + `POST /api/care-episodes/:id/verify` + evento `care-episode.verified`.
+- **Rechazo (enmienda 2026-11-13, D-202..D-205):** `POST /api/care-episodes/:id/reject` + enum `rejected` (migración aditiva) + evento `care-episode.rejected` + email al propietario (`care_episode_rejected`) + matriz verify↔reject + campos `rejectedAt`/`rejectedByMemberId`/`rejectionReason` en el detalle.
 - Permisos `care-episode.verify` + seed.
 - Frontend: "Registrar servicio" (propietario, ruta `/vehicles/[id]/servicios/nueva`) + "Verificaciones" (taller) + tipos/funciones API.
 - Tests (backend 3 suites nuevas ~15-20 tests; frontend ~15-20 tests).
@@ -256,7 +315,7 @@ CreateOwnerCareEpisodeDto {
 ### Fuera (siguientes iteraciones)
 - Editar/borrar episodio (F-021), cerrar (F-022), listado episodios del taller completo (F-023), timeline con episodios + sello de confianza (F-024).
 - "Reclamo" de un taller escrito en texto libre (reclamar workshopName → workshopId) — decisión futura.
-- Rechazo/desvinculación de verificación (el taller solo confirma o ignora en MVP).
+- ~~"Rechazo/desvinculación de verificación"~~ — **movido a Dentro** por la enmienda 2026-11-13 (D-202..D-205): el backend de rechazo SÍ está en MVP; queda fuera el **UI/frontend** de rechazo (badge "Rechazado por {taller}", botón "Rechazar" + campo de motivo en la página de Verificaciones, mapeo source-aware en el detalle del vehículo, tipo `CareEpisodeVerification` con `'rejected'`) — el backend expone el contrato (RF-9) y no hay cambios frontend en esta enmienda.
 - Escala 1-10 derivada (decisión futura sobre D-064).
 - `mileageIn` → `VehicleMileage` (D-068 difiere).
 
@@ -274,6 +333,15 @@ CreateOwnerCareEpisodeDto {
 - [ ] Dado el propietario en PERSONAL, cuando intenta `POST /:id/verify`, entonces 403 (WorkshopOnly).
 - [ ] Dado `GET /api/workshops/search?q=` autenticado (sin membresía), entonces devuelve `200 []` sin match o ≤10 talleres activos con solo `id`/`name`/`logoUrl?`/`city`; sin taxId/email/branches; `q` de 1 char → 400; throttle 30/60s activo.
 - [ ] Regresión: el flujo WORKSHOP de F-020 (POST + lookup con throttle 30/60s), los journeys PERSONAL F-010..F-014 y el inyector de contexto no se rompen.
+
+### Rechazo (enmienda 2026-11-13, D-202..D-205)
+- [ ] Dado un episodio OWNER de SU taller en `unverified`, cuando el miembro (owner/mechanic) llama `POST /:id/reject`, entonces 200 con `verification='rejected'`, `rejectedByMemberId=ctx.memberId`, `rejectedAt` seteado, `rejectionReason` (o `NULL` si no se envió) y se emite `care-episode.rejected`.
+- [ ] Dado un episodio ya `rejected` por ESTE taller, cuando vuelve a rechazar, entonces 200 idempotente con el estado actual, el **motivo original preservado** y **sin** segundo evento.
+- [ ] Dado un episodio `unverified` de OTRO taller → 404; `source='workshop'` → 403; ya `verified` → 409; ya `rejected` por OTRO taller → 409.
+- [ ] Dado un episodio `rejected` (cualquier taller), cuando se llama `POST /:id/verify`, entonces 409 (rechazo terminal; antes respondía 404 defensivo).
+- [ ] Dado el propietario en PERSONAL, cuando intenta `POST /:id/reject`, entonces 403 (WorkshopOnlyGuard ANTES de PermissionsGuard); sin permiso `care-episode.verify` → 403; el endpoint responde **200** (no 201).
+- [ ] Dado el rechazo exitoso, entonces se envía el email al propietario **vigente** (ownership sin `endsAt`, semántica D-155) con asunto `Rechazaron tu registro «{título}» - Autentia`, taller, fecha y — si existe — el motivo; un fallo de envío **no** rompe el `POST` (best-effort).
+- [ ] Dado un episodio `rejected`, entonces: no aparece en `GET /verifications` (filtro `unverified`), `DELETE /:id/attachments/:attachmentId` → 409 (gate FROZEN), `GET /:id` expone `rejectedAt`/`rejectedByMemberId`/`rejectionReason` y el listado/historial **no** cambia su contrato.
 
 ### Build / Calidad
 - [ ] Backend: `npm test` verde (baseline 29 suites/264 tests + nuevos) + build OK.
@@ -299,7 +367,9 @@ CreateOwnerCareEpisodeDto {
 | Propietario asocia talleres random a sus episodios (spam de cola del taller) | Media | El taller solo ve su cola (limit 50/100) y confirma o ignora; no hay costo para el taller; auditoría (`verifiedByMemberId`). |
 | PII: el taller ve nombre completo + placa del propietario en la cola | Media | Solo firstName+lastName+placa (sin email/teléfono); el taller confirma trabajo de un cliente que lo declaró; revisión de Security antes de implementar. |
 | `serviceDate` futura con husos | Baja | Comparación contra fin de día UTC en el handler (tolerancia documentada; sin `user.timezone` — sobre-ingeniería en MVP). |
-| Migración de enums: Postgres enums `source`/`verification` | Baja | Enums nuevos aditivos con default constante (source='workshop', verification='unverified'); sin renombrar existentes. |
+| Migración de enums: Postgres enums `source`/`verification` | Baja | Enums nuevos aditivos con default constante (source='workshop', verification='unverified'); sin renombrar existentes. **D-202:** `rejected` se agrega con `ALTER TYPE ... ADD VALUE IF NOT EXISTS` (aditivo, sin backfill). |
+| Rechazo usado como "feedback-loop" agresivo contra el propietario (denegar para que no sea verificable, o rechazos masivos sin motivo) | Media (D-203) | Motivo **opcional pero visible** para el propietario + **email de notificación** (transparencia); auditoría completa (`rejectedByMemberId`, `rejectedAt`, `rejectionReason`); rechazo **terminal SIN reenvío** — el propietario no puede "reintentar" sobre el mismo registro (si persiste, crea un recurso nuevo bajo el throttle existente 30/60s, costo de spam bajo); el registro **no se borra ni se oculta** (el propietario siempre ve qué pasó); matriz con idempotencia (segundo rechazo no altera nada) para evitar carreras. |
+| Fallo del email de rechazo (mail provider caído) | Baja | Listener `async: true` + try/catch interno (best-effort, patrón `CareEpisodeClosedListener`): el estado del rechazo ya está commiteado y el `POST` responde 200 aunque el mail falle; sin retries ni outbox (in-process EventEmitter2, D-109/D-119) — deuda aceptada y registrada. |
 
 ---
 

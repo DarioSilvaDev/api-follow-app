@@ -262,6 +262,8 @@ Sin columna `vehicleMileageId`: la auditoría es un registro histórico y **no**
 
 **Decisión:** en contexto `DEALERSHIP`, `POST /vehicles` exige `initialMileage: integer >= 0`. En `PERSONAL` el campo se rechaza (comportamiento actual preservado).
 
+> **ENMENDADO por D-206 (2026-11-15).** En `PERSONAL` el campo ya **no** se rechaza: pasa a ser **opcional** ("kilometraje actual" declarado por el propietario) y, cuando viaja, se persiste como `VehicleMileage(source=owner)` + `VehicleAuditLog(contextType='personal')` en la misma transacción que el alta. En `DEALERSHIP` no cambia nada (sigue obligatorio, `source=dealership`).
+
 El `source` del registro inicial es `dealership`, con la atribución completa (D-01), y genera `VehicleAuditLog(action=mileage_recorded)` en la misma transacción.
 
 **Razón:** un 0 km sin fila de kilometraje es indistinguible de un vehículo sin datos, que es exactamente la ambigüedad que D-144/D-157 buscan eliminar.
@@ -526,7 +528,7 @@ Matriz idéntica para los tres, según lo cerrado. No se diferencia por rol de s
 
 `RegisterVehicleDto`
 - `vin?` con el validador compartido (D-04).
-- `initialMileage?` — `required` y `>= 0` cuando el contexto es `DEALERSHIP`; rechazo explícito en `PERSONAL`.
+- `initialMileage?` — `required` y `>= 0` cuando el contexto es `DEALERSHIP`; en `PERSONAL` es **opcional** y se persiste como lectura `source=owner` (D-206, enmienda).
 
 `UpdateVehicleDto`
 - Ya no extiende `PartialType(RegisterVehicleDto)`.
@@ -629,7 +631,7 @@ Ruta y límite idénticos (D-09). El controlador público no inyecta `CurrentUse
 
 | Archivo | Cambio |
 |---|---|
-| `vehicles/new/*` | Pedir `initialMileage` cuando el contexto activo es `DEALERSHIP`; mostrar solo ese campo. Validar VIN con el espejo de D-04. |
+| `vehicles/new/*` | Mostrar el kilometraje en ambos contextos: **obligatorio** en `DEALERSHIP` ("Kilometraje inicial") y **opcional** en `PERSONAL` ("Kilometraje actual", D-206). Validar VIN con el espejo de D-04. |
 | `vehicles/[id]/edit/*` | Dejar de enviar `vin`; mostrar el campo como solo lectura con un enlace a la corrección auditada. |
 | `vehicles/[id]/page.tsx` | Usar `capabilities` en vez de `isOwner`; `recordMileage` sin `source`; banner de consignación solo para no-miembros. |
 | `transfer/qr/[token]/page.tsx` | Dejar de redirigir anónimos antes del preview. |
@@ -660,7 +662,7 @@ Ruta y límite idénticos (D-09). El controlador público no inyecta `CurrentUse
 | Archivo | Casos nuevos |
 |---|---|
 | `__test__/vin.test.ts` *(nuevo)* | Mismos vectores que el backend. Es el mecanismo de detección de deriva de D-04. |
-| `vehicles/new/__test__/vehicle-register-form.test.tsx` | Pide `initialMileage` en `DEALERSHIP`; no lo pide en `PERSONAL`; error 400 de `initialMileage`. |
+| `vehicles/new/__test__/vehicle-register-form.test.tsx` | En `DEALERSHIP` exige y envía `initialMileage`; en `PERSONAL` lo muestra como "Kilometraje actual" opcional, lo omite si queda vacío y lo envía si se completa (D-206). |
 | `vehicles/[id]/edit/__test__/vehicle-edit-form.test.tsx` | El payload **no** incluye `vin`. |
 | `vehicles/[id]/__test__/vehicle-detail-page.test.tsx` | `capabilities.canRecordMileage` habilita el formulario; `canRecordMileage=false` lo oculta; el payload no manda `source`; renderiza 0 km como registro. |
 | `transfer/qr/[token]/__test__/qr-accept-page.test.tsx` | Anónimo ve el preview. |
