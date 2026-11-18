@@ -1,18 +1,17 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
-import { PinoLogger } from 'nestjs-pino';
+import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { AUTH_REPOSITORY } from '../../tokens';
 import type { AuthRepository } from '../../repositories/auth.repository';
 import { ResetPasswordCommand } from './reset-password.command';
 import { PasswordResetCompletedEvent } from '../../events/password-reset-completed.event';
-import { createModuleLoggerToken } from '../../../../common/logger/create-module-logger';
 
 @Injectable()
 export class ResetPasswordHandler {
   constructor(
-    @Inject(createModuleLoggerToken('Auth'))
+    @InjectPinoLogger('Auth')
     private readonly logger: PinoLogger,
     private readonly prisma: PrismaService,
     @Inject(AUTH_REPOSITORY)

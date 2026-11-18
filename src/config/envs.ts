@@ -6,6 +6,8 @@ dotenv.config();
 interface Ienvs {
   PORT: number;
   NODE_ENV: string;
+  /** Nivel mínimo de logs pino (`fatal|error|warn|info|debug|trace`). Default: `info`. */
+  LOG_LEVEL: string;
   DATABASE_URL: string;
   JWT_SECRET: string;
   JWT_ACCESS_EXPIRES_IN: string;
@@ -60,6 +62,9 @@ const schema = Joi.object({
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
+  LOG_LEVEL: Joi.string()
+    .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent')
+    .default('info'),
   DATABASE_URL: Joi.string().required(),
   JWT_SECRET: Joi.string().required(),
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('1500'),

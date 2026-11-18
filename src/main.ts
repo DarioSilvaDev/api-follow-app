@@ -1,18 +1,17 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { envs } from './config/envs';
-import { ConsoleLogger, ValidationPipe } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
+import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import * as express from 'express';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: new ConsoleLogger({
-      colors: true,
-      json: true,
-      logLevels: ['error', 'log'],
-    }),
+    // bufferLogs: los logs de bootstrap (módulos cargados, mapeo de rutas…)
+    // se bufferean y se vuelcan por pino apenas useLogger() está activo.
+    bufferLogs: true,
     cors: {
       origin:
         envs.NODE_ENV === 'production'
@@ -22,6 +21,11 @@ async function bootstrap() {
       credentials: true,
     },
   });
+
+  // El logger global pasa a ser pino (JSON estructurado, correlación por
+  // x-request-id). A partir de aquí, `new Logger(...)` de @nestjs/common
+  // escribe por pino y pino-http loguea cada request automáticamente.
+  app.useLogger(app.get(Logger));
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

@@ -66,10 +66,6 @@ export class RegisterVehicleHandler {
     // persisten como texto (`brandName`/`modelName`), con `versionId = null`.
     // Sin par de catálogo, los tres quedan null (opcional, D-038).
     const vehiclePayload = await this.prepareVehicleData(dto);
-    console.log(
-      '🚀 ~ RegisterVehicleHandler ~ execute ~ vehiclePayload:',
-      vehiclePayload,
-    );
 
     if (ctx.type === 'DEALERSHIP') {
       return this.registerFromDealership(
@@ -97,10 +93,6 @@ export class RegisterVehicleHandler {
     dto: RegisterVehicleDto,
   ): Promise<RegisterVehiclePayload> {
     const catalog = await resolveCatalogBrandModel(this.prisma, dto);
-    console.log(
-      '🚀 ~ RegisterVehicleHandler ~ prepareVehicleData ~ catalog:',
-      catalog,
-    );
     return {
       // ...stripCatalogPair(dto),
       ...dto,
@@ -123,10 +115,6 @@ export class RegisterVehicleHandler {
     userId: string,
     licensePlate: string,
   ) {
-    console.log(
-      '🚀 ~ RegisterVehicleHandler ~ registerFromPersonal ~ vehiclePayload:',
-      vehiclePayload,
-    );
     await this.assertPlateAvailable(licensePlate);
 
     const { initialMileage } = vehiclePayload;

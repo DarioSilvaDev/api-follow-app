@@ -1,7 +1,6 @@
 import {
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -14,8 +13,7 @@ import { CareEpisodeAttachmentAddedEvent } from '../../events/care-episode-attac
 import { AttachCareEpisodeAttachmentsCommand } from './attach-care-episode-attachments.command';
 import { StorageR2Service } from '../../../../common/storage/storage-r2.service';
 
-import { createModuleLoggerToken } from '../../../../common/logger/create-module-logger';
-import { PinoLogger } from 'nestjs-pino';
+import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 
 export const MAX_ACTIVE_ATTACHMENTS = 15;
 
@@ -50,7 +48,7 @@ export class AttachCareEpisodeAttachmentsHandler {
   );
 
   constructor(
-    @Inject(createModuleLoggerToken('Auth'))
+    @InjectPinoLogger('CareEpisodes')
     private readonly pinoLogger: PinoLogger,
     private readonly prisma: PrismaService,
     private readonly storage: StorageR2Service,
@@ -60,7 +58,16 @@ export class AttachCareEpisodeAttachmentsHandler {
   async execute(command: AttachCareEpisodeAttachmentsCommand) {
     const { careEpisodeId, workshopId, memberId, phase, caption, file } =
       command;
-    this.pinoLogger.info('Processing attachment for care episode', { command });
+    // NUNCA loguear `command`: incluye el buffer binario del archivo y el
+    // caption (PII potencial). Solo IDs, MIME y tamaño.
+    this.pinoLogger.info('Processing attachment for care episode', {
+      careEpisodeId,
+      workshopId,
+      memberId,
+      phase,
+      mimeType: file?.mimetype,
+      size: file?.size,
+    });
     const episode = await this.prisma.careEpisode.findFirst({
       where: { id: careEpisodeId, workshopId },
       select: {

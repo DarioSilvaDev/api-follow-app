@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { PinoLogger } from 'nestjs-pino';
+import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { InvalidCredentialsException } from '../../../../common/exceptions/coded.exception';
@@ -15,7 +15,6 @@ import { AuthResponseDto } from '../../dto/auth-response.dto';
 import { UserLoggedInEvent } from '../../events/user-logged-in.event';
 import { RoleService } from '../../services/role.service';
 import { LoginCommand } from './login.command';
-import { createModuleLoggerToken } from '../../../../common/logger/create-module-logger';
 
 interface LoginResult {
   response: AuthResponseDto;
@@ -27,7 +26,7 @@ interface LoginResult {
 @Injectable()
 export class LoginHandler {
   constructor(
-    @Inject(createModuleLoggerToken('Auth'))
+    @InjectPinoLogger('Auth')
     private readonly logger: PinoLogger,
     private readonly prisma: PrismaService,
     @Inject(AUTH_REPOSITORY)

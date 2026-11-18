@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
+import { IncomingMessage, ServerResponse } from 'node:http';
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
+import { sanitizeUrl } from './common/utils/sanitize-url';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -24,6 +28,62 @@ import { envs } from './config/envs';
 
 @Module({
   imports: [
+    // Logging estructurado (JSON) sobre Pino para TODA la app: request
+    // logging vía pino-http, correlación por `x-request-id` y redacción de
+    // secretos. Debe ser el primer módulo importado. Los logs de Nest
+    // (`new Logger(...)`) se enrutan acá gracias a `app.useLogger()` en main.ts.
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: envs.LOG_LEVEL,
+        // genReqId: se adopta el `x-request-id` entrante SOLO si está bien
+        // formado (anti-log-injection desde clientes arbitrarios); cualquier
+        // otro valor se descarta y se genera un UUID v4. El ID se publica
+        // además como header de respuesta para correlación cliente↔servidor.
+        genReqId: (req: IncomingMessage, res: ServerResponse) => {
+          const header = req.headers['x-request-id'];
+          const value = Array.isArray(header) ? header[0] : header;
+          const id =
+            typeof value === 'string' &&
+            /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value)
+              ? value
+              : randomUUID();
+          res.setHeader('x-request-id', id);
+          return id;
+        },
+        // Defensa en profundidad (capa 1): nada de Authorization/cookies/
+        // password en las líneas de log. Observe redacta además por su lado.
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers["x-api-key"]',
+            'res.headers["set-cookie"]',
+            'password',
+            '*.password',
+            'accessToken',
+            'refreshToken',
+            '*.accessToken',
+            '*.refreshToken',
+            '*.passwordHash',
+          ],
+          censor: '[REDACTED]',
+        },
+        autoLogging: {
+          // Readiness/liveness: ruido sin payload. Requests a la DB y al
+          // storage los puede reportar Observe en la Fase 2.
+          ignore: (req: IncomingMessage) =>
+            !!req.url && sanitizeUrl(req.url).startsWith('/api/health'),
+        },
+        serializers: {
+          req: (req) => ({
+            id: req.id,
+            method: req.method,
+            url: sanitizeUrl(req.url ?? ''),
+          }),
+          res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
+        },
+      },
+    }),
     // Event bus in-process (decisión vigente: sin retry durable ni
     // infraestructura distribuida). SC-1: @nestjs/event-emitter 3.1.0 no
     // expone una opción `errorHandler` en forRoot(); su EventSubscribersLoader

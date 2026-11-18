@@ -23,7 +23,6 @@ import { SendPasswordResetEmailListener } from './listeners/send-password-reset-
 import { SendPasswordResetCompletedEmailListener } from './listeners/send-password-reset-completed-email.listener';
 import { SendVerificationEmailListener } from './listeners/send-verification-email.listener';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 
 @Module({
   imports: [
@@ -36,7 +35,6 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
   ],
   controllers: [AuthController],
   providers: [
-    createModuleLoggerProvider('Auth'),
     RegisterHandler,
     LoginHandler,
     RefreshTokenHandler,
@@ -56,6 +54,5 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     JwtStrategy,
     { provide: AUTH_REPOSITORY, useClass: PrismaAuthRepository },
   ],
-  exports: [createModuleLoggerProvider('Auth')],
 })
 export class AuthModule {}

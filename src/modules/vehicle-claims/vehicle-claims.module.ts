@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { envs } from '../../config/envs';
 import { AuthorizationModule } from '../../common/authorization.module';
-import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 import { CommitClaimHandler } from './commands/commit-claim/commit-claim.handler';
 import { CreateClaimInviteHandler } from './commands/create-claim-invite/create-claim-invite.handler';
 import { ReviewClaimHandler } from './commands/review-claim/review-claim.handler';
@@ -41,7 +40,6 @@ import { ClaimTokenService } from './services/claim-token.service';
   ],
   controllers: [VehicleClaimPublicController, VehicleClaimsController],
   providers: [
-    createModuleLoggerProvider('VehicleClaims'),
     ClaimTokenService,
     ClaimChallengeService,
     ClaimStateService,

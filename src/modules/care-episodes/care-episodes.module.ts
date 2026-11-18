@@ -15,13 +15,11 @@ import { ListServiceTypesHandler } from './queries/list-service-types/list-servi
 import { ListCareEpisodesHandler } from './queries/list-care-episodes/list-care-episodes.handler';
 import { ListVerificationsHandler } from './queries/list-verifications/list-verifications.handler';
 import { GetCareEpisodeHandler } from './queries/get-care-episode/get-care-episode.handler';
-import { createModuleLoggerProvider } from '../../common/logger/create-module-logger';
 
 @Module({
   imports: [AuthorizationModule],
   controllers: [CareEpisodesController],
   providers: [
-    createModuleLoggerProvider('Auth'),
     CreateCareEpisodeHandler,
     CheckInHandler,
     CloseCareEpisodeHandler,
