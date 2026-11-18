@@ -9,32 +9,10 @@ import {
 import { Request, Response } from 'express';
 import { CodedHttpException } from '../exceptions/coded.exception';
 import { ErrorCode, ERROR_CODES } from '../exceptions/error-codes';
+import { sanitizeUrl } from '../utils/sanitize-url';
 
-/**
- * Patrones de URL que transportan secretos one-shot (tokens) cuyo valor NUNCA
- * debe aparecer en los logs (SC-2). El reemplazo loguea la ruta base con un
- * placeholder y conserva la información útil para debugging del resto.
- *
- * - Path tokens: `/api/dealerships/wizard/invitations/{token}`,
- *   `/api/workshops/wizard/invitations/{token}`,
- *   `/api/users/wizard/invitations/{token}` y el token del QR de transferencia
- *   `GET/POST /api/vehicles/transfer/qr/{token}` (+ `/accept`).
- * - Query tokens: `?token=...` (verify-email, reset-password, etc.).
- */
-const SENSITIVE_URL_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/(\/dealerships\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
-  [/(\/workshops\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
-  [/(\/users\/wizard\/invitations\/)[^/?#]+/, '$1{token}'],
-  // SC-2 (A1): el token one-shot del QR de transferencia es un path param. Se
-  // redacta solo el segmento del token y se conserva el resto de la ruta
-  // (p. ej. el sufijo `/accept`), para no perder contexto de debugging.
-  [/(\/vehicles\/transfer\/qr\/)[^/?#]+/, '$1{token}'],
-  // C-2: el token del reclamo público viaja como path param en las cuatro
-  // rutas (`/vehicle-claims/public/{token}[/challenge|/verify|/commit]`). Se
-  // redacta sólo el segmento del token y se conserva el sufijo de la acción.
-  [/(\/vehicle-claims\/public\/)[^/?#]+/, '$1{token}'],
-  [/([?&]token=)[^&#]*/g, '$1[REDACTED]'],
-];
+// Token redaction logic shared with the pino-http req serializer lives in
+// `src/common/utils/sanitize-url.ts` (single source of truth).
 
 /**
  * Global exception filter that maps all errors to the standardized
@@ -54,23 +32,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const envelope = this.toEnvelope(exception);
 
     this.logger.error(
-      `[${request.method}] ${this.sanitizeUrl(request.url)} → ${envelope.statusCode} [${envelope.code}]`,
-      exception instanceof Error ? exception.stack : undefined,
+      `[${request.method}] ${sanitizeUrl(request.url)} → ${envelope.statusCode} [${envelope.code}]`,
+      // The raw exception stack can echo the FULL raw URL (with tokens), so
+      // it is sanitized too. The envelope contract (`msg`) is already clean.
+      exception instanceof Error && exception.stack
+        ? sanitizeUrl(exception.stack)
+        : undefined,
     );
 
     response.status(envelope.statusCode).json(envelope);
-  }
-
-  /**
-   * Redacta secretos (tokens) del request.url antes de loguearlo. Para rutas
-   * con placeholder (`{token}`) y para query `?token=` (`[REDACTED]`).
-   */
-  private sanitizeUrl(url: string): string {
-    let sanitized = url;
-    for (const [pattern, replacement] of SENSITIVE_URL_REPLACEMENTS) {
-      sanitized = sanitized.replace(pattern, replacement);
-    }
-    return sanitized;
   }
 
   private toEnvelope(exception: unknown): {
@@ -171,7 +141,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // NOTE: INTERNAL_ERROR is used as a pragmatic fallback code. The approved
     // D-025 code set (error-codes.ts) defines 8 stable codes and does not include
     // a generic server-error code — surfaced to Tech Lead for confirmation.
-    this.logger.error('Unhandled exception', exception);
+    // El error se loguea una sola vez, en el punto de catch() (arriba).
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',
