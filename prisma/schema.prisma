@@ -1005,7 +1005,7 @@ model CareEpisode {
   serviceDate                DateTime?                @map("service_date") @db.Timestamptz(6)
   source                     CareEpisodeSource        @default(workshop)
   title                      String?                  @db.VarChar(120)
-  verification               CareEpisodeVerification  @default(unverified)
+  verification               CareEpisodeVerification?
   verifiedAt                 DateTime?                @map("verified_at") @db.Timestamptz(6)
   verifiedByMemberId         String?                  @map("verified_by_member_id") @db.Uuid
   rejectedAt                 DateTime?                @map("rejected_at") @db.Timestamptz(6)
