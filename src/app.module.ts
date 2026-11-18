@@ -63,6 +63,14 @@ import { envs } from './config/envs';
         getTracker: (req: Record<string, any>) =>
           String(req.params?.token ?? req.ip),
       },
+      // Validación pre-auth del token de reset password (GET
+      // /api/auth/reset-password/validate). Bucket por IP (10/5min) contra
+      // brute force de tokens; sin getTracker propio → default req.ip.
+      {
+        name: 'resetPasswordValidate',
+        ttl: 300_000,
+        limit: 10,
+      },
     ]),
     PrismaModule,
     MailModule,

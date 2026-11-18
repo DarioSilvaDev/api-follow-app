@@ -18,6 +18,7 @@ import { VerifyEmailDto } from '../dto/verify-email.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { RequestPasswordResetDto } from '../dto/request-password-reset.dto';
+import { ValidatePasswordResetTokenDto } from '../dto/validate-password-reset-token.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { RegisterCommand } from '../commands/register/register.command';
 import { RegisterHandler } from '../commands/register/register.handler';
@@ -35,6 +36,7 @@ import { RequestPasswordResetHandler } from '../commands/request-password-reset/
 import { ResetPasswordCommand } from '../commands/reset-password/reset-password.command';
 import { ResetPasswordHandler } from '../commands/reset-password/reset-password.handler';
 import { GetSessionHandler } from '../queries/get-session/get-session.handler';
+import { ValidatePasswordResetTokenHandler } from '../queries/validate-password-reset-token/validate-password-reset-token.handler';
 import { StopImpersonateHandler } from '../commands/stop-impersonate/stop-impersonate.handler';
 import { JwtAuthGuard } from '../strategies/jwt-auth.guard';
 import {
@@ -57,6 +59,7 @@ export class AuthController {
     private readonly requestPasswordResetHandler: RequestPasswordResetHandler,
     private readonly resetPasswordHandler: ResetPasswordHandler,
     private readonly getSessionHandler: GetSessionHandler,
+    private readonly validatePasswordResetTokenHandler: ValidatePasswordResetTokenHandler,
     private readonly stopImpersonateHandler: StopImpersonateHandler,
   ) {}
 
@@ -173,6 +176,21 @@ export class AuthController {
       new ResetPasswordCommand(dto.token, dto.password),
     );
     return { message: 'Contraseña actualizada exitosamente' };
+  }
+
+  @Get('reset-password/validate')
+  // Wave P2 — B4: rate limit por IP contra brute force de tokens de reset.
+  // Bucket named propio (`resetPasswordValidate`, 10/300s en AppModule);
+  // idempotente y no-consumidor: nunca marca usedAt.
+  @Throttle({
+    default: { limit: 10, ttl: 300000 },
+    resetPasswordValidate: { limit: 10, ttl: 300000 },
+  })
+  @UseGuards(ThrottlerGuard)
+  async validatePasswordResetToken(
+    @Query() dto: ValidatePasswordResetTokenDto,
+  ): Promise<{ valid: true }> {
+    return this.validatePasswordResetTokenHandler.execute(dto.token);
   }
 
   @Get('me')

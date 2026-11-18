@@ -17,6 +17,7 @@ import { ResendVerificationHandler } from './commands/resend-verification/resend
 import { ChangePasswordHandler } from './commands/change-password/change-password.handler';
 import { StopImpersonateHandler } from './commands/stop-impersonate/stop-impersonate.handler';
 import { GetSessionHandler } from './queries/get-session/get-session.handler';
+import { ValidatePasswordResetTokenHandler } from './queries/validate-password-reset-token/validate-password-reset-token.handler';
 import { RoleService } from './services/role.service';
 import { SendPasswordResetEmailListener } from './listeners/send-password-reset-email.listener';
 import { SendPasswordResetCompletedEmailListener } from './listeners/send-password-reset-completed-email.listener';
@@ -47,6 +48,7 @@ import { createModuleLoggerProvider } from '../../common/logger/create-module-lo
     ChangePasswordHandler,
     StopImpersonateHandler,
     GetSessionHandler,
+    ValidatePasswordResetTokenHandler,
     RoleService,
     SendPasswordResetEmailListener,
     SendPasswordResetCompletedEmailListener,
