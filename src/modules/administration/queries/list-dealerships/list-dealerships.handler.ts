@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../../common/database/prisma.service';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../../../../common/constants';
@@ -14,6 +14,7 @@ export interface ListDealershipsQuery {
   page?: number;
   limit?: number;
   status?: 'pending_claim' | 'active';
+  q?: string;
 }
 
 @Injectable()
@@ -31,6 +32,19 @@ export class ListDealershipsHandler {
     const where: Prisma.DealershipWhereInput = {};
     if (query.status === 'pending_claim' || query.status === 'active') {
       where.status = query.status;
+    }
+    if (query.q !== undefined) {
+      const q = query.q.trim();
+      if (q.length < 2) {
+        throw new BadRequestException(
+          'El filtro q debe tener al menos 2 caracteres',
+        );
+      }
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { legalName: { contains: q, mode: 'insensitive' } },
+        { taxId: { contains: q, mode: 'insensitive' } },
+      ];
     }
 
     const [dealerships, total] = await Promise.all([

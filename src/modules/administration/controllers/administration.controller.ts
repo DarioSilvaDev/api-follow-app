@@ -202,6 +202,7 @@ export class AdministrationController {
     @Query('q') q?: string,
     @Query('status') status?: string,
     @Query('role') role?: string,
+    @Query('membership') membership?: string,
   ) {
     const result = await this.listUsersHandler.execute({
       page: page ? Number(page) : undefined,
@@ -209,6 +210,7 @@ export class AdministrationController {
       q,
       status,
       role,
+      membership,
     });
     return {
       data: result.data.map((u) => UserAdminResponseDto.from(u)),
@@ -295,11 +297,13 @@ export class AdministrationController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: 'pending_claim' | 'active',
+    @Query('q') q?: string,
   ) {
     const result = await this.listWorkshopsHandler.execute({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       status,
+      q,
     });
     return {
       data: result.data.map((w) => WorkshopAdminResponseDto.from(w)),
@@ -591,11 +595,13 @@ export class AdministrationController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: 'pending_claim' | 'active',
+    @Query('q') q?: string,
   ) {
     const result = await this.listDealershipsHandler.execute({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       status,
+      q,
     });
     return {
       data: result.data.map((d) => DealershipAdminResponseDto.from(d)),
