@@ -49,7 +49,7 @@ describe('GetCareEpisodeHandler — S1 detail with actor projection', () => {
       vehicleId,
       status: 'open',
       source: 'workshop',
-      verification: 'unverified',
+      verification: null,
       title: 'Cambio de aceite',
       serviceDate: new Date('2026-09-10T10:00:00.000Z'),
       workshopId,

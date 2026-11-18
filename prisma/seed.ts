@@ -4192,12 +4192,16 @@ async function seedMileages() {
 
 /**
  * 30 care episodes del plan validado:
- *   workshop delivered verified 12 | workshop delivered unverified 4
- *   workshop open 1 | workshop cancelled 1
- *   owner delivered verified 7 | owner delivered unverified 5
+ *   workshop delivered (12) | workshop delivered (6) | owner delivered verified 7
+ *   owner delivered unverified 5
  * createdByMemberId presente en todos los workshop-source; fechas pasadas
- * deterministas; verifiedByMemberId/verifiedAt para verified (miembro del
- * mismo taller en workshop-source; miembro verificador en owner-source).
+ * deterministas; verifiedByMemberId/verifiedAt para verified owner-source.
+ *
+ * Opción B (migración `nullable_verification_workshop`): para
+ * source='workshop' la verificación NO aplica y se persiste `NULL`;
+ * unverified|verified|rejected existen solo para source='owner'.
+ * Las filas workshop de este seed (marcadas históricamente 'verified' /
+ * 'unverified') se normalizan a `NULL` al insertar.
  */
 async function seedCareEpisodes() {
   // [placa, tallerTaxId (null = owner-source), workerEmail, status, source,
@@ -4592,7 +4596,8 @@ async function seedCareEpisodes() {
       workerEmail,
       status,
       source,
-      verification,
+      // verification histórica del seed; se normaliza a NULL para workshop.
+      verificationSeed,
       serviceDate,
       mileageIn,
       createdAt,
@@ -4603,6 +4608,11 @@ async function seedCareEpisodes() {
       where: { licensePlate: plate },
     });
     if (!vehicle) continue;
+
+    // Opción B: source='workshop' → verification no aplica (NULL).
+    // Los valores unverified|verified|rejected aplican solo a source='owner'.
+    const verification =
+      source === 'workshop' ? null : (verificationSeed as CareEpisodeVerification);
 
     // Owner-source: createdByUserId = propietario actual del vehículo.
     // Workshop-source: createdByMemberId = worker del taller.
@@ -4644,15 +4654,17 @@ async function seedCareEpisodes() {
 
     let verifiedByMemberId: string | null = null;
     let verifiedAt: string | null = null;
-    if (verification === 'verified' && verifiedEmail) {
-      if (source === 'owner' && verifiedEmail.split('-')[0] === 'w') {
+    // Verificación existe solo para source='owner'; workshop nunca llega aquí
+    // con verification='verified' (se normalizó a null arriba).
+    if (source === 'owner' && verification === 'verified' && verifiedEmail) {
+      if (verifiedEmail.split('-')[0] === 'w') {
         const code = verifiedEmail.split('-')[0];
         const taxId = workshopTaxIds[code];
         const member = taxId
           ? await findWorkshopMember(taxId, verifiedEmail)
           : null;
         verifiedByMemberId = member?.id ?? null;
-      } else if (source === 'owner' && verifiedEmail.includes('svc')) {
+      } else if (verifiedEmail.includes('svc')) {
         // Miembro de un service oficial: el email es del worker del service.
         const code = verifiedEmail.split('-')[0];
         const taxId = workshopTaxIds[`${code}-svc`];
@@ -4660,18 +4672,8 @@ async function seedCareEpisodes() {
           ? await findWorkshopMember(taxId, verifiedEmail)
           : null;
         verifiedByMemberId = member?.id ?? null;
-      } else if (
-        source === 'owner' &&
-        verifiedEmail.includes('matias-seller1')
-      ) {
+      } else if (verifiedEmail.includes('matias-seller1')) {
         verifiedByMemberId = null; // sellers de concesionaria no son workshop members
-      } else if (source === 'workshop' && createdByMemberId) {
-        // Mismo taller: puede verificar otro miembro o el mismo worker.
-        const member = await findWorkshopMember(
-          workshopTaxIds[verifiedEmail.split('-')[0]],
-          verifiedEmail,
-        );
-        verifiedByMemberId = member?.id ?? null;
       }
       verifiedAt = serviceDate;
     }
@@ -4690,7 +4692,7 @@ async function seedCareEpisodes() {
         createdByUserId,
         status: status as CareEpisodeStatus,
         source: source as CareEpisodeSource,
-        verification: verification as CareEpisodeVerification,
+        verification,
         title: null,
         serviceDate: new Date(serviceDate),
         workshopName,

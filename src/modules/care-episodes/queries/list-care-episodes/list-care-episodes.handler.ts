@@ -30,7 +30,8 @@ export interface CareEpisodeListItem {
   title: string | null;
   status: CareEpisodeStatus;
   source: CareEpisodeSource;
-  verification: CareEpisodeVerification;
+  /** `null` cuando la verificación no aplica (source='workshop'). */
+  verification: CareEpisodeVerification | null;
   /**
    * Fecha canónica D-070 (serviceDate ?? checkedInAt ?? createdAt). Siempre ISO
    * no-null: es la clave de orden del listado y NO cambia (D-TZ-4).

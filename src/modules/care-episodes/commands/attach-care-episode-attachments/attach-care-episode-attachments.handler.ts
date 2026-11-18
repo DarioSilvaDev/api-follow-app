@@ -22,7 +22,8 @@ export const MAX_ACTIVE_ATTACHMENTS = 15;
 interface EpisodeState {
   source: string;
   status: string;
-  verification: string;
+  /** `null` cuando la verificación no aplica (source='workshop'). */
+  verification: string | null;
 }
 
 /**
@@ -108,7 +109,7 @@ export class AttachCareEpisodeAttachmentsHandler {
           Array<{
             status: string;
             source: string;
-            verification: string;
+            verification: string | null;
             workshop_id: string;
           }>
         >`SELECT status, source, verification, workshop_id FROM care_episodes WHERE id = ${careEpisodeId}::uuid FOR UPDATE`;

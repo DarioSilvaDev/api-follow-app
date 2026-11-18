@@ -73,7 +73,12 @@ export interface CareEpisodeDetailResponse {
   };
   status: CareEpisodeStatus;
   source: CareEpisodeSource;
-  verification: CareEpisodeVerification;
+  /**
+   * `null` cuando la verificación no aplica (source='workshop'): el taller
+   * registra sus propios episodios y no pasan por cola de verificación.
+   * Los valores unverified|verified|rejected aplican solo a source='owner'.
+   */
+  verification: CareEpisodeVerification | null;
   /**
    * Rechazo del taller (RF-9 / D-202): SOLO en el detalle del episodio —
    * el listado/historial no expone el motivo (no cambia su contrato).

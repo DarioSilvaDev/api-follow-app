@@ -184,6 +184,7 @@ describe('CheckInHandler — B-2 check-in unificado', () => {
           createdByMemberId: memberId,
           status: 'open',
           source: 'workshop',
+          verification: null,
           mileageIn: 45000,
           mileageInUnreadable: false,
           workshopName: 'Taller Uno',

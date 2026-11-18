@@ -5411,6 +5411,44 @@ Convención de estados: `ACCEPTED` = confirmada por el fundador; `PROPOSED` = pr
 
 ---
 
+## D-209 — `CareEpisode.verification` es NULL para episodios `source='workshop'`
+
+**Fecha:** 2026-11-18 · **Estado:** ACCEPTED · **Tipo:** Product / Backend / Contrato / Schema
+
+**Fuente:** decisión de producto 2026-11-18 (bug UI reportado por el usuario); enmienda/completado de D-065 y del contrato D-071, y ajuste del gate FROZEN de D-202.
+
+**Contexto:** un episodio `source='workshop'` cerrado con normalidad (ej. **NIC383 CHEVROLET Spin** — taller **Lo de Dario**) aparecía en el detalle/historial con el badge **"Pendiente de verificación"**, como si el taller estuviera esperando que otro verificara su propio trabajo. La causa raíz: `verification` nace con `@default(unverified)` para **todos** los episodios, incluidos los de origen taller — D-065 fijaba el estado de nacimiento según el origen pero no el valor del campo para `source='workshop'`, de modo que "no aplica" era indistinguible de "pendiente de verificación". Un taller no verifica su propio episodio: la verificación existe para la afirmación del propietario, no para el origen confiable (D-064).
+
+**Decisión:** `CareEpisode.verification` pasa a ser **NULLABLE**; para `source='workshop'` el valor es **NULL**:
+
+- **Semántica:** `NULL` = **no aplica** (origen confiable, D-064). Los valores `unverified` / `verified` / `rejected` existen **únicamente** en episodios `source='owner'`.
+- Los episodios `source='workshop'` **existentes** se backfillean a `NULL`.
+- El `check-in` (`POST /api/care-episodes`) crea los episodios con `verification = NULL` (nacimiento workshop inalterado en lo demás: `status='open'`, D-065 intacto para owner).
+- Detalle (`GET /:id`), listado (`GET /api/care-episodes`) e historial del vehículo (`GET /api/vehicles/:id/history`) exponen `verification` **nullable**.
+- La cola `/verifications` y `verify` / `reject` siguen restringidos a **`source='owner' AND verification='unverified'`** — sin cambios; los NULL nunca entran (mismo filtro, mismo comportamiento que hoy).
+- El badge del timeline se muestra **solo con `source='owner'`**. **D-071 se mantiene** (workshop: sin badge) — ahora, además, el contrato **no emite** el `unverified` falso que disparaba el estado/badge "Pendiente de verificación".
+- Los consumidores son **source-aware**: `null` se interpreta como "no aplica", nunca como pendiente.
+- **Gate FROZEN de adjuntos:** pasa a tratar `NULL` como **"no congelado por verificación"** — el congelamiento ocurre solo cuando `verification IS NOT NULL AND verification != 'unverified'` (es decir, `verified` o `rejected`). Un episodio workshop nunca se congela por este gate.
+- **Alcance: CareEpisodes únicamente.** Ningún otro recurso ni tabla cambia.
+
+**Alternativas descartadas:**
+
+1. **Nacer `verified`** (el taller "ya verificó" su propio trabajo): congelaría los adjuntos de los episodios **abiertos** vía el gate FROZEN (`verified` ⇒ `DELETE /:id/attachments/:attachmentId` → 409), impidiendo corregir la evidencia antes del cierre — comportamiento incorrecto para atenciones en curso.
+2. **Mantener `unverified` por siempre para workshop** y ocultarlo solo en el frontend: deja un dato semánticamente falso en el contrato y en todo consumidor source-agnostic (reportes, exports, integraciones); la UI engañosa reaparece con cada nueva superficie que se construya sobre el campo.
+
+**Consecuencias:**
+
+- Requiere migración con **backfill** (`source='workshop'` ⇒ `verification = NULL`) **y relajación del `NOT NULL`** en `care_episodes.verification`; el índice `(workshopId, source, verification)` se mantiene. El default del esquema queda acotado al nacimiento `source='owner'` (`unverified`, explícito en el handler — D-065 intacto para owner). *(Mecanismo exacto — default NULL vs. default por path — lo define el Tech Lead; el contrato de producto es: workshop ⇒ NULL, owner ⇒ `unverified`.)*
+- Contrato OpenAPI / tipos: `verification: CareEpisodeVerification | null` en todas las lecturas (detalle, listado, historial). La cola `/verifications` no cambia su shape (el filtro `unverified` garantiza no-null en esa superficie).
+- Frontend: ningún badge ni estado de verificación cuando `source='workshop'` (o `verification == null`); badge "Pendiente de verificación" / "Verificado por…" / "Rechazado por…" **solo con `source='owner'`** (D-071). El bug del episodio NIC383 desaparece de raíz, no por ocultamiento.
+- Consumidores source-aware: ningún consumidor puede inferir "pendiente" de `null`. El gate FROZEN de adjuntos (`remove-care-episode-attachment`) cambia su condición a `verification IS NOT NULL AND verification != 'unverified'`; `verified` y `rejected` (siempre owner, nunca NULL) congelan igual que hoy — D-202/D-205(e) sin cambio de comportamiento.
+- **D-064 y D-065 quedan intactas** en su espíritu (confianza discreta sobre el origen declarado); D-071 se mantiene (regla de badge sin cambios, ahora respaldada por el contrato); D-202 no cambia (rechazo terminal; `rejected` sigue siendo siempre owner ⇒ nunca NULL).
+- **Deuda aceptada:** sin CHECK de BD para la invariante (`source='workshop' ⇔ verification IS NULL`); enforcement en handlers + tests de matriz (mismo criterio que la 2-2 / F-020).
+
+**Referencias:** D-064 (confianza discreta, no puntaje), D-065 (estado de nacimiento según origen), D-071 (título/actor/badge del timeline), D-202 (rechazo de registros del propietario; gate FROZEN).
+
+---
+
 ## Decisiones aún ABiertas (consolidadas 2026-11-01)
 
 > **Actualizada 2026-11-01:** **F-3, S-3 y F-10 RESUELTAS** (→ D-187, D-188, D-189); del lado del módulo de reclamos queda como **único bloqueante P-2** (contenido, PR-6).

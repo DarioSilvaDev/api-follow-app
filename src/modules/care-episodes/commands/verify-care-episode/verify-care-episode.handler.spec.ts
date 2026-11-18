@@ -137,7 +137,7 @@ describe('VerifyCareEpisodeHandler — RF-5 workshop confirms owner record', () 
       vehicleId: 'v-1',
       workshopId,
       source: 'workshop',
-      verification: 'verified',
+      verification: null,
       verifiedByMemberId: null,
       verifiedAt: null,
     });

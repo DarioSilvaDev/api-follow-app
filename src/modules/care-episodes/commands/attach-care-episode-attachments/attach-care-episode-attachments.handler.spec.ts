@@ -85,7 +85,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
       workshopId,
       status: 'open',
       source: 'workshop',
-      verification: 'unverified',
+      verification: null,
       ...overrides,
     };
   }
@@ -116,7 +116,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
       {
         status: 'open',
         source: 'workshop',
-        verification: 'unverified',
+        verification: null,
         workshop_id: workshopId,
       },
     ]);
@@ -256,7 +256,7 @@ describe('AttachCareEpisodeAttachmentsHandler — S4 evidence upload', () => {
       {
         status: 'open',
         source: 'workshop',
-        verification: 'unverified',
+        verification: null,
         workshop_id: 'w-other',
       },
     ]);

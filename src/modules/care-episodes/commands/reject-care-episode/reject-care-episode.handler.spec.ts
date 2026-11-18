@@ -179,7 +179,7 @@ describe('RejectCareEpisodeHandler — RF-9 workshop rejects owner record', () =
       vehicleId: 'v-1',
       workshopId,
       source: 'workshop',
-      verification: 'verified',
+      verification: null,
       rejectedByMemberId: null,
       rejectedAt: null,
       rejectionReason: null,

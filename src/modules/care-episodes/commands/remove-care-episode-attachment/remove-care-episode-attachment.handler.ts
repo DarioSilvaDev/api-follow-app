@@ -27,8 +27,9 @@ import { RemoveCareEpisodeAttachmentCommand } from './remove-care-episode-attach
  * Algoritmo ordenado (precedencia: frozen > reason > uploader identity):
  *   GATE 0 — super_admin: permite con auditoría; removedBy según contexto;
  *            removedReason opcional (INFO). Salta al resto de gates.
- *   GATE 1 — FROZEN: verification !== 'unverified' (verified | rejected) o
- *            cancelled → 409 (todo actor excepto super_admin).
+ *   GATE 1 — FROZEN: verification != null && verification !== 'unverified'
+ *            (verified | rejected) o cancelled → 409 (todo actor excepto
+ *            super_admin). NULL (verificación no aplica, workshop) no congela.
  *   GATE 2 — identidad:
  *     a. uploader self-removal (contexto exacto USER o MEMBER) → OK sin razón
  *        (removedReason forzado a null).
@@ -124,10 +125,14 @@ export class RemoveCareEpisodeAttachmentHandler {
     }
 
     // ── GATE 1: FROZEN ──
-    // verification !== 'unverified' → verified O rejected (D-202) congelan la
-    // evidencia: un registro rechazado no se edita ni se borra (D-205).
+    // verification != null && verification !== 'unverified' → verified O
+    // rejected (D-202) congelan la evidencia: un registro rechazado no se
+    // edita ni se borra (D-205). NULL (verificación no aplica, source='workshop')
+    // NO congela por verificación; los estados delivered/cancelled siguen
+    // aplicando según la lógica de status vigente.
     if (
-      episode.verification !== 'unverified' ||
+      (episode.verification !== null &&
+        episode.verification !== 'unverified') ||
       episode.status === 'cancelled'
     ) {
       throw new ConflictException(

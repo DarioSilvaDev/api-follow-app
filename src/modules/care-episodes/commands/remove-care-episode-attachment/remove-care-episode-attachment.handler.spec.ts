@@ -61,7 +61,7 @@ describe('RemoveCareEpisodeAttachmentHandler — S5 audited void', () => {
     vehicleId,
     workshopId,
     status: 'open',
-    verification: 'unverified',
+    verification: null,
     source: 'workshop',
   };
 

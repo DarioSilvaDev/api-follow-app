@@ -536,6 +536,9 @@ export class CheckInHandler {
         createdByMemberId: memberId,
         status: 'open',
         source: 'workshop',
+        // Verificación "no aplica" para source='workshop' (NULL).
+        // Los valores unverified|verified|rejected quedan solo para source='owner'.
+        verification: null,
         checkedInAt: new Date(),
         mileageIn: unreadable ? null : dto.mileageIn,
         mileageInUnreadable: unreadable,
