@@ -562,6 +562,13 @@ const permissions = [
   },
   {
     module: 'admin',
+    resource: 'dealerships',
+    action: 'members',
+    code: 'admin.dealerships.members',
+    description: 'View and manage dealership members',
+  },
+  {
+    module: 'admin',
     resource: 'specialties',
     action: 'list',
     code: 'admin.specialties.list',
@@ -791,6 +798,7 @@ const systemRolePermissions: Record<SystemRoleType, string[]> = {
     'admin.dealerships.read',
     'admin.dealerships.manage',
     'admin.dealerships.update',
+    'admin.dealerships.members',
     'admin.dashboard',
     'admin.vehicle-catalog.brands.list',
     'admin.vehicle-catalog.brands.read',
@@ -5146,6 +5154,47 @@ async function seedAdminVehicleClaimPermission() {
   console.log('  ✓ admin.vehicle-claims.manage seeded (super_admin)');
 }
 
+/**
+ * Permiso `admin.dealerships.members` (panel superadmin — membresías de
+ * concesionaria): alta/baja/cambio de rol y listado de miembros desde
+ * `/api/admin/dealerships/:id/members`.
+ *
+ * Autocontenido, igual que `seedAdminVehicleClaimPermission`
+ * (`seedPermissions()`/`seedSystemRoles()` están desactivados en `main()`).
+ * Se linkea a `super_admin` y a `admin` (espejo de `admin.workshops.members`,
+ * que ambos system roles poseen).
+ */
+async function seedAdminDealershipMembersPermission() {
+  const permission = await prisma.permission.upsert({
+    where: { code: 'admin.dealerships.members' },
+    update: {},
+    create: {
+      module: 'admin',
+      resource: 'dealerships',
+      action: 'members',
+      code: 'admin.dealerships.members',
+      description: 'View and manage dealership members',
+    },
+  });
+
+  for (const type of [SystemRoleType.super_admin, SystemRoleType.admin]) {
+    const role = await prisma.systemRole.findUnique({ where: { type } });
+    if (!role) continue;
+    await prisma.systemRolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: role.id,
+          permissionId: permission.id,
+        },
+      },
+      update: {},
+      create: { roleId: role.id, permissionId: permission.id },
+    });
+  }
+
+  console.log('  ✓ admin.dealerships.members seeded (super_admin, admin)');
+}
+
 async function main() {
   console.log('\n🌱 Seeding database...\n');
 
@@ -5157,6 +5206,7 @@ async function main() {
   await seedCareEpisodeClosePermission();
   await seedVehicleClaimPermissions();
   await seedAdminVehicleClaimPermission();
+  await seedAdminDealershipMembersPermission();
 
   //// await seedUsers();
   //// await seedWorkshops();

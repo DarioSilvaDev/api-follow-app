@@ -39,12 +39,17 @@ import { ListRolesHandler } from '../workshops/queries/list-roles/list-roles.han
 import { CreateDealershipHandler } from './commands/create-dealership/create-dealership.handler';
 import { ReinviteDealershipInvitationHandler } from './commands/reinvite-dealership-invitation/reinvite-dealership-invitation.handler';
 import { ListDealershipsHandler } from './queries/list-dealerships/list-dealerships.handler';
+import { GetDealershipMembersHandler } from './queries/get-dealership-members.handler';
 import { GetDealershipHandler } from './queries/get-dealership.handler';
 import { ReinviteWorkshopInvitationHandler } from './commands/reinvite-workshop-invitation/reinvite-workshop-invitation.handler';
 import { InvitePlatformUserHandler } from './commands/invite-platform-user/invite-platform-user.handler';
 import { UpdateDealershipHandler } from './commands/update-dealership/update-dealership.handler';
 import { UpdateDealershipStatusHandler } from './commands/update-dealership-status/update-dealership-status.handler';
 import { RevokeClaimHandler } from '../vehicle-claims/commands/revoke-claim/revoke-claim.handler';
+import { AddDealershipMemberHandler } from './commands/add-dealership-member/add-dealership-member.handler';
+import { UpdateDealershipMemberRoleHandler } from './commands/update-dealership-member-role/update-dealership-member-role.handler';
+import { RemoveDealershipMemberHandler } from './commands/remove-dealership-member/remove-dealership-member.handler';
+import { ListRolesHandler as ListDealershipRolesHandler } from '../dealerships/queries/list-roles/list-roles.handler';
 
 @Module({
   imports: [
@@ -97,6 +102,12 @@ import { RevokeClaimHandler } from '../vehicle-claims/commands/revoke-claim/revo
     InvitePlatformUserHandler,
     UpdateDealershipHandler,
     UpdateDealershipStatusHandler,
+    // Membresías de concesionaria desde el panel admin (espejo de talleres).
+    GetDealershipMembersHandler,
+    AddDealershipMemberHandler,
+    UpdateDealershipMemberRoleHandler,
+    RemoveDealershipMemberHandler,
+    ListDealershipRolesHandler,
     // C-6 / F-8: revoke admin reusa el handler del módulo de reclamos
     // (patrón de reuso cross-module de ListRolesHandler).
     RevokeClaimHandler,

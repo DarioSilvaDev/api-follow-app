@@ -116,6 +116,15 @@ import { UpdateDealershipStatusHandler } from '../commands/update-dealership-sta
 import { InvitePlatformUserDto } from '../dto/invite-platform-user.dto';
 import { InvitePlatformUserCommand } from '../commands/invite-platform-user/invite-platform-user.command';
 import { InvitePlatformUserHandler } from '../commands/invite-platform-user/invite-platform-user.handler';
+import { DealershipMemberAdminResponseDto } from '../dto/dealership-member-response.dto';
+import { GetDealershipMembersHandler } from '../queries/get-dealership-members.handler';
+import { AddDealershipMemberCommand } from '../commands/add-dealership-member/add-dealership-member.command';
+import { AddDealershipMemberHandler } from '../commands/add-dealership-member/add-dealership-member.handler';
+import { UpdateDealershipMemberRoleCommand } from '../commands/update-dealership-member-role/update-dealership-member-role.command';
+import { UpdateDealershipMemberRoleHandler } from '../commands/update-dealership-member-role/update-dealership-member-role.handler';
+import { RemoveDealershipMemberCommand } from '../commands/remove-dealership-member/remove-dealership-member.command';
+import { RemoveDealershipMemberHandler } from '../commands/remove-dealership-member/remove-dealership-member.handler';
+import { ListRolesHandler as ListDealershipRolesHandler } from '../../dealerships/queries/list-roles/list-roles.handler';
 import { RevokeClaimCommand } from '../../vehicle-claims/commands/revoke-claim/revoke-claim.command';
 import { RevokeClaimHandler } from '../../vehicle-claims/commands/revoke-claim/revoke-claim.handler';
 import { RevokeClaimDto } from '../../vehicle-claims/dto/revoke-claim.dto';
@@ -165,6 +174,11 @@ export class AdministrationController {
     private readonly updateDealershipHandler: UpdateDealershipHandler,
     private readonly updateDealershipStatusHandler: UpdateDealershipStatusHandler,
     private readonly revokeClaimHandler: RevokeClaimHandler,
+    private readonly getDealershipMembersHandler: GetDealershipMembersHandler,
+    private readonly listDealershipRolesHandler: ListDealershipRolesHandler,
+    private readonly addDealershipMemberHandler: AddDealershipMemberHandler,
+    private readonly updateDealershipMemberRoleHandler: UpdateDealershipMemberRoleHandler,
+    private readonly removeDealershipMemberHandler: RemoveDealershipMemberHandler,
   ) {}
 
   @Post('roles/assign')
@@ -671,6 +685,61 @@ export class AdministrationController {
   ) {
     return this.reinviteDealershipInvitationHandler.execute(
       new ReinviteDealershipInvitationCommand(id, currentUser.id),
+    );
+  }
+
+  /**
+   * Alta administrada de miembro de concesionaria (superadmin/admin).
+   * Espejo del endpoint de miembros de taller (`admin.workshops.members`),
+   * con permiso propio `admin.dealerships.members`. Alta directa (sin
+   * invitación): si existía una membresía `inactive` previa, se reactiva.
+   */
+  @Get('dealerships/:id/members')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.members')
+  async getDealershipMembers(@Param('id') id: string) {
+    const members = await this.getDealershipMembersHandler.execute(id);
+    return members.map((m) => DealershipMemberAdminResponseDto.from(m));
+  }
+
+  @Get('dealerships/:id/roles')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.members')
+  async listDealershipRoles(@Param('id') dealershipId: string) {
+    return this.listDealershipRolesHandler.execute(dealershipId);
+  }
+
+  @Post('dealerships/:id/members')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.members')
+  async addDealershipMember(
+    @Param('id') dealershipId: string,
+    @Body() dto: AddMemberDto,
+    @CurrentUser() currentUser: AuthenticatedUser,
+  ) {
+    return this.addDealershipMemberHandler.execute(
+      new AddDealershipMemberCommand(dealershipId, dto, currentUser.id),
+    );
+  }
+
+  @Patch('dealerships/:id/members/:memberId/role')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.members')
+  async updateDealershipMemberRole(
+    @Param('memberId') memberId: string,
+    @Body('roleId') roleId: string,
+  ) {
+    return this.updateDealershipMemberRoleHandler.execute(
+      new UpdateDealershipMemberRoleCommand(memberId, roleId),
+    );
+  }
+
+  @Delete('dealerships/:id/members/:memberId')
+  @UseGuards(PermissionsGuard)
+  @Permissions('admin.dealerships.members')
+  async removeDealershipMember(@Param('memberId') memberId: string) {
+    await this.removeDealershipMemberHandler.execute(
+      new RemoveDealershipMemberCommand(memberId),
     );
   }
 
