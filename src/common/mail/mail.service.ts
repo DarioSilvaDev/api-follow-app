@@ -618,7 +618,7 @@ export class MailService {
     licensePlate: string,
     context?: MailContext,
   ): Promise<MailSendResult> {
-    const appUrl = envs.CORS_ORIGIN || 'http://localhost:3000';
+    const appUrl = envs.FRONTEND_URL || 'http://localhost:3000';
     return this.send(
       MAIL_TEMPLATES.TRANSFER_REQUEST,
       {
