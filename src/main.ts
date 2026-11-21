@@ -6,12 +6,16 @@ import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import * as express from 'express';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { ObserveInstrument } from './observe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     // bufferLogs: los logs de bootstrap (módulos cargados, mapeo de rutas…)
     // se bufferean y se vuelcan por pino apenas useLogger() está activo.
     bufferLogs: true,
+    // Instrumentación del SDK de Observe: NOTE la creación de instancias para
+    // abrir spans sobre providers, handlers y queries. Convive con pino.
+    instrument: ObserveInstrument,
     cors: {
       origin:
         envs.NODE_ENV === 'production'
@@ -42,6 +46,9 @@ async function bootstrap() {
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
   app.use(cookieParser());
   app.setGlobalPrefix('api');
+  // Necesario para que el SDK de Observe cierre el worker y haga flush del
+  // buffer de telemetría antes de que el proceso muera.
+  app.enableShutdownHooks();
   await app.listen(envs.PORT);
 }
 

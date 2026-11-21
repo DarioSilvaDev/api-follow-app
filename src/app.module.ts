@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import { IncomingMessage, ServerResponse } from 'node:http';
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { TracerService } from '@nestjs/observe';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
-import { sanitizeUrl } from './common/utils/sanitize-url';
+import { buildPinoOptions } from './common/utils/pino-options';
+import { shouldIgnoreHealth } from './common/utils/ignore-health';
+import { ObserveModule } from './observe';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -28,61 +29,63 @@ import { envs } from './config/envs';
 
 @Module({
   imports: [
+    // Observabilidad (Fase 2). Observe es GLOBAL y registra TracerService;
+    // se importa antes que LoggerModule para que el factory de pino pueda
+    // inyectarlo. En no-producción `enabled:false`: mantiene el proveedor
+    // disponible pero no abre traces ni contacta al collector.
+    ObserveModule.forRoot({
+      enabled: envs.NODE_ENV === 'production',
+      appKey: envs.OBSERVE_APP_KEY,
+      appSecret: envs.OBSERVE_APP_SECRET,
+      serviceId: envs.OBSERVE_SERVICE_ID,
+      tracesSampleRate: envs.OBSERVE_TRACES_SAMPLE_RATE,
+      // Los logs siguen saliendo SOLO por stdout/Pino; no dependemos de que
+      // el plan de Observe acepte forwarding de logs.
+      forwardLogs: false,
+      debug: false,
+      redaction: {
+        enabled: true,
+        keys: [
+          'authorization',
+          'cookie',
+          'set-cookie',
+          'x-api-key',
+          'password',
+          'passwordHash',
+          'accessToken',
+          'refreshToken',
+        ],
+        // Espejo de los tokens one-shot de sanitizeUrl, con lookbehind para
+        // conservar la ruta y redactar sólo el segmento sensible. Observe
+        // redacta por su lado, sin depender del serializador de pino.
+        patterns: [
+          /(?<=\/dealerships\/wizard\/invitations\/)[^/?#]+/g,
+          /(?<=\/workshops\/wizard\/invitations\/)[^/?#]+/g,
+          /(?<=\/users\/wizard\/invitations\/)[^/?#]+/g,
+          /(?<=\/vehicles\/transfer\/qr\/)[^/?#]+/g,
+          /(?<=\/vehicle-claims\/public\/)[^/?#]+/g,
+          /(?<=[?&]token=)[^&#]*/g,
+        ],
+      },
+      http: {
+        // Mismo criterio que pino: health no contamina trazas ni métricas.
+        ignore: shouldIgnoreHealth,
+        // Defensa extra para query params propios; Observe ya enmascara
+        // `token`, `code`, `signature`, etc. por defecto.
+        queryParamsObfuscateRegex:
+          /(?<=[?&](?:invitation|qr|claim)=)[^&#]*/gi,
+        tracePreflights: false,
+        // No capturar headers/body de requests: mínimo privilegio.
+        capture: false,
+      },
+    }),
     // Logging estructurado (JSON) sobre Pino para TODA la app: request
     // logging vía pino-http, correlación por `x-request-id` y redacción de
-    // secretos. Debe ser el primer módulo importado. Los logs de Nest
-    // (`new Logger(...)`) se enrutan acá gracias a `app.useLogger()` en main.ts.
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: envs.LOG_LEVEL,
-        // genReqId: se adopta el `x-request-id` entrante SOLO si está bien
-        // formado (anti-log-injection desde clientes arbitrarios); cualquier
-        // otro valor se descarta y se genera un UUID v4. El ID se publica
-        // además como header de respuesta para correlación cliente↔servidor.
-        genReqId: (req: IncomingMessage, res: ServerResponse) => {
-          const header = req.headers['x-request-id'];
-          const value = Array.isArray(header) ? header[0] : header;
-          const id =
-            typeof value === 'string' &&
-            /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/.test(value)
-              ? value
-              : randomUUID();
-          res.setHeader('x-request-id', id);
-          return id;
-        },
-        // Defensa en profundidad (capa 1): nada de Authorization/cookies/
-        // password en las líneas de log. Observe redacta además por su lado.
-        redact: {
-          paths: [
-            'req.headers.authorization',
-            'req.headers.cookie',
-            'req.headers["x-api-key"]',
-            'res.headers["set-cookie"]',
-            'password',
-            '*.password',
-            'accessToken',
-            'refreshToken',
-            '*.accessToken',
-            '*.refreshToken',
-            '*.passwordHash',
-          ],
-          censor: '[REDACTED]',
-        },
-        autoLogging: {
-          // Readiness/liveness: ruido sin payload. Requests a la DB y al
-          // storage los puede reportar Observe en la Fase 2.
-          ignore: (req: IncomingMessage) =>
-            !!req.url && sanitizeUrl(req.url).startsWith('/api/health'),
-        },
-        serializers: {
-          req: (req) => ({
-            id: req.id,
-            method: req.method,
-            url: sanitizeUrl(req.url ?? ''),
-          }),
-          res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
-        },
-      },
+    // secretos. Es el primer módulo que registra middleware HTTP. Los logs
+    // de Nest (`new Logger(...)`) se enrutan acá con `app.useLogger()` en main.ts.
+    LoggerModule.forRootAsync({
+      inject: [TracerService],
+      useFactory: buildPinoOptions,
     }),
     // Event bus in-process (decisión vigente: sin retry durable ni
     // infraestructura distribuida). SC-1: @nestjs/event-emitter 3.1.0 no
