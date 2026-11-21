@@ -8,6 +8,11 @@ interface Ienvs {
   NODE_ENV: string;
   /** Nivel mínimo de logs pino (`fatal|error|warn|info|debug|trace`). Default: `info`. */
   LOG_LEVEL: string;
+  /** Credenciales de Observe. Obligatorias sólo cuando NODE_ENV=production. */
+  OBSERVE_APP_KEY?: string;
+  OBSERVE_APP_SECRET?: string;
+  OBSERVE_SERVICE_ID: string;
+  OBSERVE_TRACES_SAMPLE_RATE: number;
   DATABASE_URL: string;
   JWT_SECRET: string;
   JWT_ACCESS_EXPIRES_IN: string;
@@ -65,6 +70,22 @@ const schema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent')
     .default('info'),
+  // Observe queda deshabilitado fuera de producción, así que en dev/test no
+  // exigimos credenciales. En producción fallamos rápido si faltan; el error
+  // de Joi nombra la variable, nunca su valor.
+  OBSERVE_APP_KEY: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  OBSERVE_APP_SECRET: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  OBSERVE_SERVICE_ID: Joi.string().min(1).max(100).default('api-follow-app'),
+  // 0 NO se usa: el SDK lo interpreta como "unset" y termina enviando todo.
+  OBSERVE_TRACES_SAMPLE_RATE: Joi.number().min(0.01).max(1).default(1),
   DATABASE_URL: Joi.string().required(),
   JWT_SECRET: Joi.string().required(),
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('1500'),
