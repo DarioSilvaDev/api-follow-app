@@ -44,6 +44,7 @@
     "@nestjs/event-emitter": "^3.1.0",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/mapped-types": "*",
+    "@nestjs/observe": "^0.3.27",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/throttler": "^6.5.0",
